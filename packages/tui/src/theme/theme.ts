@@ -144,7 +144,7 @@ var themeWatcher: fs.FSWatcher | undefined;
 var themeReloadTimer: NodeJS.Timeout | undefined;
 var sigwinchHandler: (() => void) | undefined;
 var autoDetectedTheme: boolean = false;
-var autoDarkTheme: string = "dark";
+var autoDarkTheme: string = "nightglide-flight";
 var autoLightTheme: string = "light";
 var onThemeChangeCallback: ((event: ThemeChangeEvent) => void) | undefined;
 var themeLoadRequestId: number = 0;
@@ -163,7 +163,7 @@ function configureTheme(
 	lightTheme?: string,
 ): string {
 	autoDetectedTheme = true;
-	autoDarkTheme = darkTheme ?? "dark";
+	autoDarkTheme = darkTheme ?? "nightglide-flight";
 	autoLightTheme = lightTheme ?? "light";
 	currentSymbolPresetOverride = symbolPreset;
 	currentColorBlindMode = colorBlindMode ?? false;
@@ -185,8 +185,8 @@ export function initThemeSync(
 		assignTheme(loadThemeSync(name, options));
 	} catch (error) {
 		logger.debug("Theme loading failed, falling back to dark theme", { error: String(error) });
-		currentThemeName = "dark";
-		assignTheme(loadThemeSync("dark", options));
+		currentThemeName = "nightglide-flight";
+		assignTheme(loadThemeSync("nightglide-flight", options));
 	}
 }
 
@@ -216,8 +216,8 @@ export async function initTheme(
 		}
 	} catch (err) {
 		logger.debug("Theme loading failed, falling back to dark theme", { error: String(err) });
-		currentThemeName = "dark";
-		assignTheme(await loadTheme("dark", getCurrentThemeOptions()));
+		currentThemeName = "nightglide-flight";
+		assignTheme(await loadTheme("nightglide-flight", getCurrentThemeOptions()));
 		// Skip file watching for the fallback theme, not appearance tracking.
 	}
 	if (enableWatcher) startSigwinchListener();

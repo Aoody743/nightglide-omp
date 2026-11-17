@@ -64,7 +64,7 @@ export const cfgGitEnabled = register({
 export const cfgThemeDark = register({
 	id: "theme.dark",
 	type: "string",
-	default: "titanium",
+	default: "nightglide-flight",
 	ui: {
 		tab: "appearance",
 		group: "Theme",
@@ -129,7 +129,7 @@ effect(cfgColorBlindMode, setColorBlindMode);
 export const cfgComposerShape = register({
 	id: "composer.shape",
 	type: "string",
-	default: "band",
+	default: "nightglide",
 	ui: {
 		tab: "appearance",
 		group: "Composer",

@@ -7,6 +7,8 @@ import { detectColorMode, isLightSurface, mixThemeColors, resolveThemeColors, re
 import darkThemeJson from "./dark.json" with { type: "json" };
 import defaultThemes from "./defaults.json" with { type: "json" };
 import lightThemeJson from "./light.json" with { type: "json" };
+import nightglideFlightJson from "./nightglide-flight.json" with { type: "json" };
+import nightglideAbyssJson from "./nightglide-abyss.json" with { type: "json" };
 import type { ColorMode, ThemeBg, ThemeColor, ThemeJson } from "./schema";
 import { normalizeSpinnerFramesOverride, type SymbolPreset } from "./symbols";
 import { Theme } from "./theme-class";
@@ -18,6 +20,11 @@ import { Theme } from "./theme-class";
 const BUILTIN_THEMES: Record<string, ThemeJson> = {
 	dark: darkThemeJson as ThemeJson,
 	light: lightThemeJson as ThemeJson,
+	"nightglide-flight": nightglideFlightJson as ThemeJson,
+	"nightglide-abyss": nightglideAbyssJson as ThemeJson,
+	flight: nightglideFlightJson as ThemeJson,
+	abyss: nightglideAbyssJson as ThemeJson,
+	nightglide: nightglideFlightJson as ThemeJson,
 	...(defaultThemes as Record<string, ThemeJson>),
 };
 
