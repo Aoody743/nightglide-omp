@@ -9,6 +9,9 @@ import defaultThemes from "./defaults.json" with { type: "json" };
 import lightThemeJson from "./light.json" with { type: "json" };
 import nightglideFlightJson from "./nightglide-flight.json" with { type: "json" };
 import nightglideAbyssJson from "./nightglide-abyss.json" with { type: "json" };
+import nightglideAuroraJson from "./nightglide-aurora.json" with { type: "json" };
+import nightglideCloudlightJson from "./nightglide-cloudlight.json" with { type: "json" };
+import nightglideDaybreakJson from "./nightglide-daybreak.json" with { type: "json" };
 import type { ColorMode, ThemeBg, ThemeColor, ThemeJson } from "./schema";
 import { normalizeSpinnerFramesOverride, type SymbolPreset } from "./symbols";
 import { Theme } from "./theme-class";
@@ -22,6 +25,9 @@ const BUILTIN_THEMES: Record<string, ThemeJson> = {
 	light: lightThemeJson as ThemeJson,
 	"nightglide-flight": nightglideFlightJson as ThemeJson,
 	"nightglide-abyss": nightglideAbyssJson as ThemeJson,
+	"nightglide-aurora": nightglideAuroraJson as ThemeJson,
+	"nightglide-cloudlight": nightglideCloudlightJson as ThemeJson,
+	"nightglide-daybreak": nightglideDaybreakJson as ThemeJson,
 	flight: nightglideFlightJson as ThemeJson,
 	abyss: nightglideAbyssJson as ThemeJson,
 	nightglide: nightglideFlightJson as ThemeJson,
