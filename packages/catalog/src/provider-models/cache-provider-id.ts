@@ -66,6 +66,8 @@ export function getDefaultModelDiscoveryBaseUrl(providerId: string): string | un
 			return "https://opencode.ai/zen/v1";
 		case "vllm":
 			return "http://127.0.0.1:8000/v1";
+		case "omlx":
+			return Bun.env.OMLX_BASE_URL?.trim() || "http://127.0.0.1:8000/v1";
 		default:
 			return undefined;
 	}
@@ -248,6 +250,10 @@ export function resolveModelCacheProviderId(providerId: string, options: ModelCa
 			// carry `reasoning: false` and must be refetched.
 			const baseUrl = options.baseUrl ?? getDefaultModelDiscoveryBaseUrl(providerId)!;
 			return `vllm:models-v2:${Bun.hash(baseUrl).toString(36)}`;
+		}
+		case "omlx": {
+			const baseUrl = options.baseUrl ?? getDefaultModelDiscoveryBaseUrl(providerId)!;
+			return `omlx:models-v1:${Bun.hash(baseUrl).toString(36)}`;
 		}
 		case "devin":
 			// v2: rows cached before Fusion pairings carried their lead uid as

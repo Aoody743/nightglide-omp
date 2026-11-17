@@ -62,6 +62,7 @@ export type KnownProvider =
 	| "nvidia"
 	| "ollama"
 	| "ollama-cloud"
+	| "omlx"
 	| "openai"
 	| "openai-codex"
 	| "opencode-go"

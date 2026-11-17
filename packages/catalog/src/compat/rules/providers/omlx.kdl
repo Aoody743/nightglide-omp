@@ -1,0 +1,10 @@
+// Provider-wire compat for "omlx".
+
+provider "omlx" {
+	default-model "endless"
+	env "OMLX_API_KEY"
+	discovery label="oMLX" allow-unauthenticated=#true
+	allow-unauthenticated #true
+
+	supports-named-tool-choice #false
+}

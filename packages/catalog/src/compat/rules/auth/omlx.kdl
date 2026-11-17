@@ -1,0 +1,7 @@
+auth "omlx" {
+	name "oMLX (Local Apple Silicon MLX)"
+	login "api-key" {
+		prompt "Optional: Paste oMLX API key (to customize endpoint URL, set OMLX_BASE_URL env var, defaults to http://127.0.0.1:8000/v1)" placeholder="omlx-local"
+		empty-fallback "omlx-local"
+	}
+}

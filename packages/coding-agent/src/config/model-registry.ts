@@ -2132,6 +2132,23 @@ export class ModelRegistry {
 			this.#implicitLocalProviders.add("lm-studio");
 			if (Bun.env.LM_STUDIO_BASE_URL) this.#implicitProviderEndpointEnv.set("lm-studio", "LM_STUDIO_BASE_URL");
 		}
+		if (
+			(Boolean(Bun.env.OMLX_BASE_URL) || configuredProviders.has("omlx")) &&
+			!disabledProviders.has("omlx")
+		) {
+			this.#discoverableProviders.push({
+				provider: "omlx",
+				api: "openai-completions",
+				baseUrl: Bun.env.OMLX_BASE_URL || "http://127.0.0.1:8000/v1",
+				discovery: { type: "openai-models-list" },
+				optional: !Bun.env.OMLX_BASE_URL,
+			});
+			if (this.authStorage.keys.source("omlx") === undefined) {
+				this.#keylessProviders.add("omlx");
+			}
+			this.#implicitLocalProviders.add("omlx");
+			if (Bun.env.OMLX_BASE_URL) this.#implicitProviderEndpointEnv.set("omlx", "OMLX_BASE_URL");
+		}
 	}
 
 	#loadCustomModels(): CustomModelsResult {
