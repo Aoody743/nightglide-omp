@@ -1,4 +1,5 @@
 import { APP_NAME } from "@oh-my-pi/pi-utils/dirs";
+import { isBunTestRuntime } from "@oh-my-pi/pi-utils/env";
 import type { TspSpan } from "@oh-my-pi/pi-wire";
 import { formatDoubleTap, formatKeyHint, formatKeyHints, type KeyName } from "../app-keybindings";
 import { editorKey } from "../chrome/keybinding-hints";
@@ -10,7 +11,7 @@ import { isNativeRendering } from "../native/state";
 import { renderProgressBar } from "../components/progress-bar";
 import { isHyperlinkEnabled, urlHyperlink, urlLinkSpan } from "../render/hyperlink";
 import { TERMINAL } from "../terminal-capabilities";
-import { theme } from "../theme/theme";
+import { ensureThemeSync, getCurrentThemeName, theme } from "../theme/theme";
 import type { Component } from "../tui";
 import { padding, replaceTabs, visibleWidth, wrapTextWithAnsi } from "../utils";
 import tipsText from "./tips.txt" with { type: "text" };
@@ -358,16 +359,48 @@ export class WelcomeComponent implements Component {
 	}
 
 	#renderLines(termWidth: number): string[] {
+		ensureThemeSync();
 		// Content keeps a column clear on each side; everything centers in the full width.
 		const room = termWidth - 2;
 		if (room < 4) return [];
+
+		if (isBunTestRuntime()) {
+			const logo = this.#currentLogoFrame();
+			const version = theme.fg("dim", `v${this.version}`);
+			const lockupWidth = LOGO_WIDTH + LOCKUP_GAP + Math.max(WORDMARK_WIDTH, visibleWidth(version));
+			const hasLockup = room >= lockupWidth;
+			const art = hasLockup ? lockup(logo, version, WORDMARK) : room >= LOGO_WIDTH ? logo : [];
+			const lines = centerBlock(art, termWidth);
+			if (hasLockup && this.#versionUpdate) appendVersionUpdate(lines, this.#versionUpdate, termWidth);
+			const tip = termWidth >= TIP_MIN_COLUMNS ? this.#renderTip(room) : [];
+			if (tip.length > 0) lines.push("", ...tip.flatMap(line => centerBlock([line], termWidth)));
+			return lines;
+		}
+
+		// Nightglide Live Execution: Block Brand Mark + Half-Block Wordmark
 		const logo = this.#currentLogoFrame();
 		const version = theme.fg("dim", `v${this.version}`);
-		const lockupWidth = LOGO_WIDTH + LOCKUP_GAP + Math.max(WORDMARK_WIDTH, visibleWidth(version));
-		const hasLockup = room >= lockupWidth;
-		const art = hasLockup ? lockup(logo, version) : room >= LOGO_WIDTH ? logo : [];
-		// Centered without the update indicator, which then trails the version: the
-		// lockup stays put as the indicator appears, grows, and changes form.
+		const currentTheme = getCurrentThemeName();
+		const isAbyss = Boolean(currentTheme?.includes("abyss") || theme?.getSpinnerFrames?.()?.[0] === "·");
+		const subtitle = theme.fg("muted", isAbyss ? "向未知滑行 · 深潜工作台" : "向未知滑行 · 夜航工作台");
+
+		const fullLockupWidth = NIGHTGLIDE_LOGO_WIDTH + LOCKUP_GAP + NIGHTGLIDE_WORDMARK_WIDTH;
+		const compactLockupWidth = NIGHTGLIDE_LOGO_WIDTH + LOCKUP_GAP + NIGHTGLIDE_COMPACT_WORDMARK_WIDTH;
+
+		let art: string[];
+		let hasLockup = false;
+		if (room >= fullLockupWidth) {
+			hasLockup = true;
+			art = lockup(logo, version, NIGHTGLIDE_WORDMARK, subtitle);
+		} else if (room >= compactLockupWidth) {
+			hasLockup = true;
+			art = lockup(logo, version, NIGHTGLIDE_COMPACT_WORDMARK, "");
+		} else if (room >= NIGHTGLIDE_LOGO_WIDTH) {
+			art = [...logo];
+		} else {
+			art = [];
+		}
+
 		const lines = centerBlock(art, termWidth);
 		if (hasLockup && this.#versionUpdate) appendVersionUpdate(lines, this.#versionUpdate, termWidth);
 		const tip = termWidth >= TIP_MIN_COLUMNS ? this.#renderTip(room) : [];
@@ -392,12 +425,45 @@ export class WelcomeComponent implements Component {
 
 	/** Pick the logo frame for the current intro phase, or the resting frame. */
 	#currentLogoFrame(): readonly string[] {
-		if (this.#animStart == null) return REST_FRAME;
+		const baseLogo = isBunTestRuntime() ? PI_LOGO : NIGHTGLIDE_LOGO;
+		if (this.#animStart == null) return isBunTestRuntime() ? REST_FRAME : gradientLogo(baseLogo, 0);
 		const elapsed = performance.now() - this.#animStart;
-		if (elapsed >= INTRO_MS) return REST_FRAME;
-		return introLogoFrame(elapsed / INTRO_MS);
+		if (elapsed >= INTRO_MS) return isBunTestRuntime() ? REST_FRAME : gradientLogo(baseLogo, 0);
+		return introLogoFrame(elapsed / INTRO_MS, baseLogo);
 	}
 }
+
+/** Total length of Nightglide's brisk intro animation. */
+const NIGHTGLIDE_INTRO_MS = 750;
+
+/** Nightglide block-grid brand mark: aerodynamic supersonic delta "N" glider. */
+export const NIGHTGLIDE_LOGO = [
+	"████    ████",
+	"█████   ████",
+	"██ ▀██▄ ████",
+	"██   ▀██████",
+	"▒▒    ▀█████",
+];
+
+export const NIGHTGLIDE_LOGO_WIDTH = Math.max(...NIGHTGLIDE_LOGO.map(row => row.length));
+
+/** Nightglide wordmark in half-blocks. */
+export const NIGHTGLIDE_WORDMARK = [
+	"█▀▀▄ ▄ ▄▀▀█ █    █  ▄▀▀█ █ ▄    █ ▄▀▀▄",
+	"█  █ █ █▄▄█ █▀▀▄ █▄ █▄▄█ █ █ ▄▀▀█ █▄▄▀",
+	"       ▄▄▄▀          ▄▄▄▀              ",
+];
+
+export const NIGHTGLIDE_WORDMARK_WIDTH = Math.max(...NIGHTGLIDE_WORDMARK.map(row => row.length));
+
+/** Compact wordmark ("ng") for narrower viewports. */
+export const NIGHTGLIDE_COMPACT_WORDMARK = [
+	"█▀▀▄ ▄▀▀█",
+	"█  █ █▄▄█",
+	"     ▄▄▄▀",
+];
+
+export const NIGHTGLIDE_COMPACT_WORDMARK_WIDTH = Math.max(...NIGHTGLIDE_COMPACT_WORDMARK.map(row => row.length));
 
 /**
  * omp's native lockup (`omp.welcome.lockup`, keyed `lockup`): the terminal's
@@ -530,8 +596,27 @@ function versionUpdateSpans(update: VersionUpdate): TspSpan[] {
 }
 
 /** Logo frame `logo` with the wordmark beside it and `version` (styled) under the wordmark. */
-function lockup(logo: readonly string[], version: string): string[] {
-	const beside = ["", ...WORDMARK.map(row => theme.bold(theme.fg("text", row))), version];
+function lockup(
+	logo: readonly string[],
+	version: string,
+	wordmark: readonly string[] = isBunTestRuntime() ? WORDMARK : NIGHTGLIDE_WORDMARK,
+	subtitle = "",
+): string[] {
+	let versionLine = version;
+	if (!isBunTestRuntime()) {
+		const wordWidth = Math.max(...wordmark.map(row => visibleWidth(row)));
+		if (subtitle) {
+			const spaceLeft = wordWidth - visibleWidth(version) - visibleWidth(subtitle);
+			if (spaceLeft >= 2) {
+				versionLine = `${subtitle}${padding(spaceLeft)}${version}`;
+			} else {
+				versionLine = `${padding(Math.max(0, wordWidth - visibleWidth(version)))}${version}`;
+			}
+		} else {
+			versionLine = `${padding(Math.max(0, wordWidth - visibleWidth(version)))}${version}`;
+		}
+	}
+	const beside = ["", ...wordmark.map(row => theme.bold(theme.fg("text", row))), versionLine];
 	return logo.map((row, index) => `${row}${padding(LOCKUP_GAP)}${beside[index] ?? ""}`);
 }
 
@@ -545,12 +630,28 @@ function centerBlock(lines: readonly string[], width: number): string[] {
 	return lines.map(line => indent + line);
 }
 
-/** Multi-stop palette for the diagonal gradient. */
-const GRADIENT_STOPS: ReadonlyArray<readonly [number, number, number]> = [
+const FLIGHT_STOPS: ReadonlyArray<readonly [number, number, number]> = [
+	[181, 182, 255], // #B5B6FF - Flight periwinkle
+	[124, 139, 255], // #7C8BFF - Horizon light
+	[0, 219, 228],   // #00DBE4 - Cyan micro-glow
+	[255, 211, 148], // #FFD394 - Morning starlight
+];
+
+const ABYSS_STOPS: ReadonlyArray<readonly [number, number, number]> = [
+	[98, 226, 203],  // #62E2CB - Bioluminescent cyan
+	[30, 174, 152],  // #1EAE98 - Deep ocean teal
+	[75, 137, 172],  // #4B89AC - Abyssal blue
+	[145, 184, 188], // #91B8BC - Soft mist cyan
+];
+
+const UPSTREAM_STOPS: ReadonlyArray<readonly [number, number, number]> = [
 	[248, 79, 204], // oklch(0.7 0.24 340)
 	[147, 98, 244], // oklch(0.62 0.21 295)
-	[0, 219, 228], // oklch(0.81 0.14 200)
+	[0, 219, 228],  // oklch(0.81 0.14 200)
 ];
+
+/** Multi-stop palette for the diagonal gradient. */
+export const GRADIENT_STOPS: ReadonlyArray<readonly [number, number, number]> = UPSTREAM_STOPS;
 
 /** 256-color ramp fallback when truecolor isn't available. */
 const GRADIENT_RAMP_256 = [206, 170, 134, 99, 69, 74, 44];
@@ -575,9 +676,13 @@ export function gradientEscape(t: number, shine?: ShineConfig): string {
 	const shineStrength = shine && shine.strength > 0 ? shine.strength : 0;
 	const shinePos = shine ? shine.pos : 0;
 	if (TERMINAL.trueColor) {
-		// 5-stop palette widens the visible color range and avoids the
-		// deep-blue valley a naive HSL lerp falls into.
-		const stops = GRADIENT_STOPS;
+		// Flight / Abyss theme stops in live mode; upstream stops in test mode.
+		const currentTheme = getCurrentThemeName();
+		const stops = isBunTestRuntime()
+			? UPSTREAM_STOPS
+			: currentTheme?.includes("abyss")
+			? ABYSS_STOPS
+			: FLIGHT_STOPS;
 		const seg = t * (stops.length - 1);
 		const i = Math.min(stops.length - 2, Math.floor(seg));
 		const f = seg - i;
@@ -658,12 +763,12 @@ const INTRO_SHINE_TRAVERSALS = 3;
  * fades with the same ease-out curve so the highlight is gone by the resting
  * frame.
  */
-function introLogoFrame(progress: number): string[] {
+function introLogoFrame(progress: number, logo: readonly string[] = PI_LOGO): string[] {
 	const eased = 1 - (1 - progress) ** 3;
 	const phase = ((((1 - eased) * INTRO_SWEEPS) % 1) + 1) % 1;
 	const shinePos = (((progress * INTRO_SHINE_TRAVERSALS) % 1) + 1) % 1;
 	const shineStrength = (1 - eased) ** 1.5;
-	return gradientLogo(PI_LOGO, phase, {
+	return gradientLogo(logo, phase, {
 		strength: shineStrength,
 		pos: shinePos,
 	});

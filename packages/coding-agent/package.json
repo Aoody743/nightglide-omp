@@ -25,6 +25,8 @@
 		"directory": "packages/coding-agent"
 	},
 	"bin": {
+		"nightglide": "src/cli.ts",
+		"ng": "src/cli.ts",
 		"omp": "src/cli.ts"
 	},
 	"files": [

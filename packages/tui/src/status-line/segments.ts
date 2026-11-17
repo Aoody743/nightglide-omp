@@ -232,7 +232,7 @@ const piSegment: StatusLineSegment = {
 		if (ctx.focusedAgentId) return segView([span(ctx.focusedAgentId, "warning")], "ghost", "warning");
 		// The dock's working row owns activity natively: the brand stays still.
 		const profile = ctx.options.pi?.showProfile === false ? undefined : getActiveProfile();
-		return segView(profile ? [span(profile, "muted")] : [], "omp", "muted");
+		return segView(profile ? [span(profile, "muted")] : [], "nightglide", "muted");
 	},
 };
 /**
