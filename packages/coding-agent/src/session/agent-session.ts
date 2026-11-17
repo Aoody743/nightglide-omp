@@ -453,7 +453,8 @@ import {
 	toRestoredQueuedMessage,
 } from "./queued-messages";
 import { checkCodexBalance, readResetMarker, resetLockPath, withResetFence } from "./reset-fence";
-import type { ServingModel } from "./retry-fallback-chains";
+import type { ActiveRetryFallbackState, ServingModel } from "./retry-fallback-chains";
+import { getAppliedNightglideRouting } from "../config/nightglide-routing";
 import {
 	type AdvisorCatchupOptions,
 	type AdvisorStats,
@@ -7233,6 +7234,26 @@ export class AgentSession implements SettingsScope, AgentViewSession {
 	 */
 	get servingModel(): ServingModel | undefined {
 		return this.#recovery.servingModel;
+	}
+
+	/**
+	 * The retry fallback currently armed for this session, if any: which chain
+	 * role produced it and the primary selector it departed from. The status line
+	 * reads this to explain a serving fallback; undefined once the primary is
+	 * restored.
+	 */
+	get activeRetryFallbackState(): ActiveRetryFallbackState | undefined {
+		return this.#recovery.activeRetryFallback;
+	}
+
+	/**
+	 * Nightglide routing mode actually applied to this session's settings
+	 * (LOCAL/BALANCED/PERFORMANCE), or undefined when routing never ran — manual
+	 * mode, a resumed session, or a display-only session. Reports what this
+	 * session is operating under, never a configured-but-unapplied intent.
+	 */
+	getNightglideRoutingMode(): "manual" | "local" | "balanced" | "performance" | undefined {
+		return getAppliedNightglideRouting(this.settings)?.mode;
 	}
 
 	/** Install the interactive decision surface for reserve-triggered model changes; it waits for the user mid-turn. */

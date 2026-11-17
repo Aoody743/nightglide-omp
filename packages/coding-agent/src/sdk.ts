@@ -86,6 +86,7 @@ import {
 	resolveSessionModelSelector,
 	sessionModelDiscoveryProviders,
 } from "./config/model-resolver";
+import { applyNightglideRouting } from "./config/nightglide-routing";
 import { formatModelSelectorValue, parseModelString } from "@oh-my-pi/pi-tui/overlays/model-selector";
 import { loadPromptTemplates as loadPromptTemplatesInternal, type PromptTemplate } from "./config/prompt-templates";
 import { buildServiceTierByFamily } from "./config/service-tier";
@@ -2266,6 +2267,21 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 			: [];
 	const hasExplicitModel = options.model !== undefined || deferredModelPatterns.length > 0;
 	const modelMatchPreferences = getModelMatchPreferences(settings);
+	await credentialScopedCacheHydration;
+	// Nightglide routing (LOCAL/BALANCED/PERFORMANCE): rebind session-scoped
+	// model roles and fallback chains before any startup model resolution reads
+	// them, so the default role, the startup fallback and subagent `@role`
+	// expansion all see the routed assignments. Only brand-new sessions are
+	// routed: a resumed session restores its own saved models via
+	// `sessionModelStrings` below and routing must not disturb that restore.
+	// `manual` (the default) applies nothing.
+	if (!hasExistingSession) {
+		await applyNightglideRouting(settings, modelRegistry, {
+			cliModelExplicit: hasExplicitModel,
+			refreshLocalProviders: (providerIds, strategy) =>
+				modelRegistry.refreshDiscoverableProviders(providerIds, strategy),
+		});
+	}
 	const defaultRoleValue = settings.getModelRole("default");
 	let explicitDefaultProviders: Set<string> | undefined;
 	if ((cfgEnabledModels.get(settings)?.length ?? 0) === 0) {
@@ -2284,7 +2300,6 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 			if (providers.size > 0) explicitDefaultProviders = providers;
 		}
 	}
-	await credentialScopedCacheHydration;
 	if (!options.modelRegistry) {
 		modelRegistry.refreshInBackground();
 	}

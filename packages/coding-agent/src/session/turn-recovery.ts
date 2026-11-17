@@ -495,6 +495,17 @@ export class TurnRecovery {
 	}
 
 	/**
+	 * The retry fallback currently armed for this session, if any: which chain
+	 * role produced it and the primary selector it departed from. Observers
+	 * (status line, diagnostics) read this to explain a serving fallback;
+	 * `served` reports whether the fallback target has settled a turn. Undefined
+	 * once the primary is restored.
+	 */
+	get activeRetryFallback(): ActiveRetryFallbackState | undefined {
+		return this.#activeRetryFallback;
+	}
+
+	/**
 	 * Model this session's produced work is attributed to.
 	 *
 	 * A model switch is a routing decision, not evidence the target can produce

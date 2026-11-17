@@ -24,6 +24,7 @@ import {
 } from "../config/compaction-threshold";
 import { type ServiceTierInheritSettingValue, validateAgentServiceTierOverrides } from "../config/service-tier";
 import type { Settings } from "../config/settings";
+import { getAppliedNightglideRouting, isLocalProviderId } from "../config/nightglide-routing";
 import { isProviderEnabled, isUserSourceEnabled } from "../capability";
 import type { EffectiveExtensionRoots } from "../capability/types";
 import type { CustomTool } from "../extensibility/custom-tools/types";
@@ -390,7 +391,9 @@ export function normalizeModelSelector<T>(model: T): T | undefined {
 /**
  * Why a per-call `model` cannot be used before dispatch: the `task.perCallModel` gate first, so a
  * caller is never told to fix a selector it may not send, then anything but one exact
- * `provider/model-id[:level]` selector. `undefined` when there is no problem.
+ * `provider/model-id[:level]` selector. Under Nightglide LOCAL routing, selectors whose
+ * provider is not one of the session's bound local providers are refused. `undefined` when
+ * there is no problem.
  */
 export function invalidModelSelectorReason(
 	model: unknown,
@@ -407,6 +410,17 @@ export function invalidModelSelectorReason(
 		resolveExplicitModelRole(model.trim(), gate.settings) !== undefined
 	) {
 		return `${label} has an invalid \`model\` value ${JSON.stringify(model)}. Use one exact provider/model-id selector, optionally followed by a supported :level. Role aliases, patterns, and candidate arrays are not accepted.`;
+	}
+	const routing = getAppliedNightglideRouting(gate.settings);
+	if (routing?.mode === "local" && typeof model === "string") {
+		const provider = model.trim().split("/")[0]?.toLowerCase() ?? "";
+		if (provider && !routing.localProviders.has(provider) && !isLocalProviderId(provider)) {
+			return (
+				`${label} names model ${JSON.stringify(model)}, whose provider is not local. ` +
+				`Nightglide LOCAL routing binds session and subagent models to local models (${routing.localSelector ?? "local providers"}); ` +
+				"omit `model` to use the agent's configured local model."
+			);
+		}
 	}
 	return undefined;
 }
