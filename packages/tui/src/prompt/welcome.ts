@@ -644,6 +644,23 @@ const ABYSS_STOPS: ReadonlyArray<readonly [number, number, number]> = [
 	[145, 184, 188], // #91B8BC - Soft mist cyan
 ];
 
+// Light-theme glow palettes: the dark-theme stops are pastels tuned to float on
+// deep backgrounds and would wash out on bright ones, so light themes swap in
+// saturated mid-tone brand colors that read against near-white surfaces.
+const CLOUDLIGHT_STOPS: ReadonlyArray<readonly [number, number, number]> = [
+	[44, 92, 168],   // #2C5CA8 - Cloudlight accent blue
+	[98, 68, 158],   // #62449E - Day-sky violet
+	[3, 105, 161],   // #0369A1 - Azure information
+	[11, 114, 133],  // #0B7285 - Deep teal
+];
+
+const DAYBREAK_STOPS: ReadonlyArray<readonly [number, number, number]> = [
+	[158, 77, 54],   // #9E4D36 - Dawn clay
+	[125, 63, 152],  // #7D3F98 - Plum halo
+	[42, 104, 133],  // #2A6885 - Horizon teal
+	[176, 101, 72],  // #B06548 - Soft terracotta
+];
+
 const UPSTREAM_STOPS: ReadonlyArray<readonly [number, number, number]> = [
 	[248, 79, 204], // oklch(0.7 0.24 340)
 	[147, 98, 244], // oklch(0.62 0.21 295)
@@ -655,6 +672,18 @@ export const GRADIENT_STOPS: ReadonlyArray<readonly [number, number, number]> = 
 
 /** 256-color ramp fallback when truecolor isn't available. */
 const GRADIENT_RAMP_256 = [206, 170, 134, 99, 69, 74, 44];
+/** 256-color ramps for light themes: deep anchors fading lighter across bright surfaces. */
+const CLOUDLIGHT_RAMP_256 = [61, 25, 24, 67, 74, 110, 152];
+const DAYBREAK_RAMP_256 = [131, 167, 138, 174, 181, 217, 224];
+
+/**
+ * True when the active theme paints a light background, so the glow trail must
+ * swap its pastel dark-surface stops for light-adapted brand colors. Guarded
+ * because callers can render before theme initialization.
+ */
+function isLightGlowTheme(): boolean {
+	return typeof theme !== "undefined" && theme.isLight;
+}
 
 /** Half-width of the shine highlight band, expressed in gradient-t units. */
 const SHINE_HALF_WIDTH = 0.18;
@@ -676,10 +705,16 @@ export function gradientEscape(t: number, shine?: ShineConfig): string {
 	const shineStrength = shine && shine.strength > 0 ? shine.strength : 0;
 	const shinePos = shine ? shine.pos : 0;
 	if (TERMINAL.trueColor) {
-		// Flight / Abyss theme stops in live mode; upstream stops in test mode.
+		// Nightglide theme stops in live mode: light themes get light-adapted
+		// stops, dark themes keep the Flight/Abyss palettes; upstream stops in
+		// test mode.
 		const currentTheme = getCurrentThemeName();
 		const stops = isBunTestRuntime()
 			? UPSTREAM_STOPS
+			: isLightGlowTheme()
+			? currentTheme?.includes("daybreak")
+				? DAYBREAK_STOPS
+				: CLOUDLIGHT_STOPS
 			: currentTheme?.includes("abyss")
 			? ABYSS_STOPS
 			: FLIGHT_STOPS;
@@ -702,7 +737,11 @@ export function gradientEscape(t: number, shine?: ShineConfig): string {
 		}
 		return `\x1b[38;2;${Math.round(r)};${Math.round(g)};${Math.round(bl)}m`;
 	}
-	const ramp = GRADIENT_RAMP_256;
+	const ramp = isLightGlowTheme()
+		? getCurrentThemeName()?.includes("daybreak")
+			? DAYBREAK_RAMP_256
+			: CLOUDLIGHT_RAMP_256
+		: GRADIENT_RAMP_256;
 	let idx = Math.min(ramp.length - 1, Math.max(0, Math.floor(t * (ramp.length - 1) + 0.5)));
 	if (shineStrength > 0) {
 		const dist = Math.abs(t - shinePos);
