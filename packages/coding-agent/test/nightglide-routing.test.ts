@@ -19,6 +19,11 @@ import {
 	resolveConfiguredModelPatterns,
 } from "@oh-my-pi/pi-coding-agent/config/model-resolver";
 import { invalidModelSelectorReason } from "@oh-my-pi/pi-coding-agent/task/structured-subagent";
+import {
+	findRetryFallbackCandidates,
+	getRetryFallbackChains,
+	resolveRetryFallbackChainKey,
+} from "@oh-my-pi/pi-coding-agent/session/retry-fallback-chains";
 import { cfgRetryFallbackChains } from "@oh-my-pi/pi-coding-agent/session/settings";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 
@@ -263,6 +268,150 @@ describe("applyNightglideRouting local", () => {
 			"ollama/llama3-local",
 			"mybox/custom-x",
 		]);
+		// The applied record must say the default role stayed non-local so the
+		// status line never shows a plain `routing:local` for that session.
+		expect(applied?.defaultNonLocal).toBe(true);
+		expect(applied?.defaultNonLocalSelector).toBe("anthropic/claude-sonnet-5-5");
+	});
+
+	it("leaves defaultNonLocal unset when LOCAL binds the default role", async () => {
+		const settings = Settings.isolated({ "nightglide.routingMode": "local" });
+		const applied = await applyNightglideRouting(settings, source([...LOCAL_MODELS, ...CLOUD_MODELS]));
+		expect(applied?.defaultNonLocal).toBeUndefined();
+		expect(applied?.defaultNonLocalSelector).toBeUndefined();
+	});
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// local mode: user fallback-chain configs must not leak cloud selectors
+// ─────────────────────────────────────────────────────────────────────────
+
+describe("applyNightglideRouting local vs user fallback chains", () => {
+	it("replaces user cloud chains on every LOCAL-bound role", async () => {
+		const settings = Settings.isolated({
+			"nightglide.routingMode": "local",
+			modelRoles: { default: "anthropic/claude-sonnet-5-5" },
+			"retry.fallbackChains": {
+				default: ["anthropic/claude-sonnet-5-5", "openai/gpt-4o-mini"],
+				smol: ["openai/gpt-4o-mini"],
+			},
+		});
+		await applyNightglideRouting(settings, source([...LOCAL_MODELS, ...CLOUD_MODELS]));
+		const chains = getRetryFallbackChains(settings);
+		for (const role of NIGHTGLIDE_LOCAL_CHAT_ROLES) {
+			const chain = chains[role] ?? [];
+			expect(chain.length).toBeGreaterThan(0);
+			for (const entry of chain) {
+				expect(entry.startsWith("omlx/") || entry.startsWith("ollama/") || entry.startsWith("mybox/")).toBe(
+					true,
+				);
+			}
+		}
+	});
+
+	it("gives unlisted custom roles the (local) default chain, keeps their own cloud chains to the user", async () => {
+		const settings = Settings.isolated({
+			"nightglide.routingMode": "local",
+			modelRoles: { writer: "anthropic/claude-sonnet-5-5" },
+			"retry.fallbackChains": { writer: ["openai/gpt-4o-mini"] },
+		});
+		await applyNightglideRouting(settings, source([...LOCAL_MODELS, ...CLOUD_MODELS]));
+		// Custom roles are explicit user configuration: LOCAL does not reassign
+		// them (recorded out of scope, like the CLI --model pin).
+		expect(settings.getModelRole("writer")).toBe("anthropic/claude-sonnet-5-5");
+		expect(cfgRetryFallbackChains.get(settings).writer).toEqual(["openai/gpt-4o-mini"]);
+		// A custom role with no chain of its own inherits the default chain —
+		// which LOCAL replaced with the local-only chain, so no cloud leak.
+		const settingsNoChain = Settings.isolated({
+			"nightglide.routingMode": "local",
+			modelRoles: { writer: "anthropic/claude-sonnet-5-5" },
+		});
+		await applyNightglideRouting(settingsNoChain, source([...LOCAL_MODELS, ...CLOUD_MODELS]));
+		expect(getRetryFallbackChains(settingsNoChain).writer).toEqual([
+			"omlx/qwen3-local",
+			"ollama/llama3-local",
+			"mybox/custom-x",
+		]);
+	});
+
+	it("drops model-keyed and wildcard chains that could capture the LOCAL session", async () => {
+		const settings = Settings.isolated({
+			"nightglide.routingMode": "local",
+			"retry.fallbackChains": {
+				// Exact selector of the LOCAL primary: highest-precedence hijack.
+				"omlx/qwen3-local": ["anthropic/claude-sonnet-5-5"],
+				// Provider wildcard, mixed entries.
+				"omlx/*": ["openai/gpt-4o-mini", "omlx/qwen3-local"],
+				// A non-local provider wildcard.
+				"openai/*": ["openai/gpt-4o-mini"],
+				default: ["anthropic/claude-sonnet-5-5"],
+			},
+		});
+		await applyNightglideRouting(settings, source([...LOCAL_MODELS, ...CLOUD_MODELS]));
+		const chains = cfgRetryFallbackChains.get(settings);
+		// Selector-keyed chains are dropped session-scoped, so the local role
+		// chain owns fallback resolution and no cloud entry can hijack it.
+		expect(chains["omlx/qwen3-local"]).toBeUndefined();
+		expect(chains["omlx/*"]).toBeUndefined();
+		expect(chains["openai/*"]).toBeUndefined();
+		expect(chains.default).toEqual(["omlx/qwen3-local", "ollama/llama3-local", "mybox/custom-x"]);
+
+		// End to end through the resolver the session uses: resolving the LOCAL
+		// primary's chain yields local candidates from the role chain.
+		const context = {
+			chains: getRetryFallbackChains(settings),
+			getModelRole: (role: string) => settings.getModelRole(role),
+			modelLookup: {
+				find: (provider: string, id: string) =>
+					[...LOCAL_MODELS, ...CLOUD_MODELS].find(model => model.provider === provider && model.id === id),
+				hasProvider: (provider: string) =>
+					[...LOCAL_MODELS, ...CLOUD_MODELS].some(model => model.provider === provider),
+			},
+		};
+		const chainKey = resolveRetryFallbackChainKey(context, "omlx/qwen3-local", OMLX, "default");
+		expect(chainKey).toBe("default");
+		const candidates = findRetryFallbackCandidates(context, chainKey!, "omlx/qwen3-local", OMLX, {
+			allowMissingPrimary: true,
+		});
+		expect(candidates.map(candidate => candidate.raw)).toEqual(["ollama/llama3-local", "mybox/custom-x"]);
+	});
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// resume honesty: configured-but-unapplied routing does nothing
+// ─────────────────────────────────────────────────────────────────────────
+
+describe("routing on a resumed session (never applied)", () => {
+	it("reports no applied routing and leaves the per-call gate inactive", async () => {
+		// sdk.ts applies routing only to brand-new sessions (`!hasExistingSession`);
+		// a resumed session's settings never see `applyNightglideRouting`, so the
+		// configured mode must stay inert: no applied record, no per-call gate.
+		const settings = Settings.isolated({
+			"nightglide.routingMode": "local",
+			"task.perCallModel": "on",
+		});
+		expect(getAppliedNightglideRouting(settings)).toBeUndefined();
+		expect(
+			invalidModelSelectorReason("openai/gpt-4o-mini", "The call", { settings, invocationKind: "task" }),
+		).toBeUndefined();
+	});
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// custom agent frontmatter under LOCAL (recorded boundary)
+// ─────────────────────────────────────────────────────────────────────────
+
+describe("custom agent frontmatter model under LOCAL routing", () => {
+	it("resolves a literal cloud frontmatter selector as configured (recorded out of scope)", async () => {
+		// Agent frontmatter is user-authored configuration, the same class as the
+		// CLI --model pin and custom roles: LOCAL binds the stock roles and the
+		// per-call gate, but a literal `model: provider/cloud` in an agent file
+		// stays on its selector. This test pins that boundary so a change to it
+		// is a deliberate decision, not an accident.
+		const settings = Settings.isolated({ "nightglide.routingMode": "local" });
+		await applyNightglideRouting(settings, source([...LOCAL_MODELS, ...CLOUD_MODELS]));
+		const selection = resolveAgentModelSelection({ agentModel: "openai/gpt-4o-mini", settings });
+		expect(selection.patterns).toEqual(["openai/gpt-4o-mini"]);
 	});
 });
 
@@ -496,6 +645,27 @@ describe("headless approval warning end to end", () => {
 			expect(exitCode).toBe(1);
 			expect(stderr).toContain("not found");
 			expect(stderr).not.toContain(approvalWarning);
+		} finally {
+			removeSyncWithRetries(home);
+		}
+	}, 60_000);
+
+	// `--mode json` consumers parse stdout as events: the yolo-default warning
+	// must ride stderr only, never the JSON stream.
+	test("-p --mode json keeps the yolo default warning on stderr and stdout clean", async () => {
+		const home = path.join(os.tmpdir(), `pi-nightglide-approval-${Snowflake.next()}`);
+		fs.mkdirSync(home, { recursive: true });
+		try {
+			const proc = spawnModelMiss(["--mode", "json", "--model", "anthropic/no-such-model-x9", "hi"], home);
+			const [exitCode, stderr, stdout] = await Promise.all([
+				proc.exited,
+				new Response(proc.stderr).text(),
+				new Response(proc.stdout).text(),
+			]);
+			expect(exitCode).toBe(1);
+			expect(stderr).toContain(approvalWarning);
+			expect(stdout).not.toContain(approvalWarning);
+			expect(stdout).not.toContain("headless");
 		} finally {
 			removeSyncWithRetries(home);
 		}

@@ -7256,6 +7256,17 @@ export class AgentSession implements SettingsScope, AgentViewSession {
 		return getAppliedNightglideRouting(this.settings)?.mode;
 	}
 
+	/**
+	 * When LOCAL routing kept the session's `default` role on a non-local
+	 * selector (an explicit CLI `--model` pin), its selector — so the status
+	 * line can distinguish that posture from a fully local-bound session.
+	 * Undefined whenever `default` is locally bound or routing never applied.
+	 */
+	getNightglideRoutingNonLocalDefault(): string | undefined {
+		const applied = getAppliedNightglideRouting(this.settings);
+		return applied?.defaultNonLocal ? applied.defaultNonLocalSelector : undefined;
+	}
+
 	/** Install the interactive decision surface for reserve-triggered model changes; it waits for the user mid-turn. */
 	setUsageFallbackConfirmer(confirmer: UsageFallbackConfirmer | undefined): void {
 		this.#usageFallbackConfirmer = confirmer

@@ -1364,21 +1364,28 @@ const usageSegment: StatusLineSegment = {
  * Nightglide routing mode actually applied to the session (`local`, `balanced`,
  * `performance`). Renders nothing for `manual` or when routing never ran — the
  * segment only ever reports a mode the session is genuinely operating under,
- * never a promise.
+ * never a promise. LOCAL routing that kept a non-local `default` (an explicit
+ * CLI `--model` pin) renders a distinguishable form so the segment never
+ * overstates the session's egress posture.
  */
 const routingSegment: StatusLineSegment = {
 	id: "routing",
 	render(ctx) {
 		const mode = ctx.session.getNightglideRoutingMode?.();
 		if (!mode || mode === "manual") return { content: "", visible: false };
-		return { content: theme.fg("accent", `routing:${mode}`), visible: true };
+		return { content: theme.fg("accent", routingSegmentText(ctx, mode)), visible: true };
 	},
 	describe(ctx) {
 		const mode = ctx.session.getNightglideRoutingMode?.();
 		if (!mode || mode === "manual") return null;
-		return segView([span(`routing:${mode}`, "accent")], "routing", "accent");
+		return segView([span(routingSegmentText(ctx, mode), "accent")], "routing", "accent");
 	},
 };
+
+function routingSegmentText(ctx: SegmentContext, mode: "local" | "balanced" | "performance"): string {
+	const nonLocalDefault = ctx.session.getNightglideRoutingNonLocalDefault?.();
+	return nonLocalDefault ? `routing:${mode} (default: explicit)` : `routing:${mode}`;
+}
 
 export const SEGMENTS: Record<StatusLineSegmentId, StatusLineSegment> = {
 	pi: piSegment,

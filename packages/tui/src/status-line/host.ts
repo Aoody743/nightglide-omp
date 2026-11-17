@@ -124,6 +124,13 @@ export interface StatusLineSession {
 	 */
 	getNightglideRoutingMode?(): "manual" | "local" | "balanced" | "performance" | undefined;
 	/**
+	 * When LOCAL routing kept the session's `default` role on a non-local selector
+	 * (an explicit CLI `--model` pin), that selector; undefined whenever `default`
+	 * is locally bound or routing never applied. The `routing` segment uses it to
+	 * mark the session's egress posture instead of a bare `routing:local`.
+	 */
+	getNightglideRoutingNonLocalDefault?(): string | undefined;
+	/**
 	 * Model the session's produced work is attributed to (undefined on display-only
 	 * sessions). `isFallback` marks serving via retry-fallback routing rather than the
 	 * configured primary; the model segment appends a fallback indicator.

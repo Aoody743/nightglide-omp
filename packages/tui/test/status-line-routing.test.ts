@@ -9,6 +9,7 @@ beforeAll(async () => {
 
 interface SessionOverrides {
 	getNightglideRoutingMode?: () => "manual" | "local" | "balanced" | "performance" | undefined;
+	getNightglideRoutingNonLocalDefault?: () => string | undefined;
 	servingModel?: { selector: string; modelIdentity?: string; isFallback: boolean } | undefined;
 	activeRetryFallbackState?: { role: string; originalSelector: string; served?: boolean } | undefined;
 }
@@ -85,6 +86,26 @@ describe("status line routing segment", () => {
 			const describedText = described?.spans.map(span => span.t).join("");
 			expect(describedText).toContain(`routing:${mode}`);
 		}
+	});
+
+	it("renders plain routing:local when the default role is locally bound", () => {
+		const ctx = createRoutingContext({ getNightglideRoutingMode: () => "local" });
+		expect(renderSegment("routing", ctx).content).toBe(theme.fg("accent", "routing:local"));
+	});
+
+	it("marks an explicit non-local default under local routing", () => {
+		// A CLI --model pin keeps `default` off the local model; a bare
+		// `routing:local` there would overstate the session's egress posture.
+		const ctx = createRoutingContext({
+			getNightglideRoutingMode: () => "local",
+			getNightglideRoutingNonLocalDefault: () => "anthropic/claude-sonnet-5-5",
+		});
+		const rendered = renderSegment("routing", ctx);
+		expect(rendered.visible).toBe(true);
+		expect(rendered.content).toContain("routing:local (default: explicit)");
+		const described = describeSegment("routing", ctx);
+		const describedText = described?.spans.map(span => span.t).join("");
+		expect(describedText).toContain("routing:local (default: explicit)");
 	});
 });
 

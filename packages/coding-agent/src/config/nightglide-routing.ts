@@ -10,7 +10,7 @@
 import { modelKind, type Model } from "@oh-my-pi/pi-catalog/types";
 import { pickDefaultAvailableModel, resolveModelRoleValue, formatModelString } from "./model-resolver";
 import { register } from "./registry";
-import { installRetryFallbackRole, type RetryFallbackChains } from "../session/retry-fallback-chains";
+import { installRetryFallbackRole, isRetryFallbackModelKey, type RetryFallbackChains } from "../session/retry-fallback-chains";
 import { cfgRetryFallbackChains } from "../session/settings";
 import type { Settings } from "./settings";
 import { cfgToolsApproval, cfgToolsApprovalMode } from "../tools/settings";
@@ -213,6 +213,15 @@ export interface AppliedNightglideRouting {
 	localProviders: ReadonlySet<string>;
 	/** Whether `nightglide.localModel` pinned the local selection. */
 	explicitLocal: boolean;
+	/**
+	 * Whether the session's `default` role stayed on a non-local selector despite
+	 * LOCAL routing — only when an explicit CLI `--model` pin claimed it. The
+	 * status line uses this to avoid presenting a bare `routing:local` for a
+	 * session whose default can still egress to the pinned provider.
+	 */
+	defaultNonLocal?: boolean;
+	/** The non-local selector `default` kept, when {@link defaultNonLocal} is set. */
+	defaultNonLocalSelector?: string;
 	/** Human-readable decision log, one entry per applied change (or degradation). */
 	reasons: string[];
 }
@@ -309,11 +318,20 @@ export async function applyNightglideRouting(
 			if (role === "default" && options.cliModelExplicit) {
 				reasons.push(`default stays on the CLI --model pin; local-only fallback chain installed`);
 				installRoleChainOnly(settings, "default", chain);
+				applied.defaultNonLocal = true;
+				applied.defaultNonLocalSelector = settings.getModelRole("default");
 				continue;
 			}
 			installRetryFallbackRole(settings, role, { primary: localSelector!, chain });
 			reasons.push(`${role} → ${localSelector} (local routing: session and subagent models bound to local models)`);
 		}
+		// Model-keyed and wildcard chains out-precedence the role chains above, so
+		// a user entry naming the local model or its provider would route a LOCAL
+		// failure onto cloud selectors — the one thing LOCAL must not do. Drop
+		// those keys session-scoped: fallback resolution then lands on the
+		// local-only role chains installed above. Kind-role and custom-role
+		// chains are keyed by role names and stay out of scope.
+		cfgRetryFallbackChains.override(settings, dropSelectorKeyedFallbackChains(cfgRetryFallbackChains.get(settings)));
 		appliedRouting.set(settings, applied);
 		return applied;
 	}
@@ -382,6 +400,24 @@ function installRoleChainOnly(settings: Settings, role: string, chain: string[])
 		if (key !== role) chains[key] = existing[key];
 	}
 	cfgRetryFallbackChains.override(settings, chains);
+}
+
+/**
+ * Drops model-keyed and wildcard fallback chains (LOCAL routing only).
+ *
+ * Those keys match the session model by selector and out-precedence the role
+ * chains, so a configured cloud entry naming the local model or its provider
+ * would silently route a LOCAL failure onto a cloud model — the one thing
+ * LOCAL must not do. With the keys gone, fallback resolution lands on the
+ * local-only role chains installed above; role-named keys pass through
+ * untouched, keeping kind-role and custom-role chains out of routing scope.
+ */
+function dropSelectorKeyedFallbackChains(chains: RetryFallbackChains): RetryFallbackChains {
+	const kept: RetryFallbackChains = {};
+	for (const key in chains) {
+		if (!isRetryFallbackModelKey(key)) kept[key] = chains[key];
+	}
+	return kept;
 }
 
 /**
