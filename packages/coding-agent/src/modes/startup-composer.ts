@@ -70,9 +70,9 @@ export function beginStartupComposer(options: PrepaintComposerOptions = {}): voi
 	const cache = options.cache === false ? undefined : sharedComposerCache();
 	const cached = cache ? cache.read(cwd) : { preferences: undefined, theme: undefined, status: undefined };
 	const theme = { ...cached.theme, ...options.theme };
-	initThemeSync(theme.symbolPreset, theme.colorBlindMode, theme.darkTheme, theme.lightTheme);
+	initThemeSync(theme.symbolPreset, theme.colorBlindMode, theme.darkTheme ?? "nightglide-flight", theme.lightTheme);
 	setMagicKeywords(MAGIC_KEYWORDS);
-	const preferences = { ...COMPOSER_DEFAULTS, ...cached.preferences, ...options.preferences };
+	const preferences = { ...COMPOSER_DEFAULTS, composerShape: "nightglide" as const, ...cached.preferences, ...options.preferences };
 	const welcome: ComposerWelcomeUpdate = { version: options.version ?? "" };
 	const composer = new Composer({
 		terminal: options.terminal,

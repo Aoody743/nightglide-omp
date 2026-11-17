@@ -71,5 +71,5 @@ export function resolveComposerHint(ctx: ComposerHintContext): string | undefine
 		const resolved = hint.resolve(ctx);
 		if (resolved) return `${theme.fg("accent", resolved.key)} ${theme.fg("dim", theme.italic(resolved.label))}`;
 	}
-	return undefined;
+	return `${theme.fg("dim", "↵ 发送")}  ${theme.fg("dim", "esc 取消")}`;
 }

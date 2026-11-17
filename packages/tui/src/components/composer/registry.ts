@@ -3,12 +3,14 @@ import { borderlessComposerStyle } from "./borderless";
 import { boxComposerStyle } from "./box";
 import { claudeComposerStyle } from "./claude";
 import { fieldComposerStyle } from "./field";
+import { nightglideComposerStyle } from "./nightglide";
 import { piComposerStyle } from "./pi";
 import { railComposerStyle } from "./rail";
 import { ruleComposerStyle } from "./rule";
 import type { ComposerStyle, EditorBorderStyle } from "./types";
 
 const BUILTIN_COMPOSER_STYLES: Readonly<Record<string, ComposerStyle>> = {
+	nightglide: nightglideComposerStyle,
 	box: boxComposerStyle,
 	band: bandComposerStyle,
 	claude: claudeComposerStyle,

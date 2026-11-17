@@ -7,8 +7,13 @@ export type ComposerShape = string;
 /** Built-in composer choices and their shared settings/setup copy. */
 export const BUILTIN_COMPOSER_SHAPES = [
 	{
+		value: "nightglide",
+		label: "Nightglide Horizon (Default)",
+		description: "Horizon glide line above prompt with clean status dock, no heavy boxes",
+	},
+	{
 		value: "band",
-		label: "Status Band (Default)",
+		label: "Status Band",
 		description: "Flush soft-capped status band above a curved prompt, no frame",
 	},
 	{
