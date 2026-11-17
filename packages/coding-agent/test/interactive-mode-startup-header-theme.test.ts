@@ -94,7 +94,9 @@ describe("InteractiveMode startup header after the terminal reports a light back
 		});
 		themeModule.onTerminalAppearanceChange("light", {});
 		await handled.promise;
-		expect(themeModule.getCurrentThemeName()).toBe("light");
+		// Settings.init applies defaults after initTheme, so cfgThemeLight's
+		// default ("nightglide-cloudlight") re-maps the light appearance.
+		expect(themeModule.getCurrentThemeName()).toBe("nightglide-cloudlight");
 	}
 
 	function renderedLine(text: string): string {

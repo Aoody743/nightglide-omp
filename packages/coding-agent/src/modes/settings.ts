@@ -78,7 +78,7 @@ effect(cfgThemeDark, name => setAutoThemeMapping("dark", name));
 export const cfgThemeLight = register({
 	id: "theme.light",
 	type: "string",
-	default: "light",
+	default: "nightglide-cloudlight",
 	ui: {
 		tab: "appearance",
 		group: "Theme",
