@@ -349,6 +349,26 @@ function modelAdvisorBadge(ctx: SegmentContext): { icon: string; color: ThemeCol
 	return icon ? { icon, color } : undefined;
 }
 
+/**
+ * The model a retry fallback is actually serving (` ↩ provider/id`), or "" while
+ * the configured primary serves. Display-only sessions without serving-model
+ * attribution render nothing.
+ */
+function modelFallbackDisplay(ctx: SegmentContext): string {
+	const serving = ctx.session.servingModel;
+	if (!serving?.isFallback) return "";
+	return ` ↩ ${serving.modelIdentity ?? serving.selector}`;
+}
+
+/** Human-readable detail for the fallback indicator: which chain produced it. */
+function modelFallbackDetail(ctx: SegmentContext): string | undefined {
+	const serving = ctx.session.servingModel;
+	if (!serving?.isFallback) return undefined;
+	const state = ctx.session.activeRetryFallbackState;
+	if (!state) return undefined;
+	return `fallback from ${state.originalSelector} (${state.role} chain)`;
+}
+
 const modelSegment: StatusLineSegment = {
 	id: "model",
 	render(ctx) {
@@ -387,6 +407,11 @@ const modelSegment: StatusLineSegment = {
 		// warning-colored badge so past-the-limit service is never mistaken for normal.
 		const slowModeLabel = ctx.session.getAnthropicSlowModeLabel?.();
 		if (slowModeLabel) content += theme.fg("warning", `${theme.sep.dot}${slowModeLabel}`);
+
+		// Retry-fallback serving indicator: names the model actually producing
+		// work so a fallback is never mistaken for the configured primary.
+		const fallbackDisplay = modelFallbackDisplay(ctx);
+		if (fallbackDisplay) content += theme.fg("warning", fallbackDisplay);
 		return { content, visible: true };
 	},
 	describe(ctx) {
@@ -401,7 +426,14 @@ const modelSegment: StatusLineSegment = {
 		if (level !== undefined) spans.push(span(" · ", "dim"), span(level, thinkingLevelToken(level)));
 		const slowModeLabel = ctx.session.getAnthropicSlowModeLabel?.();
 		if (slowModeLabel) spans.push(span(`${theme.sep.dot}${slowModeLabel}`, "warning"));
-		return segView(spans, "model", slowModeLabel ? "warning" : undefined);
+		const fallbackDisplay = modelFallbackDisplay(ctx);
+		if (fallbackDisplay) {
+			spans.push(span(fallbackDisplay, "warning"));
+			const fallbackDetail = modelFallbackDetail(ctx);
+			if (fallbackDetail) spans.push(span(` ${fallbackDetail}`, "dim"));
+		}
+		const warning = Boolean(slowModeLabel) || Boolean(fallbackDisplay);
+		return segView(spans, "model", warning ? "warning" : undefined);
 	},
 };
 
@@ -1328,6 +1360,26 @@ const usageSegment: StatusLineSegment = {
 // Segment Registry
 // ═══════════════════════════════════════════════════════════════════════════
 
+/**
+ * Nightglide routing mode actually applied to the session (`local`, `balanced`,
+ * `performance`). Renders nothing for `manual` or when routing never ran — the
+ * segment only ever reports a mode the session is genuinely operating under,
+ * never a promise.
+ */
+const routingSegment: StatusLineSegment = {
+	id: "routing",
+	render(ctx) {
+		const mode = ctx.session.getNightglideRoutingMode?.();
+		if (!mode || mode === "manual") return { content: "", visible: false };
+		return { content: theme.fg("accent", `routing:${mode}`), visible: true };
+	},
+	describe(ctx) {
+		const mode = ctx.session.getNightglideRoutingMode?.();
+		if (!mode || mode === "manual") return null;
+		return segView([span(`routing:${mode}`, "accent")], "routing", "accent");
+	},
+};
+
 export const SEGMENTS: Record<StatusLineSegmentId, StatusLineSegment> = {
 	pi: piSegment,
 	status: statusSegment,
@@ -1357,6 +1409,7 @@ export const SEGMENTS: Record<StatusLineSegmentId, StatusLineSegment> = {
 	collab: collabSegment,
 	stream: streamSegment,
 	vim: vimSegment,
+	routing: routingSegment,
 };
 
 export function renderSegment(id: StatusLineSegmentId, ctx: SegmentContext): RenderedSegment {

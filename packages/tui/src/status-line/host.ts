@@ -117,6 +117,24 @@ export interface StatusLineSession {
 	 * `nextTokens` is the caller's current context token count, so the session need not recount it.
 	 */
 	getPromptCacheStatus?(nowMs: number, nextTokens?: number): PromptCacheStatus | undefined;
+	/**
+	 * Nightglide routing mode actually applied to this session; undefined when routing
+	 * never ran (manual mode, a resumed session, or a display-only session). The
+	 * `routing` segment renders only non-manual values.
+	 */
+	getNightglideRoutingMode?(): "manual" | "local" | "balanced" | "performance" | undefined;
+	/**
+	 * Model the session's produced work is attributed to (undefined on display-only
+	 * sessions). `isFallback` marks serving via retry-fallback routing rather than the
+	 * configured primary; the model segment appends a fallback indicator.
+	 */
+	servingModel?: { selector: string; modelIdentity?: string; isFallback: boolean } | undefined;
+	/**
+	 * The retry fallback currently armed for the session, if any: which chain role
+	 * produced the fallback and the primary selector it departed from. The model
+	 * segment uses it for the fallback indicator's detail text.
+	 */
+	activeRetryFallbackState?: { role: string; originalSelector: string; served?: boolean } | undefined;
 }
 
 export interface FooterSession {
