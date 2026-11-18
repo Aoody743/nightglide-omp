@@ -20,7 +20,15 @@ import { formatDuration, formatNumber, logger } from "@oh-my-pi/pi-utils";
 import chalk from "@oh-my-pi/pi-utils/chalk";
 import { LRUCache } from "@oh-my-pi/pi-utils/lru";
 import type { AssistantTextRenderer, AssistantTextRendering, AssistantThinkingRenderer } from "./extension-types";
-import { ensureThemeSync, getMarkdownTheme, getMarkdownThemeWithLinkTargets, getThemeEpoch, theme } from "../theme";
+import {
+	ensureThemeSync,
+	getMarkdownTheme,
+	getMarkdownThemeWithLinkTargets,
+	getThemeEpoch,
+	type Theme,
+	theme,
+} from "../theme";
+import type { ThemeColor } from "../theme/schema";
 import { card, col, elapsed, node, span, text } from "../native/describe";
 import { hasTranscriptActions, runTranscriptAction, runTurnAction, turnHoldEntries } from "./transcript-actions";
 import type { DescribeContext, NativeChild, NativeNode, NativeUiEvent } from "../native/node";
@@ -33,6 +41,14 @@ import { EMPTY_LINK_TARGETS, resolveImageOptions } from "../render/render-utils"
 import { WidthAwareText } from "../render";
 import { cachedPngConversion, convertImageToPngShared, imagePayloadKey } from "./image-loading";
 import { canonicalizeMessage, formatThinkingForDisplay, hasDisplayableThinking } from "./thinking-display";
+import {
+	activeThinkingEffort,
+	effortLadderBadgeToken,
+	effortLadderGlyph,
+	effortPulseFrameToken,
+	effortPulseFrames,
+	themeThinkingWord,
+} from "./effort-ladder";
 import { resolveAssistantErrorPresentation } from "./transcript-render-helpers";
 import { type CacheInvalidation, CacheInvalidationMarkerComponent } from "./cache-invalidation-marker";
 import { formatErrorBlock } from "../chrome/error-block";
@@ -62,6 +78,23 @@ function thoughtLabel(clock: { start: number; end?: number } | undefined): strin
 	if (clock?.end === undefined) return "Thought";
 	const ms = clock.end - clock.start;
 	return `Thought for ${ms < 60_000 ? `${Math.max(1, Math.round(ms / 1000))}s` : formatDuration(ms)}`;
+}
+
+/**
+ * The Effort Glow Ladder badge for a thinking head: `◎ high` — the rung's glyph
+ * and the level word in the rung's colors (dim on the quiet minimal/low rungs).
+ * The word reuses the symbol preset's own vocabulary ("◒ high" → `high`,
+ * "◑ med" → `med`) so the ladder never invents a second set of level words.
+ * Undefined when the ambient level shows no rung (off, unresolved auto,
+ * unknown): no mark rather than a guessed one.
+ */
+function effortHeadBadge(level: string | undefined): { text: string; token: ThemeColor } | undefined {
+	const glyph = effortLadderGlyph(level);
+	if (!glyph || !level) return undefined;
+	const token = effortLadderBadgeToken(level);
+	if (!token) return undefined;
+	const display = theme.thinking[level as keyof Theme["thinking"]] ?? level;
+	return { text: `${glyph} ${themeThinkingWord(display, level)}`, token };
 }
 
 type ThinkingContentBlock = Extract<AssistantMessage["content"][number], { type: "thinking" }>;
@@ -160,15 +193,16 @@ function resolveThinkingDisplay(block: ThinkingContentBlock, proseOnly: boolean)
 
 /**
  * Frames for the streaming "thinking" pulse rendered in place of a hidden
- * thinking block while the model is still producing it. A single fixed-width
- * starburst cycles through facets (✻ ✼ ❉ ❊ ✺ ✹ ✸ ✶) so the indicator animates
- * in place without shifting the line or the trailing speed badge. The dwell per
- * frame eases between {@link THINKING_DOTS_FRAME_MS_MIN} and
+ * thinking block while the model is still producing it. The frame set comes
+ * from {@link effortPulseFrames}: the reasoning-effort ladder escalates it from
+ * two quiet dots (minimal) through a starburst subsequence (medium) to the
+ * full ✻ ✼ ❉ ❊ ✺ ✹ ✸ ✶ revolution (high/xhigh, and the historical baseline
+ * when no level is published). Every glyph is single-column, so the indicator
+ * animates in place without shifting the line or the trailing speed badge. The
+ * dwell per frame eases between {@link THINKING_DOTS_FRAME_MS_MIN} and
  * {@link THINKING_DOTS_FRAME_MS_MAX} across each revolution (see
  * {@link AssistantMessageComponent.thinkingDotsFrameDelay}).
- */
-const THINKING_DOTS_FRAMES = ["✻", "✼", "❉", "❊", "✺", "✹", "✸", "✶"] as const;
-/**
+ *
  * Pulse cadence bounds (ms). Each frame's dwell eases between these on a
  * raised-cosine "breath" — quickest at the cycle start, slowest at its midpoint —
  * so the starburst accelerates and slows instead of ticking at one fixed rate.
@@ -777,9 +811,19 @@ export class AssistantMessageComponent extends Container {
 	}
 
 	#thinkingDotsLabel(): string {
-		const glyph = THINKING_DOTS_FRAMES[this.#thinkingDotsFrame % THINKING_DOTS_FRAMES.length] ?? "…";
-		const coloredGlyph = theme.fg("thinkingText", glyph);
+		const effort = activeThinkingEffort();
+		const frames = effortPulseFrames(effort);
+		const frameIndex = this.#thinkingDotsFrame % frames.length;
+		const glyph = frames[frameIndex] ?? "…";
+		// The frame color climbs the ladder with the effort: rung slot colors,
+		// xhigh alternating thinkingXhigh/accent per frame, the historical
+		// thinkingText when no level is published.
+		const coloredGlyph = theme.fg(effortPulseFrameToken(effort, frameIndex), glyph);
 		const thinkingLabel = theme.fg("muted", " Thinking");
+		// The ladder badge names the rung behind the color: `· Thinking · ◎ high`.
+		// Absent without a rung — no mark rather than a guessed one.
+		const badge = effortHeadBadge(effort);
+		const badgeSuffix = badge ? theme.fg("dim", " · ") + theme.fg(badge.token, badge.text) : "";
 		const rate = Math.min(SPEED_MAX, sharedSpeedTracker.getSpeed());
 		// The numeric badge ("<total> · <rate> toks/s") only renders while this block
 		// is genuinely streaming provider tokens. A block that has observed no token
@@ -788,7 +832,7 @@ export class AssistantMessageComponent extends Container {
 		// text label keeps the pulse descriptive for terminals and screen readers.
 		// The liveness flag also stops the session-wide gauge from leaking a previous
 		// turn's rate onto a fresh token-less block.
-		if (!this.#thinkingRateLive || rate < 0.05) return coloredGlyph + thinkingLabel;
+		if (!this.#thinkingRateLive || rate < 0.05) return coloredGlyph + thinkingLabel + badgeSuffix;
 		// Total provider tokens, dimmed, sit next to the pulse.
 		const totalSpan = this.#thinkingTokens > 0 ? theme.fg("dim", ` · ${formatNumber(this.#thinkingTokens)}`) : "";
 		// Speed badge color: dim gray at rest, brightening toward the theme accent as
@@ -799,7 +843,7 @@ export class AssistantMessageComponent extends Container {
 		const hex = lerpHex(theme.getColorHex("dim"), theme.getAccentColorHex(), ratio);
 		const rateText = ` · ${rate.toFixed(1)} toks/s`;
 		const rateSpan = theme.getColorMode() === "truecolor" ? chalk.hex(hex)(rateText) : theme.fg("muted", rateText);
-		return coloredGlyph + thinkingLabel + totalSpan + rateSpan;
+		return coloredGlyph + thinkingLabel + badgeSuffix + totalSpan + rateSpan;
 	}
 
 	#startThinkingAnimation(): void {
@@ -809,10 +853,12 @@ export class AssistantMessageComponent extends Container {
 	}
 
 	/** Eased dwell (ms) for the current pulse frame: a raised cosine over the
-	 *  8-frame cycle, continuous across the wrap, so the rotation breathes rather
-	 *  than advancing at a fixed interval. Scaled with `tui.spinnerInterval`. */
+	 *  active ladder frame cycle, continuous across the wrap, so the rotation
+	 *  breathes rather than advancing at a fixed interval. Scaled with
+	 *  `tui.spinnerInterval`. */
 	#thinkingDotsFrameDelay(): number {
-		const phase = (1 - Math.cos((2 * Math.PI * this.#thinkingDotsFrame) / THINKING_DOTS_FRAMES.length)) / 2;
+		const frames = effortPulseFrames(activeThinkingEffort());
+		const phase = (1 - Math.cos((2 * Math.PI * this.#thinkingDotsFrame) / frames.length)) / 2;
 		const dwell = THINKING_DOTS_FRAME_MS_MIN + (THINKING_DOTS_FRAME_MS_MAX - THINKING_DOTS_FRAME_MS_MIN) * phase;
 		return (dwell * spinnerInterval()) / DEFAULT_SPINNER_INTERVAL_MS;
 	}
@@ -832,8 +878,12 @@ export class AssistantMessageComponent extends Container {
 		}
 		const animated = spinnerAnimated();
 		// Spinners went static mid-pulse: settle on frame 0 and stop.
-		if (animated) this.#thinkingDotsFrame = (this.#thinkingDotsFrame + 1) % THINKING_DOTS_FRAMES.length;
-		else this.#thinkingDotsFrame = 0;
+		if (animated) {
+			const frames = effortPulseFrames(activeThinkingEffort());
+			this.#thinkingDotsFrame = (this.#thinkingDotsFrame + 1) % frames.length;
+		} else {
+			this.#thinkingDotsFrame = 0;
+		}
 		if (this.#thinkingDots.setText(this.#thinkingDotsLabel())) {
 			this.#onImageUpdate?.();
 		}
@@ -919,6 +969,8 @@ export class AssistantMessageComponent extends Container {
 			this.#nativeViewVersion,
 			rate,
 			media,
+			// The effort rung colors the thinking heads; a level switch re-describes.
+			activeThinkingEffort(),
 			getThemeEpoch(),
 		];
 		return this.#native.get(key, () => this.#describeMessage(tail, rate, media));
@@ -1039,19 +1091,29 @@ export class AssistantMessageComponent extends Container {
 					const tokens = thinkingLive ? this.#thinkingTokens : (clock?.tokens ?? 0);
 					const title = tokens > 0 ? `${formatNumber(tokens)} tokens` : undefined;
 					// Live: starburst · "Thinking…" · ticking timer · tok/s. Done: "Thought for 12s".
+					// The effort rung leads either head (`◎ high · Thinking…`): glyph and
+					// level word in rung colors — dim on the quiet minimal/low rungs —
+					// with the existing label muted after it. No rung, no mark.
+					const badge = effortHeadBadge(activeThinkingEffort());
+					const badgeSpans = badge ? [span(badge.text, badge.token), span(" · ", "dim")] : [];
 					const head = thinkingLive
 						? node(
 								"row",
 								{ gap: "sm", title },
 								[
 									node("spinner", { style: "starburst", role: "omp.thinking.spin" }),
-									text([span("Thinking…", "muted")]),
+									text([...badgeSpans, span("Thinking…", "muted")]),
 									elapsed(performance.now() - (this.#thinkingClock.get(index)?.start ?? performance.now())),
 									...(rate >= 0.05 ? [node("rate", { value: rate, unit: "tok/s" })] : []),
 								],
 								"head",
 							)
-						: node("text", { spans: [span(thoughtLabel(clock), "muted")], title }, undefined, "head");
+						: node(
+								"text",
+								{ spans: [...badgeSpans, span(thoughtLabel(clock), "muted")], title },
+								undefined,
+								"head",
+							);
 					const body = markdown(`k${index}`, "body", display.text, streaming);
 					children.push(
 						node(

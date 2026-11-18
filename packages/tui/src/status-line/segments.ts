@@ -16,6 +16,7 @@ import { SYMBOL_PRESETS } from "../theme/symbols";
 import { shortenPath, TRUNCATE_LENGTHS, truncateToWidth } from "../render/render-utils";
 import { fileHyperlink } from "../render/hyperlink";
 import { getSessionAccentAnsi, getSessionAccentHex } from "../theme/session-color";
+import { effortLadderGlyph, effortLadderToken, setActiveThinkingEffort } from "../chat/effort-ladder";
 import { summarizeLoopCondition } from "./loop";
 import { formatMetric } from "../components/metric";
 import { formatBillingSummary } from "./metrics";
@@ -304,23 +305,69 @@ export function thinkingLevelWord(
 	return state.thinkingLevel ?? ThinkingLevel.Off;
 }
 
-/** Thinking-level display ("◉ xhigh", "⟳ auto", …), or "" when hidden or unsupported. */
-function modelThinkingDisplay(ctx: SegmentContext): string {
+/**
+ * Publish the viewed session's resolved thinking level as the ambient effort
+ * the transcript reads (`chat/effort-ladder`): the thinking pulse and the
+ * thinking heads key their frame sets and rung colors off it, and the status
+ * line re-publishes it every frame from real session state, so the pulse is
+ * always in lockstep with the level the user set. Preview/test fixtures
+ * (deterministic `now`/`hostname`) must not leak their stand-in state into
+ * live components, so they skip the publish.
+ */
+function publishAmbientEffort(ctx: SegmentContext): void {
+	if (ctx.now !== undefined || ctx.hostname !== undefined) return;
+	setActiveThinkingEffort(thinkingLevelWord(ctx.session));
+}
+
+/** Resolved parts of a tier display: the rung's level, glyph, and bare word. */
+interface ThinkingTierParts {
+	level: string;
+	glyph: string;
+	word: string;
+}
+
+/**
+ * The ladder parts of a resolved level: the rung glyph (`·◦○◎✦`) and the word
+ * without the theme symbol's own leading glyph ("◒ high" → glyph `◎`, word
+ * `high`). Undefined when the level shows no rung (off, unresolved auto,
+ * unknown) or the theme's display is not a glyph+word pair (ascii bracket
+ * words) — those keep their existing display untouched.
+ */
+function thinkingTierParts(level: string): ThinkingTierParts | undefined {
+	const glyph = effortLadderGlyph(level);
+	if (!glyph) return undefined;
+	const display = theme.thinking[level as keyof Theme["thinking"]] ?? level;
+	const space = display.indexOf(" ");
+	if (space === -1) return undefined;
+	return { level, glyph, word: display.slice(space + 1) };
+}
+
+/**
+ * Thinking-level display parts, or `{ display: "" }` when hidden or
+ * unsupported. A resolved rung rewrites the display to its ladder glyph
+ * (`◎ xhigh`) and reports the rung, so the renderer paints the glyph in the
+ * rung's slot color while the level word recedes to dim.
+ */
+function modelThinkingDisplay(ctx: SegmentContext): { display: string; parts: ThinkingTierParts | undefined } {
 	const state = ctx.session.state;
 	const opts = ctx.options.model ?? {};
-	if (opts.showThinkingLevel === false || !state.model?.thinking) return "";
+	if (opts.showThinkingLevel === false || !state.model?.thinking) return { display: "", parts: undefined };
 	if (ctx.session.isAutoThinking) {
 		// Pending (no turn classified yet / classifying) shows a symbol-theme
-		// question-box marker; once resolved it shows `<level>`.
+		// question-box marker; once resolved it shows the rung glyph + `<level>`.
 		const resolved = ctx.session.autoResolvedThinkingLevel();
-		return resolved
-			? (theme.thinking[resolved as keyof Theme["thinking"]] ?? resolved)
-			: `${theme.thinking.autoPending} auto`;
+		if (!resolved) return { display: `${theme.thinking.autoPending} auto`, parts: undefined };
+		const parts = thinkingTierParts(resolved);
+		return parts
+			? { display: `${parts.glyph} ${parts.word}`, parts }
+			: { display: theme.thinking[resolved as keyof Theme["thinking"]] ?? resolved, parts: undefined };
 	}
 	const level = state.thinkingLevel ?? ThinkingLevel.Off;
-	return level === ThinkingLevel.Off
-		? `${theme.status.disabled} off`
-		: (theme.thinking[level as keyof Theme["thinking"]] ?? level);
+	if (level === ThinkingLevel.Off) return { display: `${theme.status.disabled} off`, parts: undefined };
+	const parts = thinkingTierParts(level);
+	return parts
+		? { display: `${parts.glyph} ${parts.word}`, parts }
+		: { display: theme.thinking[level as keyof Theme["thinking"]] ?? level, parts: undefined };
 }
 
 /**
@@ -371,13 +418,16 @@ function modelFallbackDetail(ctx: SegmentContext): string | undefined {
 const modelSegment: StatusLineSegment = {
 	id: "model",
 	render(ctx) {
+		// Publish the viewed session's effort so the transcript's thinking pulse
+		// and heads track the level this segment displays (production only).
+		publishAmbientEffort(ctx);
 		const modelName = modelDisplayName(ctx);
-		const thinkingDisplay = modelThinkingDisplay(ctx);
+		const thinking = modelThinkingDisplay(ctx);
 
 		// Compact mode swaps the model icon for the thinking-level glyph and drops
 		// the " · <level>" tail, keeping the level visible as a single icon.
-		const compact = ctx.compactThinkingLevel && thinkingDisplay !== "";
-		const modelIcon = compact ? leadingGlyph(thinkingDisplay) : theme.icon.model;
+		const compact = ctx.compactThinkingLevel && thinking.display !== "";
+		const modelIcon = compact ? leadingGlyph(thinking.display) : theme.icon.model;
 
 		// Fast-mode icon and thinking-level suffix trail the model name and are
 		// colored together with it as `statusLineModel`. The advisor symbol sits
@@ -388,8 +438,18 @@ const modelSegment: StatusLineSegment = {
 		if (ctx.session.isFastModeActive() && theme.icon.fast) {
 			tail += ` ${theme.icon.fast}`;
 		}
-		if (!compact && thinkingDisplay) {
-			tail += `${theme.sep.dot}${thinkingDisplay}`;
+		if (!compact && thinking.display) {
+			// The rung glyph glows in its slot color inside the dim tail —
+			// wrapForeground re-applies the outer dim after the inner reset — while
+			// the level word recedes to dim so the model name stays the primary
+			// read. Displays without a rung (off, pending auto, ascii bracket
+			// words) stay all-dim exactly as before.
+			const rungToken = thinking.parts ? effortLadderToken(thinking.parts.level) : undefined;
+			const display =
+				rungToken && thinking.parts
+					? `${theme.fg(rungToken, thinking.parts.glyph)} ${thinking.parts.word}`
+					: thinking.display;
+			tail += `${theme.sep.dot}${display}`;
 		}
 
 		// `statusLineModel` is aliased to `accent` in many themes, so the badge
@@ -416,6 +476,8 @@ const modelSegment: StatusLineSegment = {
 		return { content, visible: true };
 	},
 	describe(ctx) {
+		// The native host reads the same ambient publish (production only).
+		publishAmbientEffort(ctx);
 		// Name carries the accent; the fast icon and the thinking level word
 		// recede to dim after a quiet separator — the terminal draws the icon.
 		const token = accentToken(ctx, "statusLineModel");
@@ -424,7 +486,18 @@ const modelSegment: StatusLineSegment = {
 		if (advisor) spans.push(span(` ${advisor.icon}`, advisor.color));
 		if (ctx.session.isFastModeActive() && theme.icon.fast) spans.push(span(` ${theme.icon.fast}`, "dim"));
 		const level = ctx.options.model?.showThinkingLevel === false ? undefined : thinkingLevelWord(ctx.session);
-		if (level !== undefined) spans.push(span(" · ", "dim"), span(level, "dim"));
+		if (level !== undefined) {
+			// The rung glyph carries its slot color beside the dim level word;
+			// levels without a rung (off, unresolved auto) keep the all-dim word.
+			const glyph = effortLadderGlyph(level);
+			const rungToken = effortLadderToken(level);
+			spans.push(span(" · ", "dim"));
+			if (glyph && rungToken) {
+				spans.push(span(glyph, rungToken), span(` ${level}`, "dim"));
+			} else {
+				spans.push(span(level, "dim"));
+			}
+		}
 		const slowModeLabel = ctx.session.getAnthropicSlowModeLabel?.();
 		if (slowModeLabel) spans.push(span(`${theme.sep.dot}${slowModeLabel}`, "warning"));
 		const fallbackDisplay = modelFallbackDisplay(ctx);

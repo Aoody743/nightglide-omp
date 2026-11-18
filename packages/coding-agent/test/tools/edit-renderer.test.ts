@@ -374,13 +374,16 @@ describe("editToolRenderer", () => {
 			{ file_path: "src/example.ts" },
 		);
 
+		// Both widths sit above the side-by-side threshold (120): a resize within
+		// the same layout mode reuses the colored diff; only crossing the mode
+		// boundary would re-render it.
 		component.render(160);
-		component.render(120);
+		component.render(140);
 		expect(renderDiffCalls).toBe(1);
 		expect(statsColorCalls).toBe(1);
 
 		options.expanded = true;
-		component.render(120);
+		component.render(140);
 		expect(renderDiffCalls).toBe(2);
 		expect(statsColorCalls).toBe(1);
 	});
@@ -847,5 +850,86 @@ describe("editToolRenderer diff line wrapping", () => {
 		expect(bodyRows.length).toBeGreaterThanOrEqual(2);
 		expect(bodyRows[0]).toMatch(/^│123\| /);
 		for (const row of bodyRows.slice(1)) expect(row).not.toMatch(/^│\s*\|/);
+	});
+});
+
+describe("editToolRenderer side-by-side diff", () => {
+	// The framed card passes its inner width (frame width - 2) to the diff
+	// renderer; ≥ 120 flips the diff to the two-column side-by-side layout.
+	const replacementDiff =
+		" 4|ctx before\n-5|const oldValue = compute(a, b);\n+5|const newValue = compute(a, c);\n 6|ctx after";
+
+	async function renderEditResult(diff: string, width: number, expanded = false): Promise<string[]> {
+		const uiTheme = await getUiTheme();
+		return editToolRenderer
+			.renderResult(
+				{
+					content: [{ type: "text", text: "Updated demo.ts" }],
+					details: { diff, op: "update", path: "demo.ts" },
+				},
+				{ expanded, isPartial: false, renderContext: { editMode: "hashline" } },
+				uiTheme,
+				{ file_path: "demo.ts" },
+			)
+			.render(width)
+			.map(row => Bun.stripANSI(row));
+	}
+
+	it("pairs old and new columns at ≥120-column frames and keeps the unified view below", async () => {
+		const wideRows = await renderEditResult(replacementDiff, 122);
+		const widePairRows = wideRows.filter(row => row.includes("const oldValue"));
+		expect(widePairRows).toHaveLength(1);
+		// Old and new share one physical row with a divider between them.
+		expect(widePairRows[0]).toContain("const newValue");
+		expect(widePairRows[0]).toContain("-5│");
+		expect(widePairRows[0]).toContain("+5│");
+		for (const row of wideRows) expect(visibleWidth(row)).toBeLessThanOrEqual(122);
+
+		const narrowRows = await renderEditResult(replacementDiff, 100);
+		const narrowOldRows = narrowRows.filter(row => row.includes("const oldValue"));
+		expect(narrowOldRows).toHaveLength(1);
+		expect(narrowOldRows[0]).not.toContain("const newValue");
+	});
+
+	it("counts collapsed side-by-side rows as row pairs with unchanged hidden-line accounting", async () => {
+		const pairs = 12;
+		const diff = [
+			...Array.from({ length: pairs }, (_, k) => `-${k + 1}|old line ${k + 1}`),
+			...Array.from({ length: pairs }, (_, k) => `+${k + 1}|new line ${k + 1}`),
+		].join("\n");
+
+		// 24 raw lines in one hunk fit both collapse budgets: the side-by-side
+		// collapsed body is exactly one row per pair, nothing hidden.
+		const collapsed = (await renderEditResult(diff, 122)).join("\n");
+		const pairRows = collapsed.split("\n").filter(row => row.includes("old line") && row.includes("new line"));
+		expect(pairRows).toHaveLength(pairs);
+		expect(collapsed).not.toContain("more lines");
+		expect(collapsed).toContain("old line 12");
+		expect(collapsed).toContain("new line 12");
+
+		// Expanding reveals the same pairing (no truncation to lift).
+		const expanded = (await renderEditResult(diff, 122, true)).join("\n");
+		expect(expanded.split("\n").filter(row => row.includes("old line") && row.includes("new line"))).toHaveLength(
+			pairs,
+		);
+	});
+
+	it("reports the unified hidden-line counts when a side-by-side diff overflows the collapse budget", async () => {
+		const totalPairs = 30;
+		const diff = [
+			...Array.from({ length: totalPairs }, (_, k) => `-${k + 1}|old line ${k + 1}`),
+			...Array.from({ length: totalPairs }, (_, k) => `+${k + 1}|new line ${k + 1}`),
+		].join("\n");
+
+		// The raw 60-line hunk is cut at 40 raw lines (30 removals + the first 10
+		// additions) — 30 pair rows — and the footer counts the 20 logical lines
+		// hidden after the cut.
+		const collapsed = (await renderEditResult(diff, 122)).join("\n");
+		const bodyRows = collapsed.split("\n").filter(row => row.includes("old line") || row.includes("new line"));
+		expect(bodyRows).toHaveLength(30);
+		expect(bodyRows.filter(row => row.includes("new line"))).toHaveLength(10);
+		expect(collapsed).toContain("20 more lines");
+		expect(collapsed).not.toContain("old line 31");
+		expect(collapsed).not.toContain("new line 11");
 	});
 });

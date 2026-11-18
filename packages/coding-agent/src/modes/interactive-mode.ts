@@ -306,6 +306,7 @@ import { DynamicBorder } from "@oh-my-pi/pi-tui/chrome/dynamic-border";
 import { EditorTopGap } from "@oh-my-pi/pi-tui/prompt/editor-top-gap";
 import type { VersionUpdate } from "@oh-my-pi/pi-tui/prompt/welcome";
 import { ErrorBannerComponent } from "@oh-my-pi/pi-tui/overlays/error-banner";
+import { ToastComponent } from "@oh-my-pi/pi-tui/overlays/toast";
 import type { EvalExecutionComponent } from "@oh-my-pi/pi-tui/chat/eval-execution";
 import type { HookEditorComponent } from "@oh-my-pi/pi-tui/overlays/hook-editor";
 import type { HookInputComponent } from "@oh-my-pi/pi-tui/overlays/hook-input";
@@ -375,6 +376,7 @@ import { clearMermaidCache } from "@oh-my-pi/pi-tui/theme/mermaid-cache";
 import { type ShimmerPalette, shimmerEnabled, shimmerText } from "@oh-my-pi/pi-tui/theme/shimmer";
 import type { Theme } from "@oh-my-pi/pi-tui/theme";
 import {
+	getCurrentThemeName,
 	getEditorTheme,
 	getMarkdownTheme,
 	onTerminalAppearanceChange,
@@ -2026,6 +2028,9 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.#clearJudgmentBatchProgress();
 		this.#cancelModelCycleClearTimer();
 		this.modelCycleContainer.disposeChildren();
+		// Toasts describe the view they appeared on (a fallback, a theme commit);
+		// a session switch would leave them confirming someone else's state.
+		this.#toastStack.clear();
 		this.deferredCommandContainer.disposeChildren();
 		this.#pendingCommandOutput = [];
 		this.#pendingCommandOutputSessionId = undefined;
@@ -2040,6 +2045,14 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.pendingTools.clear();
 	}
 	readonly #uiHelpers: UiHelpers;
+	/**
+	 * Quiet toast notices above the editor (`showToast`: retry-fallback
+	 * confirmations, theme commits). Mounted as self-clearing chrome beside the
+	 * model-cycle track — never transcript history, never focused, and empty
+	 * (the resting state) renders no rows, so the composer's geometry only moves
+	 * while a toast actually lives and only borrows held-back chrome rows.
+	 */
+	readonly #toastStack: ToastComponent;
 	#sttController: STTController | undefined;
 	#dictationStarting = false;
 	#micCursor: MicCursor | undefined;
@@ -2237,6 +2250,7 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.cleanseContainer = new AnchoredLiveContainer();
 		this.errorBannerContainer = new AnchoredLiveContainer();
 		this.modelCycleContainer = new AnchoredLiveContainer();
+		this.#toastStack = new ToastComponent({ requestRender: () => this.ui.requestRender() });
 		this.deferredCommandContainer = new AnchoredLiveContainer();
 		this.reportContainer = new AnchoredLiveContainer();
 		if (eventBus) {
@@ -2565,6 +2579,7 @@ export class InteractiveMode implements InteractiveModeContext {
 				this.cleanseContainer,
 				this.errorBannerContainer,
 				this.modelCycleContainer,
+				this.#toastStack,
 				this.deferredCommandContainer,
 				// Judge batches and automatic downloads stay editor-anchored and update
 				// independently of transcript output, directly above the working/throughput/title row.
@@ -2600,12 +2615,13 @@ export class InteractiveMode implements InteractiveModeContext {
 					this.errorBannerContainer,
 				],
 				// HUDs that clear themselves on a timer or registry change (todos,
-				// background subagents, model cycle, progress). Their first paint can be
+				// background subagents, model cycle, toasts, progress). Their first paint can be
 				// their tallest (a restored todo list on resume), so it is never a baseline.
 				selfClearingChrome: [
 					this.todoContainer,
 					this.subagentContainer,
 					this.modelCycleContainer,
+					this.#toastStack,
 					this.progressHudContainer,
 				],
 				// The working row, the idle status line that replaces it, and the
@@ -2624,6 +2640,7 @@ export class InteractiveMode implements InteractiveModeContext {
 					this.cleanseContainer,
 					this.errorBannerContainer,
 					this.modelCycleContainer,
+					this.#toastStack,
 					this.deferredCommandContainer,
 					this.progressHudContainer,
 					this.statusContainer,
@@ -2984,6 +3001,11 @@ export class InteractiveMode implements InteractiveModeContext {
 				this.statusLine.invalidate();
 				this.ui.invalidate();
 				this.updateEditorBorderColor();
+				// Only a committed switch toasts. `previewTheme` runs through the same
+				// notification with `ephemeral` set (settings-selector browsing, symbol
+				// presets, color-blind mode, live theme-file reloads), so previewing a
+				// palette never claims the user picked it.
+				if (!event.ephemeral) this.showToast(`主题:${getCurrentThemeName()}`);
 				if (event.ephemeral || isInsideTerminalMultiplexer()) {
 					// Theme previews and multiplexer panes use a non-destructive viewport
 					// repaint rather than replacing already emitted history.
@@ -8219,6 +8241,9 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.#downloadActivityHud.dispose();
 		this.#cancelTodoAutoClearTimer();
 		this.#cancelObserverUiSyncTimer();
+		// Release toast deadlines and the fade-frame timer (and its motion
+		// listener) with the rest of the mode's transient timers.
+		this.#toastStack.dispose();
 		this.#cancelGoalContinuation();
 		clearInterval(this.#jobsSheetTimer);
 		this.#jobsSheetTimer = undefined;
@@ -8845,6 +8870,17 @@ export class InteractiveMode implements InteractiveModeContext {
 
 	showStatus(message: string, options?: ShowStatusOptions): void {
 		this.#uiHelpers.showStatus(message, options);
+	}
+
+	/**
+	 * A quiet toast above the composer (`已回退到 …`, `主题: …`): one accent-marked
+	 * line that leaves on its own, never enters the transcript, and never moves
+	 * the editor. Companion to `showStatus`, which keeps writing the durable
+	 * ANSI transcript notice; a toast is the in-place reminder for outcomes the
+	 * user would otherwise only find by scrolling.
+	 */
+	showToast(message: string): void {
+		this.#toastStack.push(message);
 	}
 
 	showError(message: string): void {

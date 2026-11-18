@@ -198,8 +198,10 @@ describe("ModelHub", () => {
 			const lines = hub.render(36).map(line => stripVTControlCharacters(line));
 
 			expect(lines[0]).toStartWith("╭─ Models ───────────┬");
-			// Body row (not the sidebar's "● github-…" entry) keeps the provider-qualified name.
-			expect(lines.some(line => /│ {2,}github-/.test(line))).toBe(true);
+			// Body row (not the sidebar's "● github-…" providerMark entry) keeps the
+			// provider-qualified name: the selected row carries the cursor glyph, an
+			// unfocused legacy shape keeps the bare two-space prefix.
+			expect(lines.some(line => /│ (?:(?:[^\s●]) | {2,})github-/.test(line))).toBe(true);
 		});
 	});
 

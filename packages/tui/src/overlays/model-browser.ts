@@ -979,6 +979,8 @@ const PERF_TPS_MIN_WIDTH = 76;
 const PERF_FULL_MIN_WIDTH = 96;
 /** Narrowest model-name cell retained before cost and context are dropped. */
 const MIN_NAME_WIDTH = 16;
+/** Narrowest search field kept before the header's right-aligned count is dropped (narrow widths shed the right side first). */
+const HEADER_COUNT_MIN_INPUT = 24;
 
 /** Total width of present metadata columns, joined by two-space gaps. */
 function metaColumnsWidth(widths: readonly number[]): number {
@@ -1011,6 +1013,27 @@ interface MetricCells {
 	ctxWidth: number;
 	cost: string;
 	costWidth: number;
+}
+
+/**
+ * One styled span of the selection's detail head, expressed in theme slots so
+ * the legacy frame path and the native describe path render the same
+ * hierarchy: values in the text slot, unit labels and flags dim, prose muted,
+ * fact separators in the borderMuted slot (output-block's settled separator).
+ */
+interface DetailSpan {
+	text: string;
+	/** Theme slot; `strong` is the text slot plus bold; unset renders plain. */
+	tone?: ThemeColor | "strong";
+}
+
+/** Separator between detail facts: a borderMuted dot, quiet like a settled card's bar. */
+const DETAIL_FACT_SEPARATOR: DetailSpan = { text: " · ", tone: "borderMuted" };
+
+/** Render one detail span to ANSI for the legacy frame path. */
+function detailSpanAnsi(part: DetailSpan): string {
+	if (part.tone === "strong") return theme.fg("text", theme.bold(part.text));
+	return part.tone ? theme.fg(part.tone, part.text) : part.text;
 }
 
 /**
@@ -1210,6 +1233,13 @@ export class ModelBrowser implements Component {
 
 	get visibleCount(): number {
 		return this.#menu.visibleItems.length;
+	}
+
+	/** Selectable rows currently visible (the header's dim count; the recent/role separator is not a model). */
+	#selectableVisibleCount(): number {
+		let count = 0;
+		for (const item of this.#menu.visibleItems) if (item.id !== "separator") count++;
+		return count;
 	}
 
 	/**
@@ -1580,13 +1610,16 @@ export class ModelBrowser implements Component {
 			return `  ${line}  `;
 		}
 		const overContext = this.isOverContext(item);
-		const prefix = selected && this.#focused ? `${theme.fg("accent", theme.nav.cursor)} ` : "  ";
+		// Keyboard selection: accent cursor while the pane owns the arrows, dim
+		// when another pane does (setFocused), so an unfocused list never shouts.
+		const cursor = selected ? theme.fg(this.#focused ? "accent" : "dim", theme.nav.cursor) : undefined;
+		const prefix = cursor !== undefined ? `${cursor} ` : "  ";
 		const providerPrefix = this.#showProvider ? theme.fg("dim", `${item.provider}/`) : "";
 		const name = item.labelColor
 			? theme.fg(item.labelColor, item.id)
-			: selected
+			: selected && this.#focused
 				? theme.fg("accent", item.id)
-				: item.id;
+				: theme.fg("text", item.id);
 		const currentMark =
 			item.selector === this.#currentSelector ? ` ${theme.fg("success", theme.status.enabled)}` : "";
 		const overLimit = overContext
@@ -1612,9 +1645,12 @@ export class ModelBrowser implements Component {
 			const plainPrefix = Bun.stripANSI(prefix);
 			line = `${prefix}${theme.fg("dim", Bun.stripANSI(line).slice(plainPrefix.length))}`;
 		}
-		// The bg band is reserved for the mouse: it marks hover, nothing else.
-		// Keyboard selection is the cursor glyph + accent name.
-		if (hovered) {
+		// The selectedBg band marks the focused keyboard selection and the mouse
+		// hover; an unfocused pane keeps only the dim cursor (see setFocused).
+		// The row is padded out first so the band spans the full row width.
+		if ((selected && this.#focused) || hovered) {
+			const rowWidth = visibleWidth(line);
+			if (rowWidth < width) line += " ".repeat(width - rowWidth);
 			line = theme.bg("selectedBg", line);
 		}
 		return line;
@@ -1625,34 +1661,13 @@ export class ModelBrowser implements Component {
 		if (!selected) return ["", ""];
 		const model = selected.model;
 
-		const facts: string[] = [model.name];
-		// Upstream badges sit next to the name; the provider blurb goes last so
-		// width truncation eats prose before context, cost, or perf facts.
-		if (model.isNew) facts.push("new");
-		if (model.isBeta) facts.push("beta");
-		if (model.isRecommended) facts.push("recommended");
-		if (model.contextWindow) facts.push(`${formatNumber(model.contextWindow).toLowerCase()} ctx`);
-		if (model.maxTokens) facts.push(`${formatNumber(model.maxTokens).toLowerCase()} out`);
-		facts.push(formatCostDetail(model));
-		if (model.reasoning) facts.push("reasoning");
-		if (model.input.includes("image")) facts.push("vision");
-		const intelligence = formatIntelligence(model);
-		if (intelligence) facts.push(intelligence);
-		const measured = this.#perfFor(selected);
-		if (measured) {
-			facts.push(`~${formatTps(measured.perf.tps)}${measured.tier ? ` ${measured.tier}` : ""}`);
-			if (measured.perf.ttftMs !== null) facts.push(`${formatTtft(measured.perf.ttftMs)} ttft`);
-		} else if (model.tps != null && Number.isFinite(model.tps) && model.tps > 0) {
-			facts.push(`~${formatTps(model.tps)}`);
-		}
-		// Last fact before prose, so narrow widths cut it before capability and perf facts.
-		const nextCredits = nextCreditRateNote(model);
-		if (nextCredits) facts.push(nextCredits);
-		if (model.description) {
-			const description = formatDescription(model.description);
-			if (description) facts.push(description);
-		}
-		const line1 = truncateToWidth(theme.fg("muted", `  ${facts.join(" · ")}`), width);
+		// Detail hierarchy (output-block's three-state language): the model name
+		// reads at text+bold, values at text, unit labels and flags dim, prose
+		// muted, and the fact separators sit in the borderMuted slot. The
+		// provider blurb goes last so width truncation eats prose before
+		// context, cost, or perf facts.
+		const spans = this.#detailSpans(selected, { name: true, badges: true, description: true });
+		const line1 = truncateToWidth(`  ${spans.map(detailSpanAnsi).join("")}`, width);
 
 		if (this.isOverContext(selected)) {
 			const warning = `  ${theme.status.disabled} context ${formatNumber(this.#currentContextTokens).toLowerCase()} exceeds ${formatNumber(model.contextWindow ?? 0).toLowerCase()} limit · compacts with current model, then switches`;
@@ -1674,17 +1689,132 @@ export class ModelBrowser implements Component {
 		};
 		for (const role of MODEL_ROLE_IDS) pushRole(role);
 		for (const role in this.#roles) pushRole(role);
-		const line2 = chips.length > 0 ? truncateToWidth(`  ${chips.join(theme.fg("dim", " · "))}`, width) : "";
+		const line2 = chips.length > 0 ? truncateToWidth(`  ${chips.join(theme.fg("borderMuted", " · "))}`, width) : "";
 		return [line1, line2];
+	}
+
+	/**
+	 * The selection's detail head as slot-styled spans, shared by the legacy
+	 * frame path (`#detailLines`) and the native describe path
+	 * (`#describeDetail`). One fact per group; within a fact the value rides
+	 * the text slot and its trailing unit label dims. `name` and `badges` are
+	 * legacy-only (the native head row shows them as its title and badge
+	 * nodes), and `description` stays a separate wrapping node on the native
+	 * path.
+	 */
+	#detailSpans(
+		selected: ModelBrowserItem,
+		options: { name?: boolean; badges?: boolean; description?: boolean } = {},
+	): DetailSpan[] {
+		const model = selected.model;
+		const withName = options.name ?? false;
+		const withBadges = options.badges ?? false;
+		const withDescription = options.description ?? false;
+		const facts: DetailSpan[][] = [];
+		if (withName) facts.push([{ text: model.name, tone: "strong" }]);
+		if (withBadges) {
+			if (model.isNew) facts.push([{ text: "new", tone: "dim" }]);
+			if (model.isBeta) facts.push([{ text: "beta", tone: "dim" }]);
+			if (model.isRecommended) facts.push([{ text: "recommended", tone: "dim" }]);
+		}
+		if (model.contextWindow) {
+			facts.push([
+				{ text: formatNumber(model.contextWindow).toLowerCase(), tone: "text" },
+				{ text: " ctx", tone: "dim" },
+			]);
+		}
+		if (model.maxTokens) {
+			facts.push([
+				{ text: formatNumber(model.maxTokens).toLowerCase(), tone: "text" },
+				{ text: " out", tone: "dim" },
+			]);
+		}
+		const declared = declaredPricingStatus(model);
+		if (declared !== undefined) {
+			facts.push([{ text: PRICING_STATUS_LABELS[declared].detail, tone: "text" }]);
+		} else if (isFreeModel(model)) {
+			// Mirror formatCostDetail: zero-cost models price as "free", and a
+			// missing cost card must never reach getEffectiveTokenCost.
+			facts.push([{ text: "free", tone: "text" }, { text: " per M", tone: "dim" }]);
+		} else {
+			const cost = getEffectiveTokenCost(model.cost);
+			facts.push([
+				{
+					text: withCreditBadge(model, `$${formatCostLeg(cost.input)}/${formatCostLeg(cost.output)}`),
+					tone: "text",
+				},
+				{ text: " per M", tone: "dim" },
+			]);
+		}
+		if (model.reasoning) facts.push([{ text: "reasoning", tone: "dim" }]);
+		if (model.input.includes("image")) facts.push([{ text: "vision", tone: "dim" }]);
+		if (model.int != null && Number.isFinite(model.int)) {
+			facts.push([
+				{ text: theme.symbol("icon.intelligence"), tone: "dim" },
+				{ text: ` ${Math.round(model.int)}`, tone: "text" },
+			]);
+		}
+		const measured = this.#perfFor(selected);
+		if (measured) {
+			const speed: DetailSpan[] = [{ text: `~${formatTps(measured.perf.tps)}`, tone: "text" }];
+			if (measured.tier) speed.push({ text: ` ${measured.tier}`, tone: "dim" });
+			facts.push(speed);
+			if (measured.perf.ttftMs !== null) {
+				facts.push([
+					{ text: formatTtft(measured.perf.ttftMs), tone: "text" },
+					{ text: " ttft", tone: "dim" },
+				]);
+			}
+		} else if (model.tps != null && Number.isFinite(model.tps) && model.tps > 0) {
+			facts.push([{ text: `~${formatTps(model.tps)}`, tone: "text" }]);
+		}
+		// Last fact before prose, so narrow widths cut it before capability and perf facts.
+		const nextCredits = nextCreditRateNote(model);
+		if (nextCredits) {
+			const spaceAt = nextCredits.indexOf(" ");
+			facts.push(
+				spaceAt > 0
+					? [
+							{ text: nextCredits.slice(0, spaceAt), tone: "text" },
+							{ text: ` ${nextCredits.slice(spaceAt + 1)}`, tone: "dim" },
+						]
+					: [{ text: nextCredits, tone: "text" }],
+			);
+		}
+		if (withDescription) {
+			const description = model.description ? formatDescription(model.description) : "";
+			if (description) facts.push([{ text: description, tone: "muted" }]);
+		}
+		const spans: DetailSpan[] = [];
+		for (const fact of facts) {
+			if (spans.length > 0) spans.push(DETAIL_FACT_SEPARATOR);
+			spans.push(...fact);
+		}
+		return spans;
 	}
 
 	render(width: number): string[] {
 		this.#syncCreditClock();
 		const lines: string[] = [];
 
-		const searchIcon = theme.fg("accent", theme.symbol("icon.search"));
-		const inputWidth = Math.max(4, width - visibleWidth(theme.symbol("icon.search")) - 2);
-		lines.push(` ${searchIcon} ${this.#searchInput.render(inputWidth)[0] ?? ""}`);
+		// Quiet header: the search field carries the row, and a dim `N models`
+		// count rides the right edge. Narrow widths shed the right side first
+		// (the welcome nav-line policy), keeping the field itself searchable.
+		const searchGlyph = theme.symbol("icon.search");
+		const searchIcon = theme.fg("accent", searchGlyph);
+		const iconWidth = visibleWidth(searchGlyph);
+		const countLabel = this.#selectableVisibleCount();
+		const countText = `${countLabel} ${countLabel === 1 ? "model" : "models"}`;
+		const countWidth = visibleWidth(countText);
+		let inputWidth = width - iconWidth - 2 - countWidth - 2;
+		let countPart = "";
+		if (inputWidth >= HEADER_COUNT_MIN_INPUT) {
+			countPart = `  ${theme.fg("dim", countText)}`;
+		} else {
+			inputWidth = width - iconWidth - 2;
+		}
+		inputWidth = Math.max(4, inputWidth);
+		lines.push(` ${searchIcon} ${this.#searchInput.render(inputWidth)[0] ?? ""}${countPart}`);
 		lines.push("");
 
 		const total = this.#menu.visibleItems.length;
@@ -1937,26 +2067,14 @@ export class ModelBrowser implements Component {
 			if (model.isRecommended) head.push(node("badge", { text: "recommended", tone: "success" }));
 			children.push(row(head, { gap: "sm", align: "center", wrap: true }));
 
-			const facts: string[] = [];
-			if (model.contextWindow) facts.push(`${formatNumber(model.contextWindow).toLowerCase()} ctx`);
-			if (model.maxTokens) facts.push(`${formatNumber(model.maxTokens).toLowerCase()} out`);
-			facts.push(formatCostDetail(model));
-			if (model.reasoning) facts.push("reasoning");
-			if (model.input.includes("image")) facts.push("vision");
-			const intelligence = formatIntelligence(model);
-			if (intelligence) facts.push(intelligence);
-			const measured = this.#perfFor(selected);
-			if (measured) {
-				facts.push(`~${formatTps(measured.perf.tps)}${measured.tier ? ` ${measured.tier}` : ""}`);
-				if (measured.perf.ttftMs !== null) facts.push(`${formatTtft(measured.perf.ttftMs)} ttft`);
-			} else if (model.tps != null && Number.isFinite(model.tps) && model.tps > 0) {
-				facts.push(`~${formatTps(model.tps)}`);
-			}
-			const nextCredits = nextCreditRateNote(model);
-			if (nextCredits) facts.push(nextCredits);
-			children.push(text([span(facts.join(" · "), "muted")], { wrap: "word" }));
+			children.push(
+				text(
+					this.#detailSpans(selected).map(part => span(part.text, part.tone)),
+					{ wrap: "word" },
+				),
+			);
 			const description = model.description ? formatDescription(model.description) : "";
-			if (description) children.push(text([span(description, "dim")], { wrap: "word", lines: 2 }));
+			if (description) children.push(text([span(description, "muted")], { wrap: "word", lines: 2 }));
 
 			if (this.isOverContext(selected)) {
 				const warning = `${theme.status.disabled} context ${formatNumber(this.#currentContextTokens).toLowerCase()} exceeds ${formatNumber(model.contextWindow ?? 0).toLowerCase()} limit · compacts with current model, then switches`;

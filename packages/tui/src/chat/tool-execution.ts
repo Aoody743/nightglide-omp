@@ -1752,10 +1752,16 @@ export class ToolExecutionComponent extends Container {
 		);
 	}
 
-	/** The one-row form's lead glyph: the spinner while it animates, else a dim bullet. */
+	/** The one-row form's lead glyph: the compact single-column activity spinner while it animates, else a dim bullet. */
 	#compactGlyph(): string {
-		const glyph = this.#spinnerFrame === undefined ? "•" : (theme.spinnerFrames[this.#spinnerFrame] ?? "•");
-		return theme.fg(this.#spinnerFrame === undefined ? "dim" : "muted", glyph);
+		if (this.#spinnerFrame === undefined) return theme.fg("dim", "•");
+		// The themed status glide is up to 6 columns wide; the compact fallback
+		// exists to surface label and elapsed time on one squeezed row, so it
+		// uses the single-column activity frames and leaves the glide to roomy
+		// rows. Elapsed time must survive truncation (see #compactText).
+		const activity = theme.getSpinnerFrames("activity");
+		const glyph = activity[this.#spinnerFrame % activity.length] ?? "•";
+		return theme.fg("muted", glyph);
 	}
 
 	#renderCompact(width: number): readonly string[] {

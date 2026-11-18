@@ -1,0 +1,109 @@
+# Nightglide fork · packages/tui 全量测试 CI
+#
+# 范围：在本 fork（Aoody743/nightglide-omp）自身仓库上跑 `bun test packages/tui`
+# 全量用例（本地 4711 用例 / 357 文件 ≈ 20s）。checkout 的是 fork 自身；
+# push 与 PR 均触发（是否真正 push 由主会话统一执行，本文件只负责把 CI 写对）。
+#
+# ⚠ 为什么需要「下载预编译 natives」这一步（本地实测证据，非猜测）：
+#   packages/tui 的几乎所有模块都经 `theme.ts` 依赖 `@oh-my-pi/pi-natives`；
+#   该包在 workspace 安装模式下不会获得任何平台二进制 ——
+#   `packages/natives/native/*.node` 被 .gitignore（`*.node`）忽略，只能由
+#   本地 `build:native`（bazel，约 8 分钟）产出，而本 workflow 有意不跑它。
+#   loader（packages/natives/native/loader-state.js）在拿不到二进制时于
+#   import 阶段直接 throw，本地 macOS 沙箱模拟「无二进制」实测：
+#   357 个测试文件中 332 个在 import 即失败，4711 用例仅 211 个（25 个纯逻辑
+#   文件）可跑 —— 视觉/渲染类测试（含 error-banner 等）全军覆没，跑「子集」
+#   对 TUI 门禁没有意义。因此改用上游发布管线自己的产物：从 npm 下载与
+#   workspace 版本严格一致的 `@oh-my-pi/pi-natives-linux-x64` 预编译包
+#   （baseline + modern 两枚 .node），放进 loader 的首选候选目录
+#   `packages/natives/native/` —— 与上游 `.github/actions/native-artifacts`
+#   action 的落点完全一致。耗时约 20-30s（约 105MB 压缩包）。
+#
+# 已知风险（如实记录）：
+#   1. 版本对齐：loader 会校验二进制内的 release 版本戳与
+#      `packages/natives/package.json` 的 version 一致，不一致即拒绝加载。
+#      本步骤用 workspace 的 version 动态拼 npm 包名（当前 18.20.2，npm 上
+#      存在该版本；上游 latest 已到 18.22.2，故绝不能用 @latest）。若 fork
+#      领先于上游发布（版本尚未出现在 npm），此步会显式失败 —— 这是期望行为，
+#      属于「该修的是版本对齐」的清晰信号，而非静默跑一个 4.5% 的子集。
+#   2. 平台差异：本机是 macOS，无法端到端验证 linux-x64 的 dlopen。已做的
+#      静态验证：tarball 内含 `pi_natives.linux-x64-{baseline,modern}.node`，
+#      文件名与 loader `getAddonFilenames` 的候选完全一致；两枚二进制内
+#      `strings` 均可 grep 到与 workspace 一致的 18.20.2 版本戳。运行期由
+#      下面的 smoke 步骤先行 dlopen 验证（沿用上游 ci.yml 的 smoke 模式），
+#      失败会在此处快速、清晰地报错，而不是留下 332 个 import 错误。
+#   3. 供应链：tarball 来自 registry.npmjs.org（HTTPS），未额外 pin integrity
+#      哈希（上游 ci.yml 的 npm 兜底路径同样如此）。如需收紧可加
+#      `npm view dist.integrity` 校验。
+#   4. 已知 flaky：本地全量跑观察到 1 例偶发失败
+#      「GitHub run-watch renderer > keeps collapsed progress compact …」
+#      （tools-native-github.test.ts），单独重跑即通过，判定为并行负载下的
+#      偶发；若 CI 命中，先重跑再排查，必要时可加 `--parallel`/分片。
+#   5. Actions 分钟与磁盘：每跑一次约消耗 2-4 分钟（checkout + bun install +
+#      105MB 下载 + 测试），解压后 natives 占 ~260MB 磁盘；未配置缓存
+#      （setup-bun 的 install cache 与 natives 缓存可作为后续优化）。
+
+name: TUI Tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tui-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tui-tests:
+    name: bun test packages/tui
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+
+      - name: Install dependencies (frozen lockfile)
+        run: bun install --frozen-lockfile
+
+      - name: Stage prebuilt linux-x64 natives (pinned to workspace version)
+        run: |
+          set -euo pipefail
+          VERSION="$(bun -p "require('./packages/natives/package.json').version")"
+          echo "workspace pi-natives version: ${VERSION}"
+          TARBALL="https://registry.npmjs.org/@oh-my-pi/pi-natives-linux-x64/-/pi-natives-linux-x64-${VERSION}.tgz"
+          STAGE="${RUNNER_TEMP}/pi-natives-linux-x64"
+          mkdir -p "$STAGE"
+          curl --fail --silent --show-error --location "$TARBALL" -o "$STAGE/natives.tgz"
+          # 落点 = loader workspace 模式的首选候选目录（上游 CI 同款）。
+          mkdir -p packages/natives/native
+          tar -xzf "$STAGE/natives.tgz" -C packages/natives/native --strip-components=1 \
+            package/pi_natives.linux-x64-baseline.node \
+            package/pi_natives.linux-x64-modern.node
+          ls -l packages/natives/native/pi_natives.linux-x64-*.node
+
+      - name: Smoke-test native addons (dlopen check, upstream ci.yml pattern)
+        run: |
+          set -euo pipefail
+          # `bun -e 'require("./x.node")'` 会吞掉 dlopen 失败（exit 0），所以
+          # 用脚本文件强制校验（注释与脚本均沿用上游 ci.yml 的写法）。
+          cat > "${RUNNER_TEMP}/smoke-addons.js" <<'EOF'
+          for (const f of process.argv.slice(2)) {
+            const m = require(f);
+            if (!m || Object.keys(m).length === 0) {
+              console.error(`addon failed to load: ${f}`);
+              process.exit(1);
+            }
+          }
+          EOF
+          bun "${RUNNER_TEMP}/smoke-addons.js" \
+            "${GITHUB_WORKSPACE}/packages/natives/native/pi_natives.linux-x64-baseline.node" \
+            "${GITHUB_WORKSPACE}/packages/natives/native/pi_natives.linux-x64-modern.node"
+
+      - name: Test packages/tui
+        run: bun test packages/tui

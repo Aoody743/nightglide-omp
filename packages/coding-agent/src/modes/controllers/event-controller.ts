@@ -444,6 +444,10 @@ export class EventController {
 			irc_message: e => this.#handleIrcMessage(e),
 			notice: e => this.#handleNotice(e),
 			model_changed: async () => {
+				// No toast here: `model_changed` cannot tell a manual pick from a
+				// retry fallback landing (both end in this handler), and the welcome
+				// context + status line already carry the switch. Fallbacks toast in
+				// #handleRetryFallbackSucceeded, which sees the dedicated event.
 				vocalizer.enforceProviderPolicy();
 				this.ctx.updateWelcomeContext?.();
 				this.ctx.statusLine.invalidate();
@@ -2953,6 +2957,13 @@ export class EventController {
 		event: Extract<AgentSessionEvent, { type: "retry_fallback_succeeded" }>,
 	): Promise<void> {
 		this.ctx.showStatus(`Fallback succeeded on ${event.model}`);
+		// A quiet toast on top of the transcript notice: the fallback landed while
+		// the user was reading elsewhere, and the status line scrolls away with
+		// the next turn. (ANIM-MODEL-002's "toast for 3s" — the toast stack owns
+		// the lifetime.) Deliberately NOT wired on `model_changed`: that event
+		// fires for manual model picks too, and a toast claiming "已回退到 …"
+		// after the user chose a model themselves would be a lie.
+		this.ctx.showToast(`已回退到 ${event.model}`);
 		this.ctx.updateWelcomeContext?.();
 	}
 

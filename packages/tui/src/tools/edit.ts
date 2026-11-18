@@ -21,7 +21,7 @@ import {
 	resultText,
 } from "./native-view";
 import type { FileDiagnosticsResult } from "./lsp";
-import { nativeDiff, renderDiff as renderDiffColored } from "../chrome/diff";
+import { nativeDiff, renderDiff as renderDiffColored, SIDE_BY_SIDE_MIN_WIDTH } from "../chrome/diff";
 import { getLanguageFromPath } from "../lang-from-path";
 import type { Theme } from "../theme/theme";
 import type { OutputMeta } from "./output-meta";
@@ -205,7 +205,7 @@ export interface EditRenderContext {
 	/** Raw in-flight edit text shown while a computed diff preview is unavailable */
 	editStreamingFallback?: string;
 	/** Function to render diff text with syntax highlighting */
-	renderDiff?: (diffText: string, options?: { filePath?: string }) => string;
+	renderDiff?: (diffText: string, options?: { filePath?: string; width?: number }) => string;
 	/** Unsanitized result metadata, used only for filesystem link targets. */
 	rawDetails?: unknown;
 }
@@ -1007,7 +1007,7 @@ function renderDiffSection(
 	expanded: boolean,
 	innerWidth: number,
 	uiTheme: Theme,
-	renderDiffFn: (t: string, o?: { filePath?: string }) => string,
+	renderDiffFn: (t: string, o?: { filePath?: string; width?: number }) => string,
 	renderCache?: RenderedStringCache,
 	sectionCache?: RenderedStringCache,
 ): string {
@@ -1020,8 +1020,17 @@ function renderDiffSection(
 			? { text: diff, hiddenHunks: 0, hiddenLines: 0 }
 			: truncateDiffByHunk(diff, PREVIEW_LIMITS.DIFF_COLLAPSED_HUNKS, PREVIEW_LIMITS.DIFF_COLLAPSED_LINES);
 
-		const renderedDiff = cachedRenderedString(renderCache, uiTheme, expanded, rawPath, truncatedDiff, () =>
-			renderDiffFn(truncatedDiff, { filePath: rawPath }),
+		// The highlight bytes depend on the layout mode only, not on the exact
+		// width: resizes within a mode reuse the colored diff, while crossing the
+		// side-by-side threshold re-renders with the two-column layout.
+		const layoutSalt = innerWidth >= SIDE_BY_SIDE_MIN_WIDTH ? "side-by-side" : "unified";
+		const renderedDiff = cachedRenderedString(
+			renderCache,
+			uiTheme,
+			expanded,
+			`${rawPath}:${layoutSalt}`,
+			truncatedDiff,
+			() => renderDiffFn(truncatedDiff, { filePath: rawPath, width: innerWidth }),
 		);
 		const { text: visibleDiff, hiddenLines: visuallyHiddenLines } = expanded
 			? { text: renderedDiff, hiddenLines: 0 }
@@ -1042,6 +1051,12 @@ function renderDiffSection(
 function wrapEditRendererLine(line: string, width: number): string[] {
 	if (width <= 0) return [line];
 	if (line.length === 0) return [""];
+	// Rows that already fit pass through untouched. This is what keeps
+	// side-by-side diff rows intact: renderDiff emits them as one physical line
+	// per pair, pre-truncated in-column to at most this width, and re-running
+	// the gutter-aware wrap below would parse only the LEFT column's gutter and
+	// fold the entire right column onto continuation rows.
+	if (visibleWidth(line) <= width) return [line];
 
 	const startAnsi = line.match(/^((?:\x1b\[[0-9;]*m)*)/)?.[1] ?? "";
 	const bodyWithReset = line.slice(startAnsi.length);
@@ -1524,10 +1539,10 @@ function renderSingleFileResult(
 		});
 	}
 
-	const renderFallbackDiff = (diffText: string, diffOptions?: { filePath?: string }): string =>
-		renderDiffColored(diffText, { filePath: diffOptions?.filePath, theme: uiTheme });
+	const renderFallbackDiff = (diffText: string, diffOptions?: { filePath?: string; width?: number }): string =>
+		renderDiffColored(diffText, { filePath: diffOptions?.filePath, width: diffOptions?.width, theme: uiTheme });
 
-	let diffSectionRenderDiffFn: ((t: string, o?: { filePath?: string }) => string) | undefined;
+	let diffSectionRenderDiffFn: ((t: string, o?: { filePath?: string; width?: number }) => string) | undefined;
 	const diffSectionCache = createRenderedStringCache();
 	const renderedDiffCache = createRenderedStringCache();
 	const statsSuffixCache = createRenderedStringCache();

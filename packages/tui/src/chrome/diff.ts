@@ -1,8 +1,9 @@
 import { diffWords } from "@oh-my-pi/pi-natives";
 import { DEFAULT_TAB_WIDTH, sanitizeText } from "@oh-my-pi/pi-utils";
 import type { TspDiffHunk, TspProps } from "@oh-my-pi/pi-wire";
-import { theme as activeTheme, getLanguageFromPath, highlightCode, type Theme } from "../theme/index";
+import { theme as activeTheme, getLanguageFromPath, highlightCode, type Theme, type ThemeColor } from "../theme/index";
 import { type CodeFrameMarker, formatCodeFrameLine, replaceTabs } from "../render/render-utils";
+import { padding, truncateToWidth, visibleWidth } from "../utils";
 import { node } from "../native/describe";
 import type { NativeNode } from "../native/node";
 /** SGR dim on / normal intensity — additive, preserves fg/bg colors. */
@@ -169,11 +170,39 @@ export function nativeDiff(diffText: string, props: TspProps<"diff"> = {}): Nati
 	return node("diff", { ...props, hunks });
 }
 
+/**
+ * Usable content width (the framed card's inner width, in terminal cells) at
+ * which {@link renderDiff} switches from the unified gutter layout to the
+ * two-column side-by-side layout. Below this the single-column view is used
+ * unchanged, so 80/100-column behavior is identical to the pre-side-by-side
+ * renderer.
+ */
+export const SIDE_BY_SIDE_MIN_WIDTH = 120;
+
+/**
+ * Column width below which word-level intra-line emphasis is dropped in the
+ * side-by-side layout: `diffWords` fragments a short cell into many tiny
+ * colored spans that read as confetti rather than emphasis, so narrow columns
+ * degrade to the whole-line `toolDiffRemoved` / `toolDiffAdded` foregrounds.
+ * Sixteen cells still fit a handful of tokens, which is the smallest span
+ * where per-word emphasis stays legible.
+ */
+const SIDE_BY_SIDE_MIN_WORD_DIFF_COLUMN = 16;
+
 export interface RenderDiffOptions {
 	/** File path used to resolve indentation (.editorconfig + defaults) */
 	filePath?: string;
 	/** Theme used for diff colors and syntax highlighting; defaults to the active TUI theme. */
 	theme?: Theme;
+	/**
+	 * Usable content width in terminal cells (the framed card's inner width).
+	 * When `width >= SIDE_BY_SIDE_MIN_WIDTH` the diff renders side-by-side
+	 * (old on the left, new on the right, one-cell divider); otherwise the
+	 * unified single-gutter layout is used. Rows never exceed this width:
+	 * oversized cell content is truncated in-column with an ellipsis instead
+	 * of wrapping, so every emitted row is one physical terminal line.
+	 */
+	width?: number;
 }
 
 /**
@@ -181,8 +210,16 @@ export interface RenderDiffOptions {
  * - Context lines: dim/gray
  * - Removed lines: red, changed tokens in the word-removed foreground
  * - Added lines: green, changed tokens in the word-added foreground
+ *
+ * With `options.width >= SIDE_BY_SIDE_MIN_WIDTH` the same diff renders as two
+ * equal columns (`renderSideBySideDiff`): removed lines on the left with their
+ * old line numbers, added lines on the right with their new line numbers,
+ * paired row by row within each change run.
  */
 export function renderDiff(diffText: string, options: RenderDiffOptions = {}): string {
+	if (options.width !== undefined && options.width >= SIDE_BY_SIDE_MIN_WIDTH) {
+		return renderSideBySideDiff(diffText, { ...options, width: options.width });
+	}
 	const renderTheme = options.theme ?? activeTheme;
 	const lines = sanitizeText(diffText).split("\n");
 	const result: string[] = [];
@@ -237,7 +274,7 @@ export function renderDiff(diffText: string, options: RenderDiffOptions = {}): s
 		}
 
 		if (parsed.prefix === "-") {
-			const removedLines: { lineNum: string; content: string }[] = [];
+			const removedLines: { prefix: CodeFrameMarker; lineNum: string; content: string }[] = [];
 			while (i < lines.length) {
 				const p = parsedLines[i];
 				if (p?.prefix !== "-") break;
@@ -245,7 +282,7 @@ export function renderDiff(diffText: string, options: RenderDiffOptions = {}): s
 				i++;
 			}
 
-			const addedLines: { lineNum: string; content: string }[] = [];
+			const addedLines: { prefix: CodeFrameMarker; lineNum: string; content: string }[] = [];
 			while (i < lines.length) {
 				const p = parsedLines[i];
 				if (p?.prefix !== "+") break;
@@ -291,6 +328,255 @@ export function renderDiff(diffText: string, options: RenderDiffOptions = {}): s
 	}
 
 	return result.join("\n");
+}
+
+/**
+ * One side of a side-by-side row's padded gutter: marker and line number
+ * concatenated (as `formatCodeFrameLine` does), right-padded with spaces to the
+ * shared gutter width. A missing number keeps its bare marker (`   +`), an
+ * empty placeholder cell collapses to spaces.
+ */
+function sideBySideGutter(marker: string, lineNumber: string, gutterWidth: number): string {
+	const gutterText = marker && lineNumber ? `${marker}${lineNumber}` : lineNumber || marker;
+	return gutterText.padStart(gutterWidth, " ");
+}
+
+/**
+ * Two-column (side-by-side) rendering for wide frames: the removal side on the
+ * left with its old line numbers, the addition side on the right with its new
+ * line numbers, a one-cell `statusLineSep` divider between them. Rows are
+ * paired in sequence within each change run (first `-` with first `+`, and so
+ * on); a lone removal or addition leaves the opposite side as a blank
+ * placeholder so the grid stays rectangular. Context lines render identically
+ * on both sides.
+ *
+ * Width contract: every emitted row is a single physical line whose visible
+ * width is at most `options.width` — column content is truncated in-column
+ * (ellipsis when cut, CJK-aware via the native width engine) and padded back
+ * out with spaces, so alignment never depends on color codes and survives
+ * NO_COLOR. Collapse semantics are unaffected: `truncateDiffByHunk` still
+ * budgets raw diff lines, and because a paired row consumes one line from each
+ * side, the rendered pair-row count never exceeds the raw-line budget it was
+ * built from.
+ */
+function renderSideBySideDiff(diffText: string, options: RenderDiffOptions & { width: number }): string {
+	const renderTheme = options.theme ?? activeTheme;
+	const lines = sanitizeText(diffText).split("\n");
+	const parsedLines = lines.map(parseDiffLine);
+	// Same constant 3-digit gutter reservation as the unified view: a streaming
+	// preview re-renders this diff as it grows, and a width derived purely from
+	// the current max line number would re-pad every already-rendered row at a
+	// digit crossing.
+	const lineNumberWidth = parsedLines.reduce((width, parsed) => {
+		const lineNumber = parsed?.lineNum.trim() ?? "";
+		return Math.max(width, lineNumber.length);
+	}, 3);
+	const gutterWidth = lineNumberWidth + 1;
+	// Two equal columns, each `gutter │ content`, plus the one-cell divider:
+	// ` -12│old content │ +13│new content`. The floor keeps the strict row-width
+	// guarantee when an odd remainder leaves a spare column unused.
+	const fixedWidth = (gutterWidth + 1) * 2 + 1;
+	const columnWidth = Math.max(1, Math.floor((options.width - fixedWidth) / 2));
+	// Word-level emphasis only when the column is wide enough to stay legible
+	// (see SIDE_BY_SIDE_MIN_WORD_DIFF_COLUMN); narrower cells keep whole-line colors.
+	const useWordDiff = columnWidth >= SIDE_BY_SIDE_MIN_WORD_DIFF_COLUMN;
+
+	const contextHighlights = highlightContextLines(parsedLines, options.filePath, renderTheme);
+
+	// Running old/new line cursors, mirroring nativeDiff: a parsed number past a
+	// cursor means unchanged lines were skipped, so both sides advance together
+	// and the old→new offset is preserved. Context rows are numbered with old
+	// numbers (the producer's contract), so the right cell derives its new-side
+	// number as old number + offset.
+	let nextOld = 1;
+	let nextNew = 1;
+
+	const blankGutter = " ".repeat(gutterWidth);
+	const blankContent = " ".repeat(columnWidth);
+	const divider = renderTheme.fg("statusLineSep", "│");
+
+	/** Truncate to the column (ellipsis when cut) and pad back out to the exact column width. */
+	const fitColumn = (content: string): string => {
+		const clipped = truncateToWidth(content, columnWidth);
+		const padWidth = columnWidth - visibleWidth(clipped);
+		return padWidth > 0 ? clipped + padding(padWidth) : clipped;
+	};
+
+	/** One column: colored gutter + rail + width-fitted content. */
+	const cell = (gutter: string, content: string, color: ThemeColor | null): string => {
+		const body = `${gutter}│${content}`;
+		return color ? renderTheme.fg(color, body) : body;
+	};
+
+	const row = (
+		leftGutter: string,
+		leftContent: string,
+		rightGutter: string,
+		rightContent: string,
+		leftColor: ThemeColor | null,
+		rightColor: ThemeColor | null,
+	): string => cell(leftGutter, leftContent, leftColor) + divider + cell(rightGutter, rightContent, rightColor);
+
+	/** Advance the cursors past one parsed row; returns the numbers each column shows (`""` = none). */
+	const consume = (parsed: {
+		prefix: CodeFrameMarker;
+		lineNum: string;
+	}): { leftNumber: string; rightNumber: string } => {
+		const trimmedNumber = parsed.lineNum.trim();
+		const number = Number.parseInt(trimmedNumber, 10);
+		const added = parsed.prefix === "+";
+		if (Number.isFinite(number) && number !== (added ? nextNew : nextOld)) {
+			// The skipped lines are unchanged: both sides move by as many.
+			const skipped = number - (added ? nextNew : nextOld);
+			nextOld += skipped;
+			nextNew += skipped;
+		}
+		let leftNumber = "";
+		let rightNumber = "";
+		if (parsed.prefix === "-") {
+			leftNumber = trimmedNumber;
+		} else if (added) {
+			rightNumber = trimmedNumber;
+		} else {
+			// Context rows carry old numbers (the producer's contract); the
+			// right cell derives its new-side number from the running offset.
+			leftNumber = trimmedNumber;
+			rightNumber = Number.isFinite(number) ? String(number + (nextNew - nextOld)) : "";
+		}
+		if (parsed.prefix !== "+") nextOld++;
+		if (parsed.prefix !== "-") nextNew++;
+		return { leftNumber, rightNumber };
+	};
+
+	/**
+	 * A cell body for one parsed row. Numbered rows keep their marker in the
+	 * gutter (`-12│content`, matching the unified view's code-frame gutter);
+	 * numberless rows (legacy `+1│…` transcripts whose number is part of the
+	 * content, or streaming rows without numbers) render the marker glued to
+	 * the content after a blank gutter — the same shape the unified view's
+	 * `prefix + content` fallback produces, so `+40│line 39` stays findable.
+	 */
+	const changeCell = (
+		parsed: { prefix: CodeFrameMarker; lineNum: string; content: string },
+		side: "left" | "right",
+		lineNumber: string,
+		intraLine: string | undefined,
+	): { gutter: string; body: string } => {
+		const numberless = lineNumber.length === 0;
+		const emphasized = intraLine !== undefined ? intraLine : replaceTabs(parsed.content);
+		const body = visualizeIndent(emphasized);
+		return {
+			gutter: numberless ? blankGutter : sideBySideGutter(side === "left" ? "-" : "+", lineNumber, gutterWidth),
+			body: numberless ? `${parsed.prefix}${body}` : body,
+		};
+	};
+
+	/** Context cell: numbered rows show the line number, numberless rows glue the (space) marker. */
+	const contextCell = (
+		parsed: { prefix: CodeFrameMarker; lineNum: string },
+		lineNumber: string,
+		body: string,
+	): {
+		gutter: string;
+		body: string;
+	} => ({
+		gutter: lineNumber.length === 0 ? blankGutter : sideBySideGutter("", lineNumber, gutterWidth),
+		body: lineNumber.length === 0 ? `${parsed.prefix}${body}` : body,
+	});
+
+	const rows: string[] = [];
+	let i = 0;
+	while (i < lines.length) {
+		const parsed = parsedLines[i];
+
+		if (!parsed) {
+			// Blank gap rows (and legacy "..." markers from older transcripts)
+			// mark non-contiguous diff regions; display them as a single dim
+			// unicode ellipsis spanning the row, exactly like the unified view.
+			const trimmed = lines[i].trim();
+			const isGapRow = trimmed.length === 0 || trimmed === "..." || trimmed === "…";
+			rows.push(
+				isGapRow
+					? renderTheme.fg("toolDiffContext", "…")
+					: renderTheme.fg("toolDiffContext", truncateToWidth(replaceTabs(lines[i]), options.width)),
+			);
+			i++;
+			continue;
+		}
+
+		if (parsed.prefix === "-") {
+			const removedLines: { prefix: CodeFrameMarker; lineNum: string; content: string }[] = [];
+			while (i < lines.length && parsedLines[i]?.prefix === "-") {
+				removedLines.push(parsedLines[i]!);
+				i++;
+			}
+			const addedLines: { prefix: CodeFrameMarker; lineNum: string; content: string }[] = [];
+			while (i < lines.length && parsedLines[i]?.prefix === "+") {
+				addedLines.push(parsedLines[i]!);
+				i++;
+			}
+
+			// Pair in sequence: removed[k] shares a row with added[k]; the longer
+			// run's leftovers occupy their row alone with the opposite side blank.
+			const pairCount = Math.max(removedLines.length, addedLines.length);
+			for (let k = 0; k < pairCount; k++) {
+				const removed = removedLines[k];
+				const added = addedLines[k];
+				let left = { gutter: blankGutter, body: blankContent };
+				let right = { gutter: blankGutter, body: blankContent };
+				let leftColor: ThemeColor | null = null;
+				let rightColor: ThemeColor | null = null;
+				let intra: { removedLine: string; addedLine: string } | undefined;
+				if (removed && added && useWordDiff) {
+					intra = renderIntraLineDiff(replaceTabs(removed.content), replaceTabs(added.content), renderTheme);
+				}
+				if (removed) {
+					const { leftNumber } = consume(removed);
+					left = changeCell(removed, "left", leftNumber, intra?.removedLine);
+					leftColor = "toolDiffRemoved";
+				}
+				if (added) {
+					const { rightNumber } = consume(added);
+					right = changeCell(added, "right", rightNumber, intra?.addedLine);
+					rightColor = "toolDiffAdded";
+				}
+				rows.push(
+					row(left.gutter, fitColumn(left.body), right.gutter, fitColumn(right.body), leftColor, rightColor),
+				);
+			}
+			continue;
+		}
+
+		if (parsed.prefix === "+") {
+			const { rightNumber } = consume(parsed);
+			const added = changeCell(parsed, "right", rightNumber, undefined);
+			rows.push(row(blankGutter, blankContent, added.gutter, fitColumn(added.body), null, "toolDiffAdded"));
+			i++;
+			continue;
+		}
+
+		// Context row: identical content on both sides; the right gutter carries
+		// the derived new-side number.
+		const { leftNumber, rightNumber } = consume(parsed);
+		const highlighted = contextHighlights.get(i);
+		const content =
+			highlighted !== undefined ? replaceTabs(highlighted) : visualizeIndent(replaceTabs(parsed.content));
+		const leftContext = contextCell(parsed, leftNumber, content);
+		const rightContext = contextCell(parsed, rightNumber, content);
+		rows.push(
+			row(
+				leftContext.gutter,
+				fitColumn(leftContext.body),
+				rightContext.gutter,
+				fitColumn(rightContext.body),
+				"toolDiffContext",
+				"toolDiffContext",
+			),
+		);
+		i++;
+	}
+
+	return rows.join("\n");
 }
 
 /**

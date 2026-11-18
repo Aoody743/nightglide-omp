@@ -15,9 +15,15 @@ import { Markdown } from "../components/markdown";
 import { Text } from "../components/text";
 import { visibleWidth, wrapTextWithAnsi } from "../utils";
 import { sanitizeText } from "@oh-my-pi/pi-utils";
+import {
+	effortLadderBadgeToken,
+	effortLadderGlyph,
+	effortLadderToken,
+	themeThinkingWord,
+} from "../chat/effort-ladder";
 import type { RenderResultOptions } from "./renderer";
 import { formatAgentStatRun, renderAgentTreeRow } from "./agent-tree";
-import { getMarkdownTheme, type Theme } from "../theme/theme";
+import { getMarkdownTheme, theme, type Theme } from "../theme/theme";
 import { stripGeneratedOutputNotice, stripRawOutputArtifactNotice, stripTrailingNotice } from "./output-meta";
 import {
 	capPreviewLines,
@@ -50,7 +56,7 @@ import { formatOutputInline, renderJsonTreeLines } from "./json-tree";
 import { repairDoubleEncodedJsonString } from "./task-repair-args";
 import { getSubprocessToolRenderer } from "./subprocess";
 import { assembleYieldResult, type YieldSectionShapes } from "./task-yield-assembly";
-import type { TspAgentProps, TspProps, TspTone } from "@oh-my-pi/pi-wire";
+import type { TspAgentProps, TspProps, TspSpan, TspTone } from "@oh-my-pi/pi-wire";
 import { compact, kv, md, node, propNode, span, text } from "../native/describe";
 import type { NativeNode } from "../native/node";
 import { OwnerMemo, sameItems } from "../native/memo";
@@ -767,7 +773,15 @@ function renderAgentProgress(
 			advisor: progress.advisor,
 			spinnerFrame,
 			frozen,
-			roleBadge: agentTypeBadge(progress.agent, theme),
+			// The rung glyph rides the role-badge slot, but only when the model badge
+			// is not already displaying the tier (feed model badges carry the level
+			// themselves): a duplicate mark would double the rung, and on narrow rows
+			// the extra columns would truncate the role text the slot is named for.
+			roleBadge:
+				agentTypeBadge(progress.agent, theme) +
+				(isFeedModelBadgeEnabled() && (progress.resolvedModelIdentity ?? progress.resolvedModel)
+					? ""
+					: effortGlyphBadge(progress.resolvedThinkingLevel, theme)),
 			statusBadge,
 			description: fullDescription,
 			preview:
@@ -1104,8 +1118,12 @@ function renderAgentResult(
 		formatTaskId(result.id),
 		Math.max(0, maxWidth - visibleWidth(`${indent}${icon} ${statusBadge}`)),
 	);
+	// The rung glyph rides the role-badge slot only when the model badge below
+	// will not already display the tier: a duplicate mark doubles the rung, and
+	// on narrow rows the extra columns would truncate the role text.
+	const modelBadgeShown = isFeedModelBadgeEnabled() && Boolean(result.resolvedModelIdentity ?? result.resolvedModel);
 	const roleBadge = truncateTaskRow(
-		agentTypeBadge(result.agent, theme),
+		agentTypeBadge(result.agent, theme) + (modelBadgeShown ? "" : effortGlyphBadge(result.resolvedThinkingLevel, theme)),
 		Math.max(0, maxWidth - visibleWidth(`${indent}${icon} ${displayId}${statusBadge}`)),
 	);
 	const badges = `${roleBadge}${statusBadge}`;
@@ -1789,23 +1807,49 @@ function renderNestedTaskTree(
 // Native (TSP) description: one `agent` node per subagent (§7.6)
 // =============================================================================
 
-/** Theme token for a thinking level's model-chip dot. */
+/**
+ * Theme token for a thinking level's model-chip dot, shared with the Effort
+ * Glow Ladder so every surface maps effort to the same rung color (`max`
+ * rides the `xhigh` rung).
+ */
 function thinkingToken(level: ConfiguredThinkingLevel | undefined): string | undefined {
-	switch (level) {
-		case "minimal":
-			return "thinkingMinimal";
-		case "low":
-			return "thinkingLow";
-		case "medium":
-			return "thinkingMedium";
-		case "high":
-			return "thinkingHigh";
-		case "xhigh":
-		case "max":
-			return "thinkingXhigh";
-		default:
-			return undefined;
-	}
+	return effortLadderToken(level);
+}
+
+/**
+ * The Effort Glow Ladder glyph badge (`◎`) for a subagent card header: one
+ * glyph for the rung, in the rung's badge colors — dim on the quiet
+ * minimal/low rungs, slot color from medium up (`✦` xhigh top rung). No rung
+ * (off/inherit/auto/unknown), no badge. Glyph-only so it stacks next to the
+ * model badge's own level display without repeating the word.
+ */
+function effortGlyphBadge(level: ConfiguredThinkingLevel | undefined, theme: Theme): string {
+	const glyph = effortLadderGlyph(level);
+	if (!glyph) return "";
+	const token = effortLadderBadgeToken(level);
+	if (!token) return "";
+	return ` ${theme.fg(token, glyph)}`;
+}
+
+/**
+ * Native twin of {@link effortGlyphBadge}: glyph + level word as a styled span
+ * leading the agent row's task text (`◎ high · Fix the flaky tests`). The word
+ * reuses the symbol preset's vocabulary ("◒ high" → `high`, "◑ med" → `med`).
+ * The model chip's own `thinking` dot carries the rung color; the span names it.
+ */
+function effortBadgeSpan(level: ConfiguredThinkingLevel | undefined): TspSpan | undefined {
+	const glyph = effortLadderGlyph(level);
+	const token = effortLadderBadgeToken(level);
+	if (!glyph || !token || !level) return undefined;
+	const display = theme.thinking[level as keyof Theme["thinking"]] ?? level;
+	return span(`${glyph} ${themeThinkingWord(display, level)}`, token);
+}
+
+/** Prefix the agent row's task text with the ladder badge span when a rung resolves. */
+function withEffortBadge(level: ConfiguredThinkingLevel | undefined, task: TspAgentProps["task"]): TspAgentProps["task"] {
+	const badge = effortBadgeSpan(level);
+	if (!badge || !task) return task;
+	return typeof task === "string" ? [badge, span(task)] : [badge, ...task];
 }
 
 /** The shared batch context as one quiet line above the agents. */
@@ -1934,7 +1978,10 @@ function describeProgressAgent(progress: AgentProgress, state: AgentDescribeStat
 		{
 			name: formatTaskId(progress.id),
 			agent: progress.agent || undefined,
-			task: stage ? (summary ? [span(summary), span(` · ${stage}`, "muted")] : stage) : summary || undefined,
+			task: withEffortBadge(
+				progress.resolvedThinkingLevel,
+				stage ? (summary ? [span(summary), span(` · ${stage}`, "muted")] : stage) : summary || undefined,
+			),
 			status,
 			model: progress.resolvedModelIdentity ?? progress.resolvedModel,
 			thinking: thinkingToken(progress.resolvedThinkingLevel),
@@ -1995,7 +2042,10 @@ function describeResultAgent(result: SingleResult, state: AgentDescribeState, de
 		{
 			name: formatTaskId(result.id),
 			agent: result.agent || undefined,
-			task: taskSummary(result.description || result.assignment || result.task) || undefined,
+			task: withEffortBadge(
+				result.resolvedThinkingLevel,
+				taskSummary(result.description || result.assignment || result.task) || undefined,
+			),
 			status,
 			model: result.resolvedModelIdentity ?? result.resolvedModel,
 			thinking: thinkingToken(result.resolvedThinkingLevel),

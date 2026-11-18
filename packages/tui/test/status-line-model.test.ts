@@ -159,15 +159,17 @@ describe("status line model segment compact thinking level", () => {
 	}
 
 	it("trails the level as a ` · <level>` suffix when compact mode is off", () => {
-		const display = theme.thinking.high;
+		// The effort ladder replaces the symbol preset's glyph with the rung glyph,
+		// keeping the preset's own word ("◒ high" → `◎ high`).
+		const display = `◎ ${theme.thinking.high.slice(theme.thinking.high.indexOf(" ") + 1)}`;
 		const modelPrefix = theme.icon.model ? `${theme.icon.model} ` : "";
 		const rendered = renderSegment("model", createThinkingContext(false));
 		expect(Bun.stripANSI(rendered.content)).toBe(`${modelPrefix}Test Model${theme.sep.dot}${display}`);
 	});
 
 	it("swaps the model icon for the level glyph and drops the suffix when compact", () => {
-		const display = theme.thinking.high;
-		const glyph = display.includes(" ") ? display.slice(0, display.indexOf(" ")) : display;
+		// Compact mode promotes the ladder's rung glyph to the model icon.
+		const glyph = "◎";
 		const rendered = renderSegment("model", createThinkingContext(true));
 		expect(Bun.stripANSI(rendered.content)).toBe(`${glyph} Test Model`);
 		expect(Bun.stripANSI(rendered.content)).not.toContain(theme.sep.dot);

@@ -20,6 +20,15 @@ const MAX_BANNER_ROWS = 4;
  * render width and keeps {@link MAX_BANNER_ROWS} rows; the expand hint on the
  * overflow row reveals the full body inline in the transcript.
  *
+ * Visual hierarchy mirrors the output-block three-state language: the verdict
+ * title carries the error color (bold) while the trailing meta drops to dim,
+ * and the border keeps its key color from the theme's `error` slot — the same
+ * slot semantics `renderOutputBlock` derives for `state === "error"`. The
+ * border intentionally has no animation; a static verdict stroke, like the
+ * composer's static working mark. Banner chrome copy is localized to Chinese
+ * to match the surrounding composer chrome (`↵ 发送 · esc 取消`, the 夜航
+ * welcome subtitle); the body stays the verbatim provider message.
+ *
  * Natively the transcript's error frame always shows the full message, so the
  * strip is only a reminder and offers a Dismiss button that calls `onDismiss`.
  */
@@ -35,20 +44,30 @@ export class ErrorBannerComponent extends Container {
 		this.#message = plainText(message).trim();
 		this.#onDismiss = onDismiss;
 		this.addChild(new Spacer(1));
+		// Border stays on the theme's `error` slot (the output-block error-state
+		// semantics); `borderAccent` is reserved for live/working frames.
 		this.addChild(new DynamicBorder(str => theme.fg("error", str)));
+		// Title layer: verdict glyph (theme `status.error` symbol slot, so symbol
+		// presets can restyle it) + localized label, bold error — the same
+		// "title carries the verdict" layering as an output block's error header.
+		// TODO(recovery-actions): 本轮只做视觉与提示层。若要加"查看详情"等恢复动作，
+		// 需要打通的事件通路：1) 在 app-keybindings 注册专用键位（ANSI 路径目前
+		// 只有 formatErrorBlock 的 ctrl+o 展开通路，作用于 transcript 的 inline
+		// error，而非本横幅）；2) interactive-mode 在 showPinnedError 构造本组件时
+		// 传入 onAction 回调并接住该键（interactive-mode 由并行任务独占，禁止本轮
+		// 接线）；3) 组件层参照下方 handleNativeEvent 的 "details"/"dismiss" 通路
+		// 为 ANSI 键盘事件新增 action 分支。接线前不得渲染任何动作按钮。
+		this.addChild(new Text(theme.bold(theme.fg("error", `${theme.status.error} 错误`)), 1, 0));
 		this.addChild(
 			new WidthAwareText(
 				contentWidth =>
-					formatErrorBlock(message, contentWidth, MAX_BANNER_ROWS, (line, index) =>
-						index === 0
-							? theme.bold(theme.fg("error", `${theme.status.error} ${line}`))
-							: theme.fg("error", line),
-					),
+					formatErrorBlock(message, contentWidth, MAX_BANNER_ROWS, line => theme.fg("error", line)),
 				1,
 				0,
 			),
 		);
-		this.addChild(new Text(theme.fg("dim", "Dismissed when you send your next message."), 1, 0));
+		// Meta layer: dim dismissal hint, localized like the composer hints.
+		this.addChild(new Text(theme.fg("dim", "发送下一条消息后自动消失"), 1, 0));
 		this.addChild(new DynamicBorder(str => theme.fg("error", str)));
 	}
 

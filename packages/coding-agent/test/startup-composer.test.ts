@@ -734,11 +734,12 @@ describe("Composer prepaint", () => {
 			.map(r => Bun.stripANSI(r))
 			.join("\n");
 		expect(output).not.toContain("Starting OMP");
-		expect(output).toContain("╰");
+		// The Nightglide welcome scene: brand nav line, hairline rule, prompt row.
+		expect(output).toContain("✦ nightglide");
 		const initialEditorRow = terminal
 			.getViewport()
 			.map(row => Bun.stripANSI(row))
-			.findLastIndex(row => row.startsWith("╰"));
+			.findLastIndex(row => row.startsWith("❯"));
 		composer.updateWelcome({ version: "10.0.0-authoritative" });
 		await terminal.waitForRender(() =>
 			terminal.getViewport().some(row => Bun.stripANSI(row).includes("v10.0.0-authoritative")),
@@ -746,7 +747,7 @@ describe("Composer prepaint", () => {
 		const updatedEditorRow = terminal
 			.getViewport()
 			.map(row => Bun.stripANSI(row))
-			.findLastIndex(row => row.startsWith("╰"));
+			.findLastIndex(row => row.startsWith("❯"));
 		expect(updatedEditorRow).toBe(initialEditorRow);
 		composer.stop();
 	});

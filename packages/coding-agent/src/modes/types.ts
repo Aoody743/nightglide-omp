@@ -462,6 +462,14 @@ export interface InteractiveModeContext {
 	 */
 	resetTranscript(): void;
 	showStatus(message: string, options?: ShowStatusOptions): void;
+	/**
+	 * A quiet toast above the composer: one accent-marked line that dismisses
+	 * itself (3s, motion-aware fade), never enters the transcript scrollback,
+	 * and never moves the editor. For momentary confirmations the transcript
+	 * notice (`showStatus`) would bury — a retry fallback landing, a theme
+	 * commit.
+	 */
+	showToast(message: string): void;
 	/** Show the ctrl+p role chip track above the editor, `activeIndex` filled. */
 	showModelCycleTrack(segments: readonly TrackSegment[], activeIndex: number): void;
 	showError(message: string): void;
