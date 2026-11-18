@@ -145,4 +145,47 @@ describe("WelcomeComponent", () => {
 		expect(versionRow(38)).not.toContain("→");
 		for (const columns of [80, 56, 38]) expect(visibleWidth(versionRow(columns))).toBeLessThan(columns);
 	});
+
+	it("renders the brand navigation line above the lockup with context right-aligned", () => {
+		const rows = new WelcomeComponent("18.20.2")
+			.render(80, { project: "nightglide-cli", model: "omlx/endless" })
+			.map(row => Bun.stripANSI(row));
+		const nav = rows[0] ?? "";
+
+		expect(nav).toContain("✦ nightglide");
+		expect(nav).toContain("nightglide-cli");
+		expect(nav).toContain("omlx/endless");
+		// Single compact line: context pinned to the right margin, nothing wraps.
+		expect(visibleWidth(nav)).toBeLessThanOrEqual(80);
+		expect(nav.trimEnd().endsWith("omlx/endless")).toBe(true);
+		// An ultra-thin rule closes the navigation line.
+		expect(rows[1]?.trim()).toMatch(/^─+$/);
+	});
+
+	it("keeps the navigation line to the brand alone when no context is given", () => {
+		const rows = new WelcomeComponent("18.20.2").render(80).map(row => Bun.stripANSI(row));
+		const nav = rows.find(row => row.includes("✦ nightglide")) ?? "";
+		expect(nav).not.toContain("/");
+		expect(rows[1]?.trim()).toMatch(/^─+$/);
+	});
+
+	it("feeds setContext through the framework-style single-argument render", () => {
+		const welcome = new WelcomeComponent("18.20.2");
+		welcome.setContext({ project: "proj", model: undefined });
+		const nav = welcome.render(80).map(row => Bun.stripANSI(row))[0] ?? "";
+		expect(nav).toContain("✦ nightglide");
+		expect(nav).toContain("proj");
+		expect(nav).not.toContain("undefined");
+	});
+
+	it("keeps the navigation line single-line at narrow widths by truncating context", () => {
+		for (const columns of [40, 56, 80]) {
+			const rows = new WelcomeComponent("18.20.2")
+				.render(columns, { project: "a-very-long-project-name", model: "omlx/endless" })
+				.map(row => Bun.stripANSI(row));
+			const nav = rows[0] ?? "";
+			expect(nav).toContain("✦ nightglide");
+			expect(visibleWidth(nav)).toBeLessThanOrEqual(columns);
+		}
+	});
 });

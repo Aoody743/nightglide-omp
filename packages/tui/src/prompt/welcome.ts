@@ -13,7 +13,7 @@ import { isHyperlinkEnabled, urlHyperlink, urlLinkSpan } from "../render/hyperli
 import { TERMINAL } from "../terminal-capabilities";
 import { ensureThemeSync, getCurrentThemeName, theme } from "../theme/theme";
 import type { Component } from "../tui";
-import { padding, replaceTabs, visibleWidth, wrapTextWithAnsi } from "../utils";
+import { padding, replaceTabs, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "../utils";
 import tipsText from "./tips.txt" with { type: "text" };
 
 /** Leading marker for a tip that pitches Tern: shown only while no TSP surface
@@ -191,6 +191,16 @@ export function renderWelcomeTip(tip: string, width: number, phase = 0): string[
 }
 
 /**
+ * Real-world context for the quiet brand navigation line above the lockup:
+ * the project (working directory basename) and the session's active model.
+ * Both optional and both real data — anything absent is simply not rendered.
+ */
+export interface WelcomeContext {
+	project?: string;
+	model?: string;
+}
+
+/**
  * Background self-update activity shown after the welcome banner's version
  * label: `updating` while a newer `version` downloads (`fraction` once bytes
  * are counted) or installs, `ready` once the next launch starts it, `failed`
@@ -210,6 +220,7 @@ export type VersionUpdate =
  */
 export class WelcomeComponent implements Component {
 	#versionUpdate: VersionUpdate | null = null;
+	#context: WelcomeContext | undefined;
 	#animStart: number | null = null;
 	#animTimer: Timer | null = null;
 	#requestRender: (() => void) | null = null;
@@ -342,13 +353,26 @@ export class WelcomeComponent implements Component {
 		this.invalidate();
 	}
 
-	render(termWidth: number): readonly string[] {
+	/**
+	 * Feed real project/model context to the brand navigation line. Both fields
+	 * are optional; unknown data is omitted rather than invented. The framework
+	 * calls {@link render} without arguments, so hosts pass context here once
+	 * it is known; per-render `context` overrides this stored value.
+	 */
+	setContext(context: WelcomeContext | undefined): void {
+		this.#context = context;
+		this.invalidate();
+	}
+
+	render(termWidth: number, context?: WelcomeContext): readonly string[] {
 		const animating = this.#animStart != null;
-		if (!animating && this.#cachedLines && this.#cachedWidth === termWidth) {
+		// Only the framework path (no explicit per-render context) may serve the
+		// stable-cache fast path; a caller-supplied context can differ per call.
+		if (!animating && context === undefined && this.#cachedLines && this.#cachedWidth === termWidth) {
 			return this.#cachedLines;
 		}
-		const lines = this.#renderLines(termWidth);
-		if (animating) {
+		const lines = this.#renderLines(termWidth, context);
+		if (animating || context !== undefined) {
 			this.#cachedLines = undefined;
 			this.#cachedWidth = -1;
 		} else {
@@ -358,8 +382,9 @@ export class WelcomeComponent implements Component {
 		return lines;
 	}
 
-	#renderLines(termWidth: number): string[] {
+	#renderLines(termWidth: number, contextOverride?: WelcomeContext): string[] {
 		ensureThemeSync();
+		const context = contextOverride ?? this.#context;
 		// Content keeps a column clear on each side; everything centers in the full width.
 		const room = termWidth - 2;
 		if (room < 4) return [];
@@ -370,8 +395,9 @@ export class WelcomeComponent implements Component {
 			const lockupWidth = LOGO_WIDTH + LOCKUP_GAP + Math.max(WORDMARK_WIDTH, visibleWidth(version));
 			const hasLockup = room >= lockupWidth;
 			const art = hasLockup ? lockup(logo, version, WORDMARK) : room >= LOGO_WIDTH ? logo : [];
-			const lines = centerBlock(art, termWidth);
-			if (hasLockup && this.#versionUpdate) appendVersionUpdate(lines, this.#versionUpdate, termWidth);
+			const artLines = centerBlock(art, termWidth);
+			if (hasLockup && this.#versionUpdate) appendVersionUpdate(artLines, this.#versionUpdate, termWidth);
+			const lines = [...this.#renderNavLines(termWidth, context), ...artLines];
 			const tip = termWidth >= TIP_MIN_COLUMNS ? this.#renderTip(room) : [];
 			if (tip.length > 0) lines.push("", ...tip.flatMap(line => centerBlock([line], termWidth)));
 			return lines;
@@ -401,11 +427,47 @@ export class WelcomeComponent implements Component {
 			art = [];
 		}
 
-		const lines = centerBlock(art, termWidth);
-		if (hasLockup && this.#versionUpdate) appendVersionUpdate(lines, this.#versionUpdate, termWidth);
+		const artLines = centerBlock(art, termWidth);
+		if (hasLockup && this.#versionUpdate) appendVersionUpdate(artLines, this.#versionUpdate, termWidth);
+		const lines = [...this.#renderNavLines(termWidth, context), ...artLines];
 		const tip = termWidth >= TIP_MIN_COLUMNS ? this.#renderTip(room) : [];
 		if (tip.length > 0) lines.push("", ...tip.flatMap(line => centerBlock([line], termWidth)));
 		return lines;
+	}
+
+	/**
+	 * The quiet navigation line: `✦ nightglide` on the left, the real
+	 * project/model (when known) right-aligned, then an ultra-thin
+	 * {@link theme}-bordered rule across the full width. Narrow terminals keep
+	 * it single-line by dropping or truncating the right side first; the left
+	 * brand alone is the last thing to go.
+	 */
+	#renderNavLines(termWidth: number, context: WelcomeContext | undefined): string[] {
+		const room = termWidth - 2;
+		if (room < visibleWidth(NAV_LEFT_PLAIN)) return [];
+		const left = `${theme.fg("accent", NAV_BRAND_MARK)} ${theme.bold(theme.fg("text", NAV_BRAND_NAME))}`;
+		const leftWidth = visibleWidth(NAV_LEFT_PLAIN);
+
+		const values: string[] = [];
+		if (context?.project) values.push(context.project);
+		if (context?.model) values.push(context.model);
+		const plain = values.join(" / ");
+		const available = room - leftWidth - NAV_MIN_GAP;
+		let right = "";
+		if (plain && available >= NAV_RIGHT_MIN_WIDTH) {
+			if (visibleWidth(plain) <= available) {
+				const parts: string[] = [];
+				if (context?.project) parts.push(theme.fg("muted", context.project));
+				if (context?.model) parts.push(theme.fg("dim", context.model));
+				right = parts.join(theme.fg("dim", " / "));
+			} else {
+				right = theme.fg("muted", truncateToWidth(plain, available));
+			}
+		}
+		const navRow = right
+			? `${left}${padding(room - leftWidth - visibleWidth(right))}${right}`
+			: left;
+		return [navRow, theme.fg("borderMuted", "─".repeat(room))];
 	}
 
 	/**
@@ -516,6 +578,21 @@ const WORDMARK_WIDTH = Math.max(...WORDMARK.map(row => row.length));
 /** Columns between the logo and the wordmark. */
 const LOCKUP_GAP = 4;
 
+/** Brand navigation line: the mark painted in the accent color. */
+const NAV_BRAND_MARK = "✦";
+
+/** Brand navigation line: the wordmark beside {@link NAV_BRAND_MARK}. */
+const NAV_BRAND_NAME = "nightglide";
+
+/** Plain-text width of the navigation line's left side (`✦ nightglide`). */
+const NAV_LEFT_PLAIN = `${NAV_BRAND_MARK} ${NAV_BRAND_NAME}`;
+
+/** Minimum empty columns between the nav line's brand and its context values. */
+const NAV_MIN_GAP = 3;
+
+/** Minimum usable width for nav context; below it the right side is dropped. */
+const NAV_RIGHT_MIN_WIDTH = 6;
+
 /** Lockup row holding the version: below the wordmark, which starts on the logo's second row. */
 const VERSION_ROW = WORDMARK.length + 1;
 
@@ -606,8 +683,10 @@ function lockup(
 	if (!isBunTestRuntime()) {
 		const wordWidth = Math.max(...wordmark.map(row => visibleWidth(row)));
 		if (subtitle) {
+			// Keep at least LOCKUP_GAP/2 columns of air between the muted subtitle
+			// and the dim version so the two never read as one run of text.
 			const spaceLeft = wordWidth - visibleWidth(version) - visibleWidth(subtitle);
-			if (spaceLeft >= 2) {
+			if (spaceLeft >= LOCKUP_GAP) {
 				versionLine = `${subtitle}${padding(spaceLeft)}${version}`;
 			} else {
 				versionLine = `${padding(Math.max(0, wordWidth - visibleWidth(version)))}${version}`;

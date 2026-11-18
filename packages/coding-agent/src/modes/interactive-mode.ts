@@ -2545,6 +2545,12 @@ export class InteractiveMode implements InteractiveModeContext {
 		const startupQuiet = cfgStartupQuiet.get(settings);
 		this.composer.setPreferences({ quiet: startupQuiet });
 		this.composer.updateWelcome({ version: this.#version });
+		// Quiet brand nav line: real project + model only; anything unknown stays
+		// omitted (quiet startup mounts no welcome component at all).
+		this.composer.welcome?.setContext({
+			project: path.basename(this.sessionManager.getCwd()),
+			model: this.session.model ? formatModelStringWithRouting(this.session.model) : undefined,
+		});
 		this.#syncHeaderExtras();
 		this.statusLine.watchBranch(() => this.ui.requestRender());
 		this.composer.setStatusComponent(this.statusLine);
