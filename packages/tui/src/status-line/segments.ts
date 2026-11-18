@@ -28,7 +28,6 @@ import {
 } from "../chrome/context-thresholds";
 import type { TspSpan, TspTone } from "@oh-my-pi/pi-wire";
 import { node, span } from "../native/describe";
-import { thinkingLevelToken } from "../theme/theme-class";
 import type { StatusLineSession } from "./host";
 import type { RenderedSegment, SegmentContext, SegmentView, StatusLineSegment, StatusLineSegmentId } from "./types";
 
@@ -400,7 +399,9 @@ const modelSegment: StatusLineSegment = {
 		const advisor = modelAdvisorBadge(ctx);
 		if (advisor) content += theme.fg(advisor.color, ` ${advisor.icon}`);
 		if (tail) {
-			content += accentFg(ctx, "statusLineModel", tail);
+			// Hierarchy: the model name carries the accent; the thinking level and
+			// fast-mode icon recede to dim so the name stays the primary read.
+			content += theme.fg("dim", tail);
 		}
 
 		// Anthropic usage-limit stage (wrap-up allowance or low priority): a
@@ -415,15 +416,15 @@ const modelSegment: StatusLineSegment = {
 		return { content, visible: true };
 	},
 	describe(ctx) {
-		// Name, then the thinking level as a word in its level colour after a
-		// quiet separator; the terminal draws the model icon.
+		// Name carries the accent; the fast icon and the thinking level word
+		// recede to dim after a quiet separator — the terminal draws the icon.
 		const token = accentToken(ctx, "statusLineModel");
 		const spans: TspSpan[] = [span(modelDisplayName(ctx), token)];
 		const advisor = modelAdvisorBadge(ctx);
 		if (advisor) spans.push(span(` ${advisor.icon}`, advisor.color));
-		if (ctx.session.isFastModeActive() && theme.icon.fast) spans.push(span(` ${theme.icon.fast}`, token));
+		if (ctx.session.isFastModeActive() && theme.icon.fast) spans.push(span(` ${theme.icon.fast}`, "dim"));
 		const level = ctx.options.model?.showThinkingLevel === false ? undefined : thinkingLevelWord(ctx.session);
-		if (level !== undefined) spans.push(span(" · ", "dim"), span(level, thinkingLevelToken(level)));
+		if (level !== undefined) spans.push(span(" · ", "dim"), span(level, "dim"));
 		const slowModeLabel = ctx.session.getAnthropicSlowModeLabel?.();
 		if (slowModeLabel) spans.push(span(`${theme.sep.dot}${slowModeLabel}`, "warning"));
 		const fallbackDisplay = modelFallbackDisplay(ctx);
@@ -1133,14 +1134,14 @@ const streamSegment: StatusLineSegment = {
 		if (ctx.stream) badges.push(`● LIVE ${ctx.stream.viewers}`);
 		if (ctx.recording) badges.push("● REC");
 		if (badges.length === 0) return { content: "", visible: false };
-		return { content: theme.fg("thinkingHigh", badges.join(" ")), visible: true };
+		return { content: theme.fg("thinkingHigh", badges.join(theme.sep.dot)), visible: true };
 	},
 	describe(ctx) {
 		const badges: string[] = [];
 		if (ctx.stream) badges.push(`LIVE ${ctx.stream.viewers}`);
 		if (ctx.recording) badges.push("REC");
 		if (badges.length === 0) return null;
-		return segView([span(badges.join(" "), "thinkingHigh")], "live", "error");
+		return segView([span(badges.join(" · "), "thinkingHigh")], "live", "error");
 	},
 };
 
@@ -1373,19 +1374,20 @@ const routingSegment: StatusLineSegment = {
 	render(ctx) {
 		const mode = ctx.session.getNightglideRoutingMode?.();
 		if (!mode || mode === "manual") return { content: "", visible: false };
-		return { content: theme.fg("accent", routingSegmentText(ctx, mode)), visible: true };
+		// Visual tie to the model segment: the `routing:` qualifier recedes to
+		// dim while the applied mode keeps the accent the model name carries,
+		// so the two read as one qualifier chain rather than two loud blocks.
+		const suffix = ctx.session.getNightglideRoutingNonLocalDefault?.() ? theme.fg("dim", " (default: explicit)") : "";
+		return { content: `${theme.fg("dim", "routing:")}${theme.fg("accent", mode)}${suffix}`, visible: true };
 	},
 	describe(ctx) {
 		const mode = ctx.session.getNightglideRoutingMode?.();
 		if (!mode || mode === "manual") return null;
-		return segView([span(routingSegmentText(ctx, mode), "accent")], "routing", "accent");
+		const spans: TspSpan[] = [span("routing:", "dim"), span(mode, "accent")];
+		if (ctx.session.getNightglideRoutingNonLocalDefault?.()) spans.push(span(" (default: explicit)", "dim"));
+		return segView(spans, "routing", "accent");
 	},
 };
-
-function routingSegmentText(ctx: SegmentContext, mode: "local" | "balanced" | "performance"): string {
-	const nonLocalDefault = ctx.session.getNightglideRoutingNonLocalDefault?.();
-	return nonLocalDefault ? `routing:${mode} (default: explicit)` : `routing:${mode}`;
-}
 
 export const SEGMENTS: Record<StatusLineSegmentId, StatusLineSegment> = {
 	pi: piSegment,

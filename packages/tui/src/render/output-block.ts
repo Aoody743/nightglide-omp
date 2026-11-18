@@ -47,7 +47,17 @@ export function isFramedBlockComponent(component: Component): boolean {
 }
 
 type BlockRow =
-	| { kind: "bar"; leftChar: string; rightChar: string; label?: string; meta?: string }
+	| {
+			kind: "bar";
+			leftChar: string;
+			rightChar: string;
+			label?: string;
+			meta?: string;
+			/** Title layer for the label text (header hierarchy); undefined keeps the border color. */
+			titleColor?: ThemeColor;
+			/** Meta layer for the trailing meta text; undefined keeps the border color. */
+			metaColor?: ThemeColor;
+	  }
 	| { kind: "bottom"; leftChar: string; rightChar: string; meta?: string }
 	| { kind: "content"; inner: string }
 	| { kind: "sixel"; raw: string };
@@ -80,7 +90,9 @@ export function renderOutputBlock(options: OutputBlockOptions, theme: Theme): st
 	const v = theme.boxRound.vertical;
 	const cap = h.repeat(3);
 	const lineWidth = Math.max(0, width);
-	// Border colors: running/pending use accent, success uses dim (gray), error/warning keep their colors
+	// Border colors: running/pending carry the accent (the card is alive and
+	// reads slightly brighter than settled ones), success settles into the
+	// muted border, error/warning keep their key colors.
 	const borderColor: ThemeColor =
 		options.borderColor ??
 		(state === "error"
@@ -89,7 +101,32 @@ export function renderOutputBlock(options: OutputBlockOptions, theme: Theme): st
 				? "warning"
 				: state === "running" || state === "pending"
 					? "accent"
-					: "dim");
+					: state === "success"
+						? "borderMuted"
+						: "dim");
+	// Header hierarchy derived from the state: running keeps the accent title
+	// while its meta (spinner frames, durations) drops to dim; settled cards
+	// promote the title to the text layer; error/warning hold their key color
+	// on the title so the label carries the verdict. Only derived when the
+	// caller did not override the border color (legacy muted frames keep their
+	// uniform quiet look) and the header/meta do not already carry ANSI styling
+	// of their own (code cells and status lines style themselves).
+	const headerSelfStyled = header !== undefined && header.includes("\x1b[");
+	const headerMetaSelfStyled = headerMeta !== undefined && headerMeta.includes("\x1b[");
+	const deriveHeaderStyle = options.borderColor === undefined && !headerSelfStyled;
+	const headerTitleColor: ThemeColor | undefined = deriveHeaderStyle
+		? state === "error"
+			? "error"
+			: state === "warning"
+				? "warning"
+				: state === "success"
+					? "text"
+					: state === "running" || state === "pending"
+						? "accent"
+						: undefined
+		: undefined;
+	const headerMetaColor: ThemeColor | undefined =
+		options.borderColor === undefined && headerMeta !== undefined && !headerMetaSelfStyled ? "dim" : undefined;
 	const border = (text: string) => theme.fg(borderColor, text);
 	const bgFn = (() => {
 		if (!state || !applyBg) return undefined;
@@ -121,6 +158,8 @@ export function renderOutputBlock(options: OutputBlockOptions, theme: Theme): st
 		rightChar: theme.boxRound.topRight,
 		label: header,
 		meta: headerMeta,
+		titleColor: headerTitleColor,
+		metaColor: headerMetaColor,
 	});
 
 	const normalizedSections = sections.length > 0 ? sections : [{ lines: [] as string[] }];
@@ -182,11 +221,18 @@ export function renderOutputBlock(options: OutputBlockOptions, theme: Theme): st
 
 	const H = rows.length;
 
-	const renderBar = (row: { leftChar: string; rightChar: string; label?: string; meta?: string }): string => {
+	const renderBar = (row: { leftChar: string; rightChar: string; label?: string; meta?: string; titleColor?: ThemeColor; metaColor?: ThemeColor }): string => {
 		const leftGlyphs = `${row.leftChar}${cap}`;
 		const rightGlyph = row.rightChar;
 		if (lineWidth <= 0) return border(leftGlyphs) + border(rightGlyph);
-		const labelText = [row.label, row.meta].filter(Boolean).join(theme.sep.dot);
+		// Title and meta are styled per layer: the label carries the title color
+		// (or the border color), the trailing meta its own quieter color. Each
+		// part is wrapped individually so `theme.fg`'s fg reset re-arms before the
+		// next part and before the border fill that follows the label.
+		const parts: string[] = [];
+		if (row.label) parts.push(row.titleColor ? theme.fg(row.titleColor, row.label) : row.label);
+		if (row.meta) parts.push(row.metaColor ? theme.fg(row.metaColor, row.meta) : row.meta);
+		const labelText = parts.join(theme.sep.dot);
 		if (!labelText) {
 			// No header: draw a clean, continuous top/separator bar (no 1-col gap).
 			const fillCount = Math.max(0, lineWidth - visibleWidth(leftGlyphs) - visibleWidth(rightGlyph));
