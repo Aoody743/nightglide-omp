@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "bun:test";
 import { pickWeightedTip, WelcomeComponent } from "@oh-my-pi/pi-tui/prompt/welcome";
 import { initTheme, theme } from "@oh-my-pi/pi-tui/theme";
-import { visibleWidth } from "@oh-my-pi/pi-tui";
+import { truncateToWidth, visibleWidth } from "@oh-my-pi/pi-tui";
 
 describe("WelcomeComponent", () => {
 	beforeAll(async () => {
@@ -301,5 +301,86 @@ describe("WelcomeComponent", () => {
 		expect(json).toContain("proj-2");
 		expect(json).toContain("model-2");
 		expect(json).not.toContain("proj-1");
+	});
+
+	it("natively truncates overflowing nav context to a single muted span", () => {
+		const plain = "nightglide-cli / omlx/endless";
+		const welcome = new WelcomeComponent("1.0.0");
+		welcome.setContext({ project: "nightglide-cli", model: "omlx/endless" });
+		const tree = welcome.describe({ cols: 40 } as never);
+		// Same measure as the ANSI path: room keeps a clear column on each side,
+		// then the brand width and the minimum gap come off before the context.
+		const available = 40 - 2 - visibleWidth("✦ nightglide") - 3;
+		expect(visibleWidth(plain)).toBeGreaterThan(available); // precondition: the overflow path
+		expect(tree.c?.[0]).toMatchObject({
+			key: "nav",
+			c: [
+				{ p: { role: "omp.welcome.brand" } },
+				{
+					k: "text",
+					p: {
+						role: "omp.welcome.context",
+						spans: [{ t: truncateToWidth(plain, available), s: "muted" }],
+					},
+				},
+			],
+		});
+	});
+
+	it("natively omits the nav line and rule when the terminal is narrower than the brand", () => {
+		const tree = new WelcomeComponent("1.0.0").describe({ cols: 12 } as never);
+		// The lockup alone: no nav row, no rule (and no tip below the 50-column gate).
+		expect(tree.c).toHaveLength(1);
+		expect(tree.c?.[0]).toMatchObject({ key: "lockup" });
+		const json = JSON.stringify(tree);
+		expect(json).not.toContain("omp.welcome.nav");
+		expect(json).not.toContain("omp.welcome.rule");
+	});
+
+	it("natively gates the tip row on the 50-column minimum", () => {
+		const welcome = new WelcomeComponent("1.0.0");
+		expect(welcome.tip).toBeDefined(); // precondition: a tip exists to gate
+		expect(JSON.stringify(welcome.describe({ cols: 49 } as never))).not.toContain("omp.welcome.tip");
+		expect(JSON.stringify(welcome.describe({ cols: 50 } as never))).toContain("omp.welcome.tip");
+	});
+
+	it("natively keeps the full dual-span nav context at roomy widths", () => {
+		const welcome = new WelcomeComponent("1.0.0");
+		welcome.setContext({ project: "nightglide-cli", model: "omlx/endless" });
+		const tree = welcome.describe({ cols: 100 } as never);
+		expect(tree.c?.[0]).toMatchObject({
+			key: "nav",
+			c: [
+				{
+					p: {
+						role: "omp.welcome.brand",
+						spans: [
+							{ t: "✦ ", s: "accent" },
+							{ t: "nightglide", s: "strong" },
+						],
+					},
+				},
+				{
+					k: "text",
+					p: {
+						role: "omp.welcome.context",
+						spans: [
+							{ t: "nightglide-cli", s: "muted" },
+							{ t: " / ", s: "dim" },
+							{ t: "omlx/endless", s: "dim" },
+						],
+					},
+				},
+			],
+		});
+	});
+
+	it("rebuilds the native node when the describe width changes", () => {
+		const welcome = new WelcomeComponent("1.0.0");
+		const wide = welcome.describe({ cols: 100 } as never);
+		expect(welcome.describe({ cols: 100 } as never)).toBe(wide);
+		const narrow = welcome.describe({ cols: 12 } as never);
+		expect(narrow).not.toBe(wide);
+		expect(JSON.stringify(narrow)).not.toContain("omp.welcome.nav");
 	});
 });

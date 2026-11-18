@@ -236,7 +236,7 @@ export class WelcomeComponent implements Component {
 	// Bypassed while the intro animation runs (every frame differs).
 	#cachedWidth = -1;
 	#cachedLines: string[] | undefined;
-	#native: { tip: string | undefined; context: WelcomeContext | undefined; node: NativeNode } | undefined;
+	#native: { tip: string | undefined; context: WelcomeContext | undefined; cols: number; node: NativeNode } | undefined;
 
 	constructor(private version: string) {}
 	get tip(): string | undefined {
@@ -259,42 +259,68 @@ export class WelcomeComponent implements Component {
 	 * (`omp.welcome.lockup`: the terminal's builtin `omp` mark, which it animates,
 	 * beside the wordmark with the version under it) and the tip of the session.
 	 * Roles carry the look (gradient logo, type scale); a "[NEW]" tip
-	 * carries a terminal-clocked shimmering tag.
+	 * carries a terminal-clocked shimmering tag. The nav line follows the ANSI
+	 * narrow-screen policy: the right context drops or truncates first, the
+	 * left brand is the last thing to go, and the tip disappears below
+	 * {@link TIP_MIN_COLUMNS} columns.
 	 */
-	describe(_cx: DescribeContext): NativeNode {
+	describe(cx: DescribeContext): NativeNode {
 		const tip = this.tip;
+		// Hosts pass the live surface width; the fallback keeps describe callers
+		// that omit `cols` (tests) at a roomy classic terminal width.
+		const cols = cx.cols ?? DEFAULT_DESCRIBE_COLS;
 		if (
 			this.#native &&
 			this.#native.tip === tip &&
 			this.#native.context?.project === this.#context?.project &&
-			this.#native.context?.model === this.#context?.model
+			this.#native.context?.model === this.#context?.model &&
+			this.#native.cols === cols
 		) {
 			return this.#native.node;
 		}
 
-		const navChildren: NativeChild[] = [
-			text([span(`${NAV_BRAND_MARK} `, "accent"), span(NAV_BRAND_NAME, "strong")], {
-				role: "omp.welcome.brand",
-			}),
-		];
-		const contextSpans: TspSpan[] = [];
-		if (this.#context?.project) {
-			contextSpans.push(span(this.#context.project, "muted"));
-		}
-		if (this.#context?.model) {
-			if (contextSpans.length > 0) {
-				contextSpans.push(span(" / ", "dim"));
+		const body: NativeChild[] = [];
+		// Nav line mirrors the ANSI strategy (#renderNavLines): one clear column
+		// on each side, then drop or truncate the right context before the brand.
+		const room = cols - 2;
+		const leftWidth = visibleWidth(NAV_LEFT_PLAIN);
+		if (room >= leftWidth) {
+			const navChildren: NativeChild[] = [
+				text([span(`${NAV_BRAND_MARK} `, "accent"), span(NAV_BRAND_NAME, "strong")], {
+					role: "omp.welcome.brand",
+				}),
+			];
+			const values: string[] = [];
+			if (this.#context?.project) values.push(this.#context.project);
+			if (this.#context?.model) values.push(this.#context.model);
+			const plain = values.join(" / ");
+			const available = room - leftWidth - NAV_MIN_GAP;
+			if (plain && available >= NAV_RIGHT_MIN_WIDTH) {
+				if (visibleWidth(plain) <= available) {
+					const contextSpans: TspSpan[] = [];
+					if (this.#context?.project) {
+						contextSpans.push(span(this.#context.project, "muted"));
+					}
+					if (this.#context?.model) {
+						if (contextSpans.length > 0) {
+							contextSpans.push(span(" / ", "dim"));
+						}
+						contextSpans.push(span(this.#context.model, "dim"));
+					}
+					navChildren.push(text(contextSpans, { role: "omp.welcome.context" }));
+				} else {
+					// Overflow degrades like ANSI: the whole string as one muted
+					// span cut to the available width.
+					navChildren.push(
+						text([span(truncateToWidth(plain, available), "muted")], { role: "omp.welcome.context" }),
+					);
+				}
 			}
-			contextSpans.push(span(this.#context.model, "dim"));
+			body.push(node("row", { justify: "between", align: "center", role: "omp.welcome.nav" }, navChildren, "nav"));
+			body.push(node("rule", { role: "omp.welcome.rule" }, undefined, "nav-rule"));
 		}
-		if (contextSpans.length > 0) {
-			navChildren.push(text(contextSpans, { role: "omp.welcome.context" }));
-		}
-		const navRow = node("row", { justify: "between", align: "center", role: "omp.welcome.nav" }, navChildren, "nav");
-		const navRule = node("rule", { role: "omp.welcome.rule" }, undefined, "nav-rule");
-
-		const body: NativeChild[] = [navRow, navRule, lockupNode(this.version, this.#versionUpdate)];
-		if (tip) {
+		body.push(lockupNode(this.version, this.#versionUpdate));
+		if (tip && cols >= TIP_MIN_COLUMNS) {
 			const isNew = NEW_TIP_MARKER.test(tip);
 			const tipText = compactText(tipSpans(expandTipKeys(isNew ? tip.replace(NEW_TIP_MARKER, "") : tip)));
 			const tipRow: NativeChild[] = [
@@ -306,7 +332,7 @@ export class WelcomeComponent implements Component {
 		}
 		// No head row or chevron: the card is the hero; the version sits under the wordmark.
 		const described = card({ role: "omp.welcome" }, body);
-		this.#native = { tip, context: this.#context ? { ...this.#context } : undefined, node: described };
+		this.#native = { tip, context: this.#context ? { ...this.#context } : undefined, cols, node: described };
 		return described;
 	}
 
@@ -606,6 +632,10 @@ const NAV_MIN_GAP = 3;
 
 /** Minimum usable width for nav context; below it the right side is dropped. */
 const NAV_RIGHT_MIN_WIDTH = 6;
+
+/** Width `describe()` assumes when a caller omits `cx.cols` (test shortcuts):
+ *  roomy enough for the full nav line, context and tip. */
+const DEFAULT_DESCRIBE_COLS = 80;
 
 /** Lockup row holding the version: below the wordmark, which starts on the logo's second row. */
 const VERSION_ROW = WORDMARK.length + 1;

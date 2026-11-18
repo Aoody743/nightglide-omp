@@ -2932,7 +2932,8 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.#eventBusUnsubscribers.push(
 			this.session.subscribe(event => {
 				if (event.type === "model_changed") {
-					this.#updateWelcomeContext();
+					// Welcome context sync is owned by EventController (updates on both
+					// model_changed and retry_fallback_succeeded); nothing to do here.
 					this.#scheduleComposerStatusPersist();
 					this.session.prewarmModelConnection();
 				}
