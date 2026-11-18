@@ -14,7 +14,7 @@ describe("WelcomeComponent", () => {
 
 	it("natively sets the version under the wordmark beside the logo", () => {
 		const tree = new WelcomeComponent("18.4.12").describe({} as never);
-		expect(tree.c?.[0]).toMatchObject({
+		expect(tree.c?.[2]).toMatchObject({
 			key: "lockup",
 			p: { role: "omp.welcome.lockup" },
 			c: [
@@ -187,5 +187,119 @@ describe("WelcomeComponent", () => {
 			expect(nav).toContain("✦ nightglide");
 			expect(visibleWidth(nav)).toBeLessThanOrEqual(columns);
 		}
+	});
+
+	it("natively renders quiet brand navigation line and rule above lockup without context", () => {
+		const tree = new WelcomeComponent("1.0.0").describe({} as never);
+		expect(tree.c?.[0]).toEqual({
+			k: "row",
+			key: "nav",
+			p: { justify: "between", align: "center", role: "omp.welcome.nav" },
+			c: [
+				{
+					k: "text",
+					p: {
+						role: "omp.welcome.brand",
+						spans: [
+							{ t: "✦ ", s: "accent" },
+							{ t: "nightglide", s: "strong" },
+						],
+					},
+				},
+			],
+		});
+		expect(tree.c?.[1]).toEqual({
+			k: "rule",
+			key: "nav-rule",
+			p: { role: "omp.welcome.rule" },
+			c: undefined,
+		});
+	});
+
+	it("natively includes project and model context in navigation line", () => {
+		const welcome = new WelcomeComponent("1.0.0");
+		welcome.setContext({ project: "nightglide-cli", model: "omlx/endless" });
+		const tree = welcome.describe({} as never);
+		expect(tree.c?.[0]).toMatchObject({
+			key: "nav",
+			p: { justify: "between", align: "center", role: "omp.welcome.nav" },
+			c: [
+				{
+					p: {
+						role: "omp.welcome.brand",
+						spans: [
+							{ t: "✦ ", s: "accent" },
+							{ t: "nightglide", s: "strong" },
+						],
+					},
+				},
+				{
+					k: "text",
+					p: {
+						role: "omp.welcome.context",
+						spans: [
+							{ t: "nightglide-cli", s: "muted" },
+							{ t: " / ", s: "dim" },
+							{ t: "omlx/endless", s: "dim" },
+						],
+					},
+				},
+			],
+		});
+		expect(tree.c?.[1]).toMatchObject({
+			key: "nav-rule",
+			k: "rule",
+			p: { role: "omp.welcome.rule" },
+		});
+	});
+
+	it("natively supports partial context (project only or model only)", () => {
+		const welcomeProj = new WelcomeComponent("1.0.0");
+		welcomeProj.setContext({ project: "my-project" });
+		const treeProj = welcomeProj.describe({} as never);
+		expect(treeProj.c?.[0]).toMatchObject({
+			key: "nav",
+			c: [
+				{ p: { role: "omp.welcome.brand" } },
+				{
+					p: {
+						role: "omp.welcome.context",
+						spans: [{ t: "my-project", s: "muted" }],
+					},
+				},
+			],
+		});
+
+		const welcomeModel = new WelcomeComponent("1.0.0");
+		welcomeModel.setContext({ model: "claude-3-5" });
+		const treeModel = welcomeModel.describe({} as never);
+		expect(treeModel.c?.[0]).toMatchObject({
+			key: "nav",
+			c: [
+				{ p: { role: "omp.welcome.brand" } },
+				{
+					p: {
+						role: "omp.welcome.context",
+						spans: [{ t: "claude-3-5", s: "dim" }],
+					},
+				},
+			],
+		});
+	});
+
+	it("caches native node and updates on setContext", () => {
+		const welcome = new WelcomeComponent("1.0.0");
+		welcome.setContext({ project: "proj-1", model: "model-1" });
+		const first = welcome.describe({} as never);
+		const second = welcome.describe({} as never);
+		expect(first).toBe(second);
+
+		welcome.setContext({ project: "proj-2", model: "model-2" });
+		const third = welcome.describe({} as never);
+		expect(third).not.toBe(first);
+		const json = JSON.stringify(third);
+		expect(json).toContain("proj-2");
+		expect(json).toContain("model-2");
+		expect(json).not.toContain("proj-1");
 	});
 });

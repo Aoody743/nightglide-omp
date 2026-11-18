@@ -236,7 +236,7 @@ export class WelcomeComponent implements Component {
 	// Bypassed while the intro animation runs (every frame differs).
 	#cachedWidth = -1;
 	#cachedLines: string[] | undefined;
-	#native: { tip: string | undefined; node: NativeNode } | undefined;
+	#native: { tip: string | undefined; context: WelcomeContext | undefined; node: NativeNode } | undefined;
 
 	constructor(private version: string) {}
 	get tip(): string | undefined {
@@ -263,8 +263,37 @@ export class WelcomeComponent implements Component {
 	 */
 	describe(_cx: DescribeContext): NativeNode {
 		const tip = this.tip;
-		if (this.#native && this.#native.tip === tip) return this.#native.node;
-		const body: NativeChild[] = [lockupNode(this.version, this.#versionUpdate)];
+		if (
+			this.#native &&
+			this.#native.tip === tip &&
+			this.#native.context?.project === this.#context?.project &&
+			this.#native.context?.model === this.#context?.model
+		) {
+			return this.#native.node;
+		}
+
+		const navChildren: NativeChild[] = [
+			text([span(`${NAV_BRAND_MARK} `, "accent"), span(NAV_BRAND_NAME, "strong")], {
+				role: "omp.welcome.brand",
+			}),
+		];
+		const contextSpans: TspSpan[] = [];
+		if (this.#context?.project) {
+			contextSpans.push(span(this.#context.project, "muted"));
+		}
+		if (this.#context?.model) {
+			if (contextSpans.length > 0) {
+				contextSpans.push(span(" / ", "dim"));
+			}
+			contextSpans.push(span(this.#context.model, "dim"));
+		}
+		if (contextSpans.length > 0) {
+			navChildren.push(text(contextSpans, { role: "omp.welcome.context" }));
+		}
+		const navRow = node("row", { justify: "between", align: "center", role: "omp.welcome.nav" }, navChildren, "nav");
+		const navRule = node("rule", { role: "omp.welcome.rule" }, undefined, "nav-rule");
+
+		const body: NativeChild[] = [navRow, navRule, lockupNode(this.version, this.#versionUpdate)];
 		if (tip) {
 			const isNew = NEW_TIP_MARKER.test(tip);
 			const tipText = compactText(tipSpans(expandTipKeys(isNew ? tip.replace(NEW_TIP_MARKER, "") : tip)));
@@ -277,7 +306,7 @@ export class WelcomeComponent implements Component {
 		}
 		// No head row or chevron: the card is the hero; the version sits under the wordmark.
 		const described = card({ role: "omp.welcome" }, body);
-		this.#native = { tip, node: described };
+		this.#native = { tip, context: this.#context ? { ...this.#context } : undefined, node: described };
 		return described;
 	}
 
@@ -464,9 +493,7 @@ export class WelcomeComponent implements Component {
 				right = theme.fg("muted", truncateToWidth(plain, available));
 			}
 		}
-		const navRow = right
-			? `${left}${padding(room - leftWidth - visibleWidth(right))}${right}`
-			: left;
+		const navRow = right ? `${left}${padding(room - leftWidth - visibleWidth(right))}${right}` : left;
 		return [navRow, theme.fg("borderMuted", "─".repeat(room))];
 	}
 
@@ -495,17 +522,8 @@ export class WelcomeComponent implements Component {
 	}
 }
 
-/** Total length of Nightglide's brisk intro animation. */
-const NIGHTGLIDE_INTRO_MS = 750;
-
 /** Nightglide block-grid brand mark: aerodynamic supersonic delta "N" glider. */
-export const NIGHTGLIDE_LOGO = [
-	"████    ████",
-	"█████   ████",
-	"██ ▀██▄ ████",
-	"██   ▀██████",
-	"▒▒    ▀█████",
-];
+export const NIGHTGLIDE_LOGO = ["████    ████", "█████   ████", "██ ▀██▄ ████", "██   ▀██████", "▒▒    ▀█████"];
 
 export const NIGHTGLIDE_LOGO_WIDTH = Math.max(...NIGHTGLIDE_LOGO.map(row => row.length));
 
@@ -519,11 +537,7 @@ export const NIGHTGLIDE_WORDMARK = [
 export const NIGHTGLIDE_WORDMARK_WIDTH = Math.max(...NIGHTGLIDE_WORDMARK.map(row => row.length));
 
 /** Compact wordmark ("ng") for narrower viewports. */
-export const NIGHTGLIDE_COMPACT_WORDMARK = [
-	"█▀▀▄ ▄▀▀█",
-	"█  █ █▄▄█",
-	"     ▄▄▄▀",
-];
+export const NIGHTGLIDE_COMPACT_WORDMARK = ["█▀▀▄ ▄▀▀█", "█  █ █▄▄█", "     ▄▄▄▀"];
 
 export const NIGHTGLIDE_COMPACT_WORDMARK_WIDTH = Math.max(...NIGHTGLIDE_COMPACT_WORDMARK.map(row => row.length));
 
@@ -712,14 +726,14 @@ function centerBlock(lines: readonly string[], width: number): string[] {
 const FLIGHT_STOPS: ReadonlyArray<readonly [number, number, number]> = [
 	[181, 182, 255], // #B5B6FF - Flight periwinkle
 	[124, 139, 255], // #7C8BFF - Horizon light
-	[0, 219, 228],   // #00DBE4 - Cyan micro-glow
+	[0, 219, 228], // #00DBE4 - Cyan micro-glow
 	[255, 211, 148], // #FFD394 - Morning starlight
 ];
 
 const ABYSS_STOPS: ReadonlyArray<readonly [number, number, number]> = [
-	[98, 226, 203],  // #62E2CB - Bioluminescent cyan
-	[30, 174, 152],  // #1EAE98 - Deep ocean teal
-	[75, 137, 172],  // #4B89AC - Abyssal blue
+	[98, 226, 203], // #62E2CB - Bioluminescent cyan
+	[30, 174, 152], // #1EAE98 - Deep ocean teal
+	[75, 137, 172], // #4B89AC - Abyssal blue
 	[145, 184, 188], // #91B8BC - Soft mist cyan
 ];
 
@@ -727,23 +741,23 @@ const ABYSS_STOPS: ReadonlyArray<readonly [number, number, number]> = [
 // deep backgrounds and would wash out on bright ones, so light themes swap in
 // saturated mid-tone brand colors that read against near-white surfaces.
 const CLOUDLIGHT_STOPS: ReadonlyArray<readonly [number, number, number]> = [
-	[44, 92, 168],   // #2C5CA8 - Cloudlight accent blue
-	[98, 68, 158],   // #62449E - Day-sky violet
-	[3, 105, 161],   // #0369A1 - Azure information
-	[11, 114, 133],  // #0B7285 - Deep teal
+	[44, 92, 168], // #2C5CA8 - Cloudlight accent blue
+	[98, 68, 158], // #62449E - Day-sky violet
+	[3, 105, 161], // #0369A1 - Azure information
+	[11, 114, 133], // #0B7285 - Deep teal
 ];
 
 const DAYBREAK_STOPS: ReadonlyArray<readonly [number, number, number]> = [
-	[158, 77, 54],   // #9E4D36 - Dawn clay
-	[125, 63, 152],  // #7D3F98 - Plum halo
-	[42, 104, 133],  // #2A6885 - Horizon teal
-	[176, 101, 72],  // #B06548 - Soft terracotta
+	[158, 77, 54], // #9E4D36 - Dawn clay
+	[125, 63, 152], // #7D3F98 - Plum halo
+	[42, 104, 133], // #2A6885 - Horizon teal
+	[176, 101, 72], // #B06548 - Soft terracotta
 ];
 
 const UPSTREAM_STOPS: ReadonlyArray<readonly [number, number, number]> = [
 	[248, 79, 204], // oklch(0.7 0.24 340)
 	[147, 98, 244], // oklch(0.62 0.21 295)
-	[0, 219, 228],  // oklch(0.81 0.14 200)
+	[0, 219, 228], // oklch(0.81 0.14 200)
 ];
 
 /** Multi-stop palette for the diagonal gradient. */
@@ -791,12 +805,12 @@ export function gradientEscape(t: number, shine?: ShineConfig): string {
 		const stops = isBunTestRuntime()
 			? UPSTREAM_STOPS
 			: isLightGlowTheme()
-			? currentTheme?.includes("daybreak")
-				? DAYBREAK_STOPS
-				: CLOUDLIGHT_STOPS
-			: currentTheme?.includes("abyss")
-			? ABYSS_STOPS
-			: FLIGHT_STOPS;
+				? currentTheme?.includes("daybreak")
+					? DAYBREAK_STOPS
+					: CLOUDLIGHT_STOPS
+				: currentTheme?.includes("abyss")
+					? ABYSS_STOPS
+					: FLIGHT_STOPS;
 		const seg = t * (stops.length - 1);
 		const i = Math.min(stops.length - 2, Math.floor(seg));
 		const f = seg - i;

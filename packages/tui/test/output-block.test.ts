@@ -170,4 +170,96 @@ describe("renderOutputBlock state header hierarchy", () => {
 		expect(lines[0]).toContain(styled);
 		expect(lines[0]).not.toContain(theme.fg("text", "Read"));
 	});
+
+	it("keeps the key color on warning titles while the meta recedes", async () => {
+		const theme = (await getThemeByName("dark"))!;
+		const lines = renderOutputBlock(
+			{ width: 40, header: "Ask", headerMeta: "timeout 10s", state: "warning", sections: [{ lines: ["out"] }] },
+			theme,
+		);
+		expect(lines[0]).toContain(theme.fg("warning", "╭───"));
+		expect(lines[0]).toContain(theme.fg("warning", "Ask"));
+		expect(lines[0]).toContain(theme.fg("dim", "timeout 10s"));
+	});
+
+	it("styles the separator dot between title and meta with dim", async () => {
+		const theme = (await getThemeByName("dark"))!;
+		const lines = renderOutputBlock(
+			{ width: 40, header: "Read", headerMeta: "120 lines", state: "success", sections: [{ lines: ["out"] }] },
+			theme,
+		);
+		expect(lines[0]).toContain(theme.fg("dim", theme.sep.dot));
+	});
+
+	it("styles unstyled footer meta with dim on the bottom border", async () => {
+		const theme = (await getThemeByName("dark"))!;
+		const lines = renderOutputBlock(
+			{ width: 40, footerMeta: "Wall 0.16s", state: "success", sections: [{ lines: ["out"] }] },
+			theme,
+		);
+		expect(lines.at(-1)).toContain(theme.fg("dim", "Wall 0.16s"));
+	});
+});
+
+describe("renderOutputBlock narrow viewport responsiveness", () => {
+	beforeAll(async () => {
+		await initTheme();
+	});
+
+	it("truncates long headers with ellipsis in narrow viewports (80, 60, 40 cols)", async () => {
+		const theme = (await getThemeByName("dark"))!;
+		const header = "Read src/auth/session/token_provider_factory.ts";
+		const headerMeta = "240 lines · 8.2kb";
+
+		for (const width of [80, 60, 40]) {
+			const lines = renderOutputBlock(
+				{ width, header, headerMeta, state: "success", sections: [{ lines: ["content row"] }] },
+				theme,
+			);
+			for (const line of lines) {
+				expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+			}
+			if (width <= 60) {
+				const stripped = stripVTControlCharacters(lines[0]);
+				expect(stripped).toContain("…");
+			}
+		}
+	});
+
+	it("wraps overflowing unstyled footer meta into dimmed body rows", async () => {
+		const theme = (await getThemeByName("dark"))!;
+		const meta = "Wall 1.20s · Timeout 300s · Artifact a123 · Exit 7";
+		const lines = renderOutputBlock(
+			{ width: 35, footerMeta: meta, state: "error", sections: [{ lines: ["failure details"] }] },
+			theme,
+		);
+		// Bottom border should collapse to plain border
+		expect(stripVTControlCharacters(lines.at(-1)!)).toBe(`╰${"─".repeat(33)}╯`);
+		// And should have error border color
+		expect(lines.at(-1)).toContain(theme.fg("error", "╰───"));
+		// Body row should contain dimmed footer meta text
+		const metaRow = lines.find(line => line.includes("Artifact a123"))!;
+		expect(metaRow).toBeDefined();
+		expect(metaRow).toContain(theme.fg("dim", "Artifact a123 · Exit 7"));
+	});
+
+	it("collapses frame cleanly without overflow in extreme narrow viewports (20, 10, 5, 2, 1)", async () => {
+		const theme = (await getThemeByName("dark"))!;
+		for (const width of [20, 10, 5, 2, 1]) {
+			const lines = renderOutputBlock(
+				{
+					width,
+					header: "Bash command",
+					headerMeta: "0.5s",
+					footerMeta: "Wall 0.5s",
+					state: "running",
+					sections: [{ lines: ["echo hello world"] }],
+				},
+				theme,
+			);
+			for (const line of lines) {
+				expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+			}
+		}
+	});
 });

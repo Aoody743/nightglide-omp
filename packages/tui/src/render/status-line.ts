@@ -33,7 +33,9 @@ function flattenForHeader(text: string): string {
 export function renderStatusLine(options: StatusLineOptions, theme: Theme): string {
 	const icon =
 		options.iconOverride ?? (options.icon ? formatStatusIcon(options.icon, theme, options.spinnerFrame) : "");
-	const titleColor = options.titleColor ?? "accent";
+	const defaultTitleColor: ThemeColor =
+		options.icon === "error" ? "error" : options.icon === "warning" ? "warning" : "accent";
+	const titleColor = options.titleColor ?? defaultTitleColor;
 	const title = theme.fg(titleColor, flattenForHeader(options.title));
 	let line = icon ? `${icon} ${title}` : title;
 

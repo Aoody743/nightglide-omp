@@ -58,7 +58,7 @@ type BlockRow =
 			/** Meta layer for the trailing meta text; undefined keeps the border color. */
 			metaColor?: ThemeColor;
 	  }
-	| { kind: "bottom"; leftChar: string; rightChar: string; meta?: string }
+	| { kind: "bottom"; leftChar: string; rightChar: string; meta?: string; metaColor?: ThemeColor }
 	| { kind: "content"; inner: string }
 	| { kind: "sixel"; raw: string };
 
@@ -202,12 +202,16 @@ export function renderOutputBlock(options: OutputBlockOptions, theme: Theme): st
 	// border would silently drop trailing facts (exit code, artifact id), so an
 	// overflowing footer wraps into body rows above a plain border instead.
 	const footerMeta = options.footerMeta;
+	const footerMetaSelfStyled = footerMeta !== undefined && footerMeta.includes("\x1b[");
+	const footerMetaColor: ThemeColor | undefined =
+		footerMeta !== undefined && !footerMetaSelfStyled ? "dim" : undefined;
 	const footerFits =
 		footerMeta === undefined ||
 		visibleWidth(` ${footerMeta} `) <=
 			lineWidth - visibleWidth(`${theme.boxRound.bottomLeft}${cap}`) - visibleWidth(theme.boxRound.bottomRight);
 	if (footerMeta !== undefined && !footerFits) {
-		for (const wrappedLine of wrapTextWithAnsi(footerMeta, contentWidth)) {
+		const styledFooter = footerMetaColor ? theme.fg(footerMetaColor, footerMeta) : footerMeta;
+		for (const wrappedLine of wrapTextWithAnsi(styledFooter, contentWidth)) {
 			const innerPadding = padding(Math.max(0, contentWidth - visibleWidth(wrappedLine)));
 			rows.push({ kind: "content", inner: `${wrappedLine}${innerPadding}` });
 		}
@@ -217,11 +221,19 @@ export function renderOutputBlock(options: OutputBlockOptions, theme: Theme): st
 		leftChar: theme.boxRound.bottomLeft,
 		rightChar: theme.boxRound.bottomRight,
 		meta: footerFits ? footerMeta : undefined,
+		metaColor: footerFits ? footerMetaColor : undefined,
 	});
 
 	const H = rows.length;
 
-	const renderBar = (row: { leftChar: string; rightChar: string; label?: string; meta?: string; titleColor?: ThemeColor; metaColor?: ThemeColor }): string => {
+	const renderBar = (row: {
+		leftChar: string;
+		rightChar: string;
+		label?: string;
+		meta?: string;
+		titleColor?: ThemeColor;
+		metaColor?: ThemeColor;
+	}): string => {
 		const leftGlyphs = `${row.leftChar}${cap}`;
 		const rightGlyph = row.rightChar;
 		if (lineWidth <= 0) return border(leftGlyphs) + border(rightGlyph);
@@ -232,7 +244,9 @@ export function renderOutputBlock(options: OutputBlockOptions, theme: Theme): st
 		const parts: string[] = [];
 		if (row.label) parts.push(row.titleColor ? theme.fg(row.titleColor, row.label) : row.label);
 		if (row.meta) parts.push(row.metaColor ? theme.fg(row.metaColor, row.meta) : row.meta);
-		const labelText = parts.join(theme.sep.dot);
+		const dotSep =
+			row.metaColor || deriveHeaderStyle ? theme.fg(row.metaColor ?? "dim", theme.sep.dot) : theme.sep.dot;
+		const labelText = parts.join(dotSep);
 		if (!labelText) {
 			// No header: draw a clean, continuous top/separator bar (no 1-col gap).
 			const fillCount = Math.max(0, lineWidth - visibleWidth(leftGlyphs) - visibleWidth(rightGlyph));

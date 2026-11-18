@@ -445,6 +445,7 @@ export class EventController {
 			notice: e => this.#handleNotice(e),
 			model_changed: async () => {
 				vocalizer.enforceProviderPolicy();
+				this.ctx.updateWelcomeContext?.();
 				this.ctx.statusLine.invalidate();
 				this.ctx.ui.requestRender();
 			},
@@ -2952,6 +2953,7 @@ export class EventController {
 		event: Extract<AgentSessionEvent, { type: "retry_fallback_succeeded" }>,
 	): Promise<void> {
 		this.ctx.showStatus(`Fallback succeeded on ${event.model}`);
+		this.ctx.updateWelcomeContext?.();
 	}
 
 	async #handleTtsrTriggered(event: Extract<AgentSessionEvent, { type: "ttsr_triggered" }>): Promise<void> {

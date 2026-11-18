@@ -721,7 +721,7 @@ export const readToolRenderer = {
 			title += `:${startLine}${endLine ? `-${endLine}` : ""}`;
 		}
 		if (details?.summary) {
-			title += ` (summary: ${details.summary.elidedSpans} elided span${details.summary.elidedSpans === 1 ? "" : "s"})`;
+			title += ` ${uiTheme.fg("dim", `(summary: ${details.summary.elidedSpans} elided span${details.summary.elidedSpans === 1 ? "" : "s"})`)}`;
 		}
 		if (details?.conflictCount && details.conflictCount > 0) {
 			const n = details.conflictCount;

@@ -2547,10 +2547,7 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.composer.updateWelcome({ version: this.#version });
 		// Quiet brand nav line: real project + model only; anything unknown stays
 		// omitted (quiet startup mounts no welcome component at all).
-		this.composer.welcome?.setContext({
-			project: path.basename(this.sessionManager.getCwd()),
-			model: this.session.model ? formatModelStringWithRouting(this.session.model) : undefined,
-		});
+		this.#updateWelcomeContext();
 		this.#syncHeaderExtras();
 		this.statusLine.watchBranch(() => this.ui.requestRender());
 		this.composer.setStatusComponent(this.statusLine);
@@ -2935,6 +2932,7 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.#eventBusUnsubscribers.push(
 			this.session.subscribe(event => {
 				if (event.type === "model_changed") {
+					this.#updateWelcomeContext();
 					this.#scheduleComposerStatusPersist();
 					this.session.prewarmModelConnection();
 				}
@@ -4490,6 +4488,23 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.statusLine.attachToEditor(this.editor, style);
 		this.updateEditorBorderColor();
 		this.#scheduleComposerStatusPersist();
+		this.ui.requestRender();
+	}
+
+	/**
+	 * Synchronize the welcome header context (project and active model) with current session state.
+	 */
+	updateWelcomeContext(): void {
+		this.#updateWelcomeContext();
+	}
+
+	#updateWelcomeContext(): void {
+		const welcome = this.composer.welcome;
+		if (!welcome) return;
+		welcome.setContext({
+			project: path.basename(this.sessionManager.getCwd()),
+			model: this.session.model ? formatModelStringWithRouting(this.session.model) : undefined,
+		});
 		this.ui.requestRender();
 	}
 

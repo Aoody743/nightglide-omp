@@ -208,6 +208,10 @@ export interface InteractiveModeContext {
 	applySessionPin(sessionId: string, pinned: boolean): void;
 	syncComposerShape(): void;
 	/**
+	 * Synchronize the welcome header context (project and active model) with current session state.
+	 */
+	updateWelcomeContext?(): void;
+	/**
 	 * Push the extension link schemes to the markdown renderer; redraws the transcript when that
 	 * changes how links are drawn.
 	 */
