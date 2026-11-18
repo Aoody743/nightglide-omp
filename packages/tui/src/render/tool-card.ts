@@ -96,7 +96,13 @@ function statusSpans(status: StatusLineOptions, theme: Theme): TspSpan[] {
 	const spans: TspSpan[] = [];
 	if (status.iconOverride) spans.push(...styledSpans(status.iconOverride), span(" "));
 	const defaultTitleColor: ThemeColor =
-		status.icon === "error" ? "error" : status.icon === "warning" ? "warning" : "accent";
+		status.icon === "error"
+			? "error"
+			: status.icon === "warning"
+				? "warning"
+				: status.icon === "success"
+					? "text"
+					: "accent";
 	spans.push(span(flatten(status.title), status.titleColor ?? defaultTitleColor));
 	if (status.description) spans.push(span(": "), span(flatten(status.description), "muted"));
 	if (status.badge) {

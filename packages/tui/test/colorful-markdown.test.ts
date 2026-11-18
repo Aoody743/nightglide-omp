@@ -57,9 +57,30 @@ describe("colorful Markdown", () => {
 		const out = new Markdown(DOC, 0, 0, getMarkdownTheme()).render(60).join("\n");
 
 		expect(out).toContain(t.fg("mdHeading", t.bold("Two")));
-		expect(out).toContain(t.fg("mdHeading", t.bold("###### Six")));
+		// Deep headings fade toward dim instead of the single heading color.
+		expect(out).toContain(t.fg("dim", t.bold("###### Six")));
+		expect(out).not.toContain(t.fg("mdHeading", t.bold("###### Six")));
 		expect(out).toContain(t.fg("mdCode", "code"));
 		expect(out).not.toContain(t.ansiFg("magenta", ""));
+	});
+
+	it("fades heading color by depth across all six levels when disabled", () => {
+		setMarkdownColorful(false);
+		const t = celestial;
+		const ladder = ["# One", "", "## Two", "", "### Three", "", "#### Four", "", "##### Five", "", "###### Six"].join(
+			"\n",
+		);
+		const out = new Markdown(ladder, 0, 0, getMarkdownTheme()).render(60).join("\n");
+
+		// H1/H2 keep the heading slot; markdown.ts owns the weight (bold, plus
+		// underline on H1), so the adapter never re-applies bold itself.
+		expect(out).toContain(t.fg("mdHeading", t.bold(t.underline("One"))));
+		expect(out).toContain(t.fg("mdHeading", t.bold("Two")));
+		// H3 settles on plain text, H4 mutes, and the two deepest levels dim.
+		expect(out).toContain(t.fg("text", t.bold("### Three")));
+		expect(out).toContain(t.fg("muted", t.bold("#### Four")));
+		expect(out).toContain(t.fg("dim", t.bold("##### Five")));
+		expect(out).toContain(t.fg("dim", t.bold("###### Six")));
 	});
 
 	it("falls back to the terminal's own palette when a theme ships no terminal.ansi", () => {

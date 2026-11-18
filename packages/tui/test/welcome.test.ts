@@ -1,6 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "bun:test";
-import { pickWeightedTip, WelcomeComponent } from "@oh-my-pi/pi-tui/prompt/welcome";
-import { initTheme, theme } from "@oh-my-pi/pi-tui/theme";
+import { pickWeightedTip, WelcomeComponent, gradientEscape } from "@oh-my-pi/pi-tui/prompt/welcome";
+import { getCurrentThemeName, initTheme, setTheme, theme } from "@oh-my-pi/pi-tui/theme";
+import { TERMINAL } from "@oh-my-pi/pi-tui/terminal-capabilities";
 import { truncateToWidth, visibleWidth } from "@oh-my-pi/pi-tui";
 
 describe("WelcomeComponent", () => {
@@ -382,5 +383,33 @@ describe("WelcomeComponent", () => {
 		const narrow = welcome.describe({ cols: 12 } as never);
 		expect(narrow).not.toBe(wide);
 		expect(JSON.stringify(narrow)).not.toContain("omp.welcome.nav");
+	});
+
+	it("paints the live glow gradient with the aurora theme stops on dark surfaces", async () => {
+		const previousThemeName = getCurrentThemeName();
+		const terminal = TERMINAL as unknown as { trueColor: boolean };
+		const previousTrueColor = terminal.trueColor;
+		terminal.trueColor = true;
+		const previousNodeEnv = process.env.NODE_ENV;
+		// gradientEscape pins the stops to the upstream palette under the test
+		// runtime; stepping out of it exercises the live theme selection below.
+		process.env.NODE_ENV = "production";
+		try {
+			await setTheme("nightglide-aurora");
+			expect(theme.isLight).toBe(false); // precondition: aurora is a dark theme
+			// Each stop anchors a gradient segment endpoint with its exact SGR.
+			expect(gradientEscape(0)).toBe("\x1b[38;2;213;166;255m"); // #d5a6ff accent violet
+			expect(gradientEscape(1 / 3)).toBe("\x1b[38;2;126;112;165m"); // #7e70a5 twilight violet
+			expect(gradientEscape(2 / 3)).toBe("\x1b[38;2;127;215;232m"); // #7fd7e8 glacier cyan
+			expect(gradientEscape(1)).toBe("\x1b[38;2;120;229;216m"); // #78e5d8 aurora teal
+			// Flight keeps its own periwinkle band; the aurora branch did not swallow it.
+			await setTheme("nightglide-flight");
+			expect(gradientEscape(0)).toBe("\x1b[38;2;181;182;255m"); // #B5B6FF Flight periwinkle
+		} finally {
+			if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+			else process.env.NODE_ENV = previousNodeEnv;
+			terminal.trueColor = previousTrueColor;
+			if (previousThemeName !== undefined) await setTheme(previousThemeName);
+		}
 	});
 });

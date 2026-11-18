@@ -693,7 +693,7 @@ describe("editToolRenderer", () => {
 describe("editToolRenderer diff line wrapping", () => {
 	// Renders a completed single-line replacement (`-N|old` + `+N|new`) through
 	// the real renderDiff so the result carries its production shapes: a blanked
-	// dedup gutter on the `+` row (`   +│`) and intra-line inverse highlights.
+	// dedup gutter on the `+` row (`   +│`) and intra-line foreground emphasis.
 	async function renderSingleLineReplacement(
 		oldLine: string,
 		newLine: string,
@@ -712,21 +712,28 @@ describe("editToolRenderer diff line wrapping", () => {
 		return component.render(width);
 	}
 
-	/** Net SGR inverse state after scanning a row; 38/48 extended-color args must not be misread as attribute 7. */
-	function inverseActiveAtRowEnd(row: string): boolean {
+	/** Net SGR foreground/inverse state after scanning a row; 38/48 extended-color args must not be misread as attribute 7. */
+	function styleActiveAtRowEnd(row: string): { foreground: boolean; inverse: boolean } {
+		let foreground = false;
 		let inverse = false;
 		for (const match of row.matchAll(/\x1b\[([0-9;]*)m/g)) {
 			const params = match[1].split(";");
 			for (let i = 0; i < params.length; i++) {
 				const param = params[i];
-				if (param === "38" || param === "48") {
+				if (param === "38") {
 					i += params[i + 1] === "2" ? 4 : params[i + 1] === "5" ? 2 : 0;
-				} else if (param === "" || param === "0") inverse = false;
+					foreground = true;
+				} else if (param === "48") {
+					i += params[i + 1] === "2" ? 4 : params[i + 1] === "5" ? 2 : 0;
+				} else if (param === "" || param === "0") {
+					foreground = false;
+					inverse = false;
+				} else if (param === "39") foreground = false;
 				else if (param === "7") inverse = true;
 				else if (param === "27") inverse = false;
 			}
 		}
-		return inverse;
+		return { foreground, inverse };
 	}
 
 	it("keeps added-line continuation rows inside the blanked dedup gutter", async () => {
@@ -760,10 +767,10 @@ describe("editToolRenderer diff line wrapping", () => {
 		expect(rows.some(row => row.includes("+"))).toBe(true);
 	});
 
-	it("closes inverse video at every wrapped row end so frame padding stays uninverted", async () => {
+	it("closes highlight state at every wrapped row end so frame padding stays unstyled", async () => {
 		// A long contiguous rewritten phrase forces the wrap boundary to land
-		// inside an inverse-highlighted span; the frame pads each row with spaces,
-		// so any inverse still active at row end paints those cells as gray blocks.
+		// inside a word-emphasis span; the frame pads each row with spaces, so any
+		// foreground or inverse still active at row end would style that padding.
 		const previousLevel = chalk.level;
 		chalk.level = 3;
 		let rows: readonly string[];
@@ -777,12 +784,13 @@ describe("editToolRenderer diff line wrapping", () => {
 			chalk.level = previousLevel;
 		}
 
-		// Precondition: some continuation row's content reopens with inverse right
-		// after its gutter, proving a highlighted span crossed a wrap boundary. If
-		// diffWords tokenization ever changes so no span crosses, this fails loudly
-		// instead of letting the row-end assertions pass vacuously.
-		expect(rows.some(row => /│\x1b\[7m/.test(row))).toBe(true);
-		for (const row of rows) expect(inverseActiveAtRowEnd(row)).toBe(false);
+		// Precondition: some continuation row's content reopens a word-emphasis
+		// foreground right after its gutter (`38;2;` truecolor or `38;5;` 256-color),
+		// proving a highlighted span crossed a wrap boundary. If diffWords
+		// tokenization ever changes so no span crosses, this fails loudly instead
+		// of letting the row-end assertions pass vacuously.
+		expect(rows.some(row => /│\x1b\[38;/.test(row))).toBe(true);
+		for (const row of rows) expect(styleActiveAtRowEnd(row)).toEqual({ foreground: false, inverse: false });
 	});
 
 	// Error results reuse the same body-line wrapper as diff rows; these tests

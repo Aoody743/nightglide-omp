@@ -1118,6 +1118,11 @@ export class CustomEditor extends Editor {
 	override describeLanguage = (): string | undefined => this.composerState().shell?.kind;
 	/** Host-owned live state for the TSP composer (shell mode, effort chip, send/stop). */
 	composerState: () => ComposerNativeState = () => IDLE_COMPOSER;
+	/** A turn is running (streaming reply or executing tools); stateful composer
+	 *  shapes (nightglide) switch their top chrome to the working treatment. */
+	protected override composerWorking(): boolean {
+		return this.composerState().running;
+	}
 	/** The attachment band, described inside the composer on a TSP terminal (ANSI renders it above). */
 	attachmentChips: Component | undefined;
 	/** The status line's facts the TSP composer carries (context, model, usage, the other segments). */

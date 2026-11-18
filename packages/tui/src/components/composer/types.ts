@@ -55,6 +55,10 @@ export interface ComposerChromeContext {
 	/** Status content for the top chrome; box embeds it after the corner while
 	 * rule-based styles dock it against the right edge. */
 	topBorder?: EditorTopBorder;
+	/** True while the host session is working (streaming a reply or running
+	 *  tools). Stateful shapes switch their top chrome between a quiet idle
+	 *  treatment and a clearly-visible working one on it; omitted reads as idle. */
+	working?: boolean;
 }
 
 /** Inputs for one content row. */

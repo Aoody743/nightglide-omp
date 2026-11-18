@@ -9,7 +9,7 @@ import { APPROVE_ARM_MS, ApprovalDialogComponent } from "@oh-my-pi/pi-tui/overla
 import { LoginDialogComponent } from "@oh-my-pi/pi-tui/overlays/login-dialog";
 import { PlanReviewOverlay } from "@oh-my-pi/pi-tui/overlays/plan-review-overlay";
 import { setNativeRendering } from "@oh-my-pi/pi-tui/native/state";
-import { getThemeByName, setThemeInstance } from "@oh-my-pi/pi-tui/theme";
+import { getThemeByName, setThemeInstance, theme } from "@oh-my-pi/pi-tui/theme";
 import { TspHarness } from "./native/tsp-harness";
 
 const ENTER = "\n";
@@ -506,6 +506,48 @@ describe("dialogs under a native surface", () => {
 			expect(callbacks.onApprove).not.toHaveBeenCalled();
 		} finally {
 			dialog.dispose();
+		}
+	});
+
+	it("approval: write/execute prompts frame the panel in warning; read-only prompts keep the shared border", () => {
+		// A static warning frame for calls that write files or run commands — no animation.
+		const danger = new ApprovalDialogComponent("Allow tool: bash\nCommand: ls", {
+			onApprove: vi.fn(),
+			onDeny: vi.fn(),
+		});
+		try {
+			const dangerRows = danger.render(60);
+			expect(dangerRows[0]).toContain(theme.getFgAnsi("warning"));
+			expect(dangerRows[0]).not.toContain(theme.getFgAnsi("border"));
+			expect(dangerRows.at(-1)).toContain(theme.getFgAnsi("warning"));
+			expect(dangerRows.at(-1)).not.toContain(theme.getFgAnsi("border"));
+			// Same behavior for the other write/execute tools.
+			const write = new ApprovalDialogComponent("Allow tool: write\nPath: a.ts", {
+				onApprove: vi.fn(),
+				onDeny: vi.fn(),
+			});
+			try {
+				expect(write.render(60)[0]).toContain(theme.getFgAnsi("warning"));
+			} finally {
+				write.dispose();
+			}
+		} finally {
+			danger.dispose();
+		}
+
+		// Read-only approvals keep the default border/accent chrome.
+		const readonly = new ApprovalDialogComponent("Allow tool: read\nPath: notes.md", {
+			onApprove: vi.fn(),
+			onDeny: vi.fn(),
+		});
+		try {
+			const rows = readonly.render(60);
+			expect(rows[0]).toContain(theme.getFgAnsi("border"));
+			expect(rows[0]).not.toContain(theme.getFgAnsi("warning"));
+			expect(rows.at(-1)).toContain(theme.getFgAnsi("border"));
+			expect(rows.at(-1)).not.toContain(theme.getFgAnsi("warning"));
+		} finally {
+			readonly.dispose();
 		}
 	});
 

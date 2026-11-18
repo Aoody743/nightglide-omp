@@ -767,6 +767,13 @@ const ABYSS_STOPS: ReadonlyArray<readonly [number, number, number]> = [
 	[145, 184, 188], // #91B8BC - Soft mist cyan
 ];
 
+const AURORA_STOPS: ReadonlyArray<readonly [number, number, number]> = [
+	[213, 166, 255], // #d5a6ff - Aurora violet (accent)
+	[126, 112, 165], // #7e70a5 - Twilight violet (dimGray)
+	[127, 215, 232], // #7fd7e8 - Glacier cyan (cyan)
+	[120, 229, 216], // #78e5d8 - Aurora teal (teal)
+];
+
 // Light-theme glow palettes: the dark-theme stops are pastels tuned to float on
 // deep backgrounds and would wash out on bright ones, so light themes swap in
 // saturated mid-tone brand colors that read against near-white surfaces.
@@ -829,8 +836,8 @@ export function gradientEscape(t: number, shine?: ShineConfig): string {
 	const shinePos = shine ? shine.pos : 0;
 	if (TERMINAL.trueColor) {
 		// Nightglide theme stops in live mode: light themes get light-adapted
-		// stops, dark themes keep the Flight/Abyss palettes; upstream stops in
-		// test mode.
+		// stops, dark themes keep the Flight/Abyss/Aurora palettes; upstream
+		// stops in test mode.
 		const currentTheme = getCurrentThemeName();
 		const stops = isBunTestRuntime()
 			? UPSTREAM_STOPS
@@ -838,9 +845,11 @@ export function gradientEscape(t: number, shine?: ShineConfig): string {
 				? currentTheme?.includes("daybreak")
 					? DAYBREAK_STOPS
 					: CLOUDLIGHT_STOPS
-				: currentTheme?.includes("abyss")
-					? ABYSS_STOPS
-					: FLIGHT_STOPS;
+				: currentTheme?.includes("aurora")
+					? AURORA_STOPS
+					: currentTheme?.includes("abyss")
+						? ABYSS_STOPS
+						: FLIGHT_STOPS;
 		const seg = t * (stops.length - 1);
 		const i = Math.min(stops.length - 2, Math.floor(seg));
 		const f = seg - i;

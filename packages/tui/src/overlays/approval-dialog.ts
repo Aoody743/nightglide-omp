@@ -18,7 +18,7 @@
  */
 import { type Component, Ellipsis, ScrollView, type TUI, truncateToWidth, wrapTextWithAnsi } from "../index";
 import { formatKeyHints, formatTooltipKey } from "../app-keybindings";
-import { OverlayPanel, PanelDivider, PanelRows } from "../chrome/overlay-box";
+import { bottomBorder, divider, OverlayPanel, PanelDivider, PanelRows, row, topBorder } from "../chrome/overlay-box";
 import { editorKey, editorKeys } from "../chrome/keybinding-hints";
 import { getKeybindings } from "../keybindings";
 import {
@@ -46,6 +46,70 @@ const MAX_DETAIL_ROWS: number = PREVIEW_LIMITS.COLLAPSED_ITEMS;
 export const APPROVE_ARM_MS = 500;
 /** The Deny row while a composer draft holds Enter: sending it denies the call and steers the turn. */
 const DENY_AND_SEND_LABEL = "Deny and send message";
+
+const NO_LINES: readonly string[] = [];
+
+/**
+ * Built-in tools whose approval writes files or executes commands — the panel
+ * frame paints warning while one of these asks (the dialog knows a call only by
+ * its `Allow tool: <name>` header). Read-only prompts — reads, searches,
+ * queries, MCP calls — keep the shared border chrome.
+ */
+const WRITE_OR_EXECUTE_TOOLS: ReadonlySet<string> = new Set([
+	"bash",
+	"write",
+	"edit",
+	"ast_edit",
+	"memory_edit",
+	"eval",
+	"manage_skill",
+]);
+
+/** True when the prompt's `Allow tool: <name>` header names a write/execute tool. */
+function isWriteOrExecuteApproval(prompt: string): boolean {
+	const name = /^Allow tool: (\S+)\s*$/.exec(prompt.split("\n", 1)[0] ?? "")?.[1];
+	return name !== undefined && WRITE_OR_EXECUTE_TOOLS.has(name);
+}
+
+/**
+ * The approval panel: identical chrome to {@link OverlayPanel}, except a
+ * write/execute approval paints its border and title in the warning color — a
+ * static caution frame, no animation and no timers. The inner section divider
+ * keeps the default border so the frame alone carries the state, and read-only
+ * approvals render exactly the shared overlay chrome.
+ */
+class ApprovalOverlayPanel extends OverlayPanel {
+	readonly #danger: boolean;
+
+	constructor(title: string, role: string, danger: boolean) {
+		super(title, role);
+		this.#danger = danger;
+	}
+
+	override render(width: number): readonly string[] {
+		if (!this.#danger) return super.render(width);
+		width = Number.isFinite(width) ? Math.max(0, Math.trunc(width)) : 0;
+		const innerWidth = Math.max(1, width - 4);
+		const childLines = this.children.map(child =>
+			child instanceof PanelDivider ? NO_LINES : child.render(innerWidth),
+		);
+		const result: string[] = [topBorder(width, this.title, "warning")];
+		for (let i = 0; i < this.children.length; i++) {
+			if (this.children[i] instanceof PanelDivider) {
+				result.push(divider(width));
+				continue;
+			}
+			for (const line of childLines[i] ?? NO_LINES) result.push(row(line, width, "warning"));
+		}
+		result.push(bottomBorder(width, "warning"));
+		if (width < 4) {
+			for (let index = 0; index < result.length; index++) {
+				result[index] = truncateToWidth(result[index]!, width, Ellipsis.Omit);
+			}
+		}
+		return result;
+	}
+}
 
 /** `grant<N>` takes the Nth of {@link ApprovalDialogOptions.grants}; `remember` toggles their lifetime. */
 type ApprovalAnswer = "once" | "session" | "deny" | "remember" | `grant${number}`;
@@ -205,7 +269,7 @@ export class ApprovalDialogComponent implements Component {
 		}
 		this.#choices = this.#buildChoices();
 		this.#choice = this.#choices.findIndex(choice => choice.answer === "once");
-		this.#panel = new OverlayPanel(title, "omp.overlay.approval");
+		this.#panel = new ApprovalOverlayPanel(title, "omp.overlay.approval", isWriteOrExecuteApproval(title));
 		this.#footer.setHeight(1);
 		this.#panel.addChild(this.#body);
 		this.#panel.addChild(this.#choiceRows);

@@ -953,6 +953,13 @@ export class Editor implements Component, Focusable {
 	protected get nativeSendable(): boolean {
 		return false;
 	}
+	/** Whether the host session is working (streaming a reply or running tools).
+	 *  Base editors always answer no; hosts that track a running turn override
+	 *  this so stateful composer shapes (nightglide) can switch their top chrome
+	 *  between the idle and working treatments. */
+	protected composerWorking(): boolean {
+		return false;
+	}
 	/** Placeholder painted right-aligned on the cursor row while the editor is empty and no
 	 *  autocomplete is open; hidden when it can't keep {@link PLACEHOLDER_MIN_GAP} cells from the
 	 *  cursor. The host styles it (ANSI allowed). Re-evaluated on every render, so hosts can derive
@@ -1606,6 +1613,7 @@ export class Editor implements Component, Focusable {
 			surfaceColor: this.#theme.surfaceColor ?? PASSTHROUGH_COLOR,
 			box,
 			topBorder,
+			working: this.composerWorking(),
 		};
 
 		const topRow = style.renderTop(chromeCtx);

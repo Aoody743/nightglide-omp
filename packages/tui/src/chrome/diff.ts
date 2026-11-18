@@ -55,15 +55,23 @@ function parseDiffLine(line: string): { prefix: CodeFrameMarker; lineNum: string
 }
 
 /**
- * Compute word-level diff and render with inverse on changed parts.
- * Uses diffWords which groups whitespace with adjacent words for cleaner highlighting.
- * Strips leading whitespace from inverse to avoid highlighting indentation.
+ * Compute word-level diff and render changed parts with a quieter foreground
+ * emphasis (no inverse video, no background). Uses diffWords which groups
+ * whitespace with adjacent words for cleaner highlighting. Strips leading
+ * whitespace from the emphasis to avoid highlighting indentation.
+ *
+ * The emphasis reads `toolDiffWordAdded` / `toolDiffWordRemoved`, two optional
+ * theme slots; a theme that omits them (`hasColor()` unset) falls back to the
+ * line-level `toolDiffAdded` / `toolDiffRemoved` foregrounds, so unchanged
+ * themes keep their palette while every theme drops the old full-row inverse.
  */
 function renderIntraLineDiff(
 	oldContent: string,
 	newContent: string,
 	renderTheme: Theme,
 ): { removedLine: string; addedLine: string } {
+	const wordRemovedColor = renderTheme.hasColor("toolDiffWordRemoved") ? "toolDiffWordRemoved" : "toolDiffRemoved";
+	const wordAddedColor = renderTheme.hasColor("toolDiffWordAdded") ? "toolDiffWordAdded" : "toolDiffAdded";
 	const wordDiff = diffWords(oldContent, newContent);
 
 	let removedLine = "";
@@ -82,7 +90,7 @@ function renderIntraLineDiff(
 				isFirstRemoved = false;
 			}
 			if (value) {
-				removedLine += renderTheme.inverse(value);
+				removedLine += renderTheme.fg(wordRemovedColor, value);
 			}
 		} else if (part.added) {
 			let value = part.value;
@@ -94,7 +102,7 @@ function renderIntraLineDiff(
 				isFirstAdded = false;
 			}
 			if (value) {
-				addedLine += renderTheme.inverse(value);
+				addedLine += renderTheme.fg(wordAddedColor, value);
 			}
 		} else {
 			removedLine += part.value;
@@ -171,8 +179,8 @@ export interface RenderDiffOptions {
 /**
  * Render a diff string with colored lines and intra-line change highlighting.
  * - Context lines: dim/gray
- * - Removed lines: red, with inverse on changed tokens
- * - Added lines: green, with inverse on changed tokens
+ * - Removed lines: red, changed tokens in the word-removed foreground
+ * - Added lines: green, changed tokens in the word-added foreground
  */
 export function renderDiff(diffText: string, options: RenderDiffOptions = {}): string {
 	const renderTheme = options.theme ?? activeTheme;

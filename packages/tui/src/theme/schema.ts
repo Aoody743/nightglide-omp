@@ -35,12 +35,17 @@ export type AnsiColor = keyof typeof ANSI_COLOR_INDEX;
  * Tokens a theme is allowed to omit. They resolve to the terminal default
  * foreground, so `Theme.fg()` stays total for callers that paint a token a theme
  * never declared (e.g. a `modelTags.<role>.color` reference) while
- * `Theme.hasColor()` still reports them as unset. `mdExtensionLink` is the
- * exception: `createTheme` derives it from `mdLink` and `text` when omitted.
+ * `Theme.hasColor()` still reports them as unset. Two derive further defaults
+ * when `hasColor()` reports them unset: `mdExtensionLink` (createTheme blends it
+ * from `mdLink` and `text`) and `toolDiffWordAdded` / `toolDiffWordRemoved`
+ * (intra-line diff emphasis falls back to the line-level `toolDiffAdded` /
+ * `toolDiffRemoved` foregrounds).
  */
 export const OPTIONAL_THEME_COLOR_RECORD = {
 	assistantMessageText: true,
 	mdExtensionLink: true,
+	toolDiffWordAdded: true,
+	toolDiffWordRemoved: true,
 } satisfies Partial<Record<ThemeColor, true>>;
 
 export interface ThemeJson {
@@ -114,6 +119,8 @@ export type ThemeColor =
 	| "mdListBullet"
 	| "toolDiffAdded"
 	| "toolDiffRemoved"
+	| "toolDiffWordAdded"
+	| "toolDiffWordRemoved"
 	| "toolDiffContext"
 	| "syntaxComment"
 	| "syntaxKeyword"
@@ -179,6 +186,8 @@ const THEME_COLOR_RECORD = {
 	mdListBullet: true,
 	toolDiffAdded: true,
 	toolDiffRemoved: true,
+	toolDiffWordAdded: true,
+	toolDiffWordRemoved: true,
 	toolDiffContext: true,
 	syntaxComment: true,
 	syntaxKeyword: true,

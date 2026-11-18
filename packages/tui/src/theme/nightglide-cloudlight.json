@@ -56,6 +56,8 @@
 		"mdListBullet": "#0369a1",
 		"toolDiffAdded": "green",
 		"toolDiffRemoved": "red",
+		"toolDiffWordAdded": "#0d5c2c",
+		"toolDiffWordRemoved": "#7f1d1d",
 		"toolDiffContext": "#6e7e99",
 		"link": "#0369a1",
 		"syntaxComment": "#6e7e99",

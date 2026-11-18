@@ -317,7 +317,18 @@ export function getMarkdownTheme(): MarkdownTheme {
 			})()
 		: undefined;
 	const markdownTheme: MarkdownTheme = {
-		heading: (text: string) => theme.fg("mdHeading", text),
+		// Heading scale by depth (H1-H6). markdown.ts applies the weight itself —
+		// bold on every level, underline on H1 — before calling this, so the
+		// adapter only picks the depth's slot: mdHeading for the two loudest
+		// tiers, then a quiet fade text → muted → dim. No bold is re-applied here.
+		heading: (text: string, depth: number) =>
+			depth <= 2
+				? theme.fg("mdHeading", text)
+				: depth === 3
+					? theme.fg("text", text)
+					: depth === 4
+						? theme.fg("muted", text)
+						: theme.fg("dim", text),
 		code: (text: string) => theme.fg("mdCode", text),
 		...(markdownColorful ? colorfulMarkdownRoles : {}),
 		link: (text: string) => theme.fg("mdLink", text),

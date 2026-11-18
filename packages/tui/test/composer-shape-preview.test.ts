@@ -1,8 +1,11 @@
 import { beforeAll, describe, expect, it } from "bun:test";
+import { nightglideComposerStyle } from "../src/components/composer/nightglide";
+import { renderTopRule, ruleComposerStyle } from "../src/components/composer/rule";
+import type { ComposerChromeContext } from "../src/components/composer/types";
 import { renderComposerShapePreview } from "../src/overlays/composer-shape-preview";
 import { getComposerShapeOptions, installExtensionComposerShape } from "../src/overlays/composer-shape-registry";
-import { initTheme, setTheme } from "../src/theme/theme";
-import { type ComposerStyle, visibleWidth } from "../src/index";
+import { initTheme, setTheme, theme } from "../src/theme/theme";
+import { type ComposerStyle, truncateToWidth, visibleWidth } from "../src/index";
 
 beforeAll(async () => {
 	await initTheme();
@@ -131,5 +134,87 @@ describe("composer shape preview", () => {
 
 		expect(visibleWidth(statusBand ?? "")).toBe(200);
 		expect(statusBand).toEndWith("STATUS");
+	});
+});
+
+describe("nightglide composer working state", () => {
+	const box = {
+		topLeft: "╭",
+		topRight: "╮",
+		bottomLeft: "╰",
+		bottomRight: "╯",
+		horizontal: "─",
+		vertical: "│",
+	};
+
+	/** Chrome context mirroring the live editor wiring: borderMuted-family border,
+	 *  stable accent, right-docked status chip. */
+	function ctx(working?: boolean, width = 80): ComposerChromeContext {
+		return {
+			width,
+			paddingX: 0,
+			borderColor: (str: string) => theme.fg("borderMuted", str),
+			accentColor: (str: string) => theme.fg("accent", str),
+			surfaceColor: (str: string) => str,
+			box,
+			topBorder: { content: "CHIP", width: 4 },
+			working,
+		};
+	}
+
+	it("keeps the quiet border rule when idle (no working mark)", async () => {
+		await setTheme("dark");
+		// nightglide's renderTop never returns undefined; `?? ""` only satisfies
+		// the ComposerStyle interface's optional return for type checking.
+		const idle = nightglideComposerStyle.renderTop(ctx(false)) ?? "";
+		// Idle is exactly the shared rule rendering: border-colored stroke, chip
+		// docked at the right edge, no working mark.
+		expect(idle).toBe(renderTopRule(ctx(false)));
+		expect(idle).toContain(theme.fg("borderMuted", "─"));
+		expect(idle).not.toContain("✦");
+		expect(idle.endsWith(`CHIP${theme.fg("borderMuted", "─")}`)).toBe(true);
+		expect(visibleWidth(idle)).toBe(80);
+
+		// The overlay path passes no working state; undefined must read as idle.
+		expect(renderComposerShapePreview("nightglide", 80).join("\n")).not.toContain("✦");
+	});
+
+	it("switches a working session to the accent rule with a static mark", async () => {
+		await setTheme("dark");
+		const working = nightglideComposerStyle.renderTop(ctx(true)) ?? "";
+		// Stable accent stroke plus the static working mark; the mutable border
+		// color stays out of the working treatment.
+		expect(working).toContain(theme.fg("accent", "✦ "));
+		expect(working).toContain(theme.fg("accent", "─"));
+		expect(working).not.toContain(theme.fg("borderMuted", "─"));
+		// Status chip still docks at the right edge and the rule stays full width.
+		expect(working.endsWith(`CHIP${theme.fg("accent", "─")}`)).toBe(true);
+		expect(visibleWidth(working)).toBe(80);
+		expect(working).not.toBe(nightglideComposerStyle.renderTop(ctx(false)));
+	});
+
+	it("truncates an over-wide status chip in the working rule like the idle rule", async () => {
+		await setTheme("dark");
+		const narrow = ctx(true, 30);
+		narrow.topBorder = { content: "X".repeat(60), width: 60 };
+		const working = nightglideComposerStyle.renderTop(narrow) ?? "";
+		expect(working).toContain(theme.fg("accent", "✦ "));
+		// Chip budget: mark (2 cells) plus one trailing rule cell on a 30-wide rule.
+		const chipBudget = 30 - visibleWidth("✦ ") - 1;
+		expect(working.endsWith(`${truncateToWidth("X".repeat(60), chipBudget)}${theme.fg("accent", "─")}`)).toBe(true);
+		expect(visibleWidth(working)).toBe(30);
+
+		// Terminals too narrow for the mark drop the mark, not the rule.
+		const tiny = ctx(true, 2);
+		tiny.topBorder = { content: "CHIP", width: 4 };
+		expect(nightglideComposerStyle.renderTop(tiny)).toBe(theme.fg("accent", "──"));
+	});
+
+	it("leaves the rule shape untouched by the working state", async () => {
+		await setTheme("dark");
+		const working = ruleComposerStyle.renderTop(ctx(true));
+		expect(working).toBe(renderTopRule(ctx(true)));
+		expect(working).not.toContain("✦");
+		expect(working).toContain(theme.fg("borderMuted", "─"));
 	});
 });

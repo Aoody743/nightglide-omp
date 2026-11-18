@@ -34,7 +34,13 @@ export function renderStatusLine(options: StatusLineOptions, theme: Theme): stri
 	const icon =
 		options.iconOverride ?? (options.icon ? formatStatusIcon(options.icon, theme, options.spinnerFrame) : "");
 	const defaultTitleColor: ThemeColor =
-		options.icon === "error" ? "error" : options.icon === "warning" ? "warning" : "accent";
+		options.icon === "error"
+			? "error"
+			: options.icon === "warning"
+				? "warning"
+				: options.icon === "success"
+					? "text"
+					: "accent";
 	const titleColor = options.titleColor ?? defaultTitleColor;
 	const title = theme.fg(titleColor, flattenForHeader(options.title));
 	let line = icon ? `${icon} ${title}` : title;

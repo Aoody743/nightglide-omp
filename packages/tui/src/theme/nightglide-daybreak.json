@@ -56,6 +56,8 @@
 		"mdListBullet": "accent",
 		"toolDiffAdded": "green",
 		"toolDiffRemoved": "red",
+		"toolDiffWordAdded": "#0b4f24",
+		"toolDiffWordRemoved": "#7f1d1d",
 		"toolDiffContext": "#857c6f",
 		"link": "teal",
 		"syntaxComment": "#857c6f",
