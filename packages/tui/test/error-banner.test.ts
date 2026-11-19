@@ -49,8 +49,8 @@ describe("ErrorBannerComponent title hierarchy", () => {
 
 		const metaRow = findRow(rows, "发送下一条消息后自动消失");
 		expect(metaRow).toBeDefined();
-		expect(metaRow).toContain(theme.fg("dim", "发送下一条消息后自动消失"));
-		expect(Bun.stripANSI(metaRow!).trim()).toBe("发送下一条消息后自动消失");
+		expect(metaRow).toContain(theme.fg("dim", "发送下一条消息后自动消失 [Esc 关闭 · Ctrl+O 详情]"));
+		expect(Bun.stripANSI(metaRow!).trim()).toBe("发送下一条消息后自动消失 [Esc 关闭 · Ctrl+O 详情]");
 		expect(metaRow).not.toContain("\x1b[1m");
 		// The hardcoded English hint is gone; body copy is untouched.
 		expect(rendered).toContain(SAMPLE);
@@ -161,5 +161,79 @@ describe("ErrorBannerComponent dismiss behavior (zero-change lock)", () => {
 
 		const wired = new ErrorBannerComponent(SAMPLE, () => {});
 		expect(JSON.stringify(wired.describe())).toContain("Dismiss");
+	});
+});
+
+describe("ErrorBannerComponent ANSI keyboard shortcuts and details expansion", () => {
+	it("dismisses on Esc key via handleInput", () => {
+		let dismissed = false;
+		const banner = new ErrorBannerComponent(SAMPLE, () => {
+			dismissed = true;
+		});
+
+		const consumed = banner.handleInput("\x1b");
+		expect(consumed).toBe(true);
+		expect(dismissed).toBe(true);
+	});
+
+	it("dismisses on explicit dismiss() call", () => {
+		let dismissed = false;
+		const banner = new ErrorBannerComponent(SAMPLE, () => {
+			dismissed = true;
+		});
+
+		banner.dismiss();
+		expect(dismissed).toBe(true);
+	});
+
+	it("toggles details on Ctrl+O via handleInput", () => {
+		const huge = Array.from({ length: 10 }, (_, i) => `error line ${i}`).join("\n");
+		const banner = new ErrorBannerComponent(huge);
+
+		// Initially collapsed (max 4 rows + expand hint)
+		expect(banner.isExpanded).toBe(false);
+		let rendered = Bun.stripANSI(banner.render(120).join("\n"));
+		expect(rendered).toMatch(/\+6 more lines/);
+
+		// Toggle via Ctrl+O (\x0f)
+		const consumed = banner.handleInput("\x0f");
+		expect(consumed).toBe(true);
+		expect(banner.isExpanded).toBe(true);
+
+		// Expanded shows all lines
+		rendered = Bun.stripANSI(banner.render(120).join("\n"));
+		expect(rendered).not.toContain("more line");
+		for (let i = 0; i < 10; i++) {
+			expect(rendered).toContain(`error line ${i}`);
+		}
+
+		// Toggle back
+		const consumedAgain = banner.handleInput("\x0f");
+		expect(consumedAgain).toBe(true);
+		expect(banner.isExpanded).toBe(false);
+		rendered = Bun.stripANSI(banner.render(120).join("\n"));
+		expect(rendered).toMatch(/\+6 more lines/);
+	});
+
+	it("toggles details via explicit toggleDetails() method", () => {
+		const banner = new ErrorBannerComponent(SAMPLE);
+		expect(banner.isExpanded).toBe(false);
+		banner.toggleDetails();
+		expect(banner.isExpanded).toBe(true);
+		banner.toggleDetails();
+		expect(banner.isExpanded).toBe(false);
+	});
+
+	it("ignores unrelated keystrokes and returns false without dismissing", () => {
+		let dismissed = false;
+		const banner = new ErrorBannerComponent(SAMPLE, () => {
+			dismissed = true;
+		});
+
+		expect(banner.handleInput("a")).toBe(false);
+		expect(banner.handleInput("\n")).toBe(false);
+		expect(banner.handleInput("\x03")).toBe(false); // Ctrl+C
+		expect(dismissed).toBe(false);
+		expect(banner.isExpanded).toBe(false);
 	});
 });

@@ -1735,7 +1735,10 @@ export class ModelBrowser implements Component {
 		} else if (isFreeModel(model)) {
 			// Mirror formatCostDetail: zero-cost models price as "free", and a
 			// missing cost card must never reach getEffectiveTokenCost.
-			facts.push([{ text: "free", tone: "text" }, { text: " per M", tone: "dim" }]);
+			facts.push([
+				{ text: "free", tone: "text" },
+				{ text: " per M", tone: "dim" },
+			]);
 		} else {
 			const cost = getEffectiveTokenCost(model.cost);
 			facts.push([

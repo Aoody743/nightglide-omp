@@ -7,6 +7,7 @@ import type { NativeNode, NativeUiEvent } from "../native/node";
 import { node, span, text } from "../native/describe";
 import { actionButton } from "../native/overlay";
 import { plainText } from "../native/spans";
+import { matchesKey } from "../keys";
 
 /** Max wrapped rows of the error message shown in the pinned banner. */
 const MAX_BANNER_ROWS = 4;
@@ -38,6 +39,7 @@ export class ErrorBannerComponent extends Container {
 	/** Natively the strip shows the headline; Details unfolds the whole message in place. */
 	#expanded = false;
 	#native: NativeNode | undefined;
+	#bodyText: WidthAwareText | undefined;
 
 	constructor(message: string, onDismiss?: () => void) {
 		super();
@@ -50,25 +52,48 @@ export class ErrorBannerComponent extends Container {
 		// Title layer: verdict glyph (theme `status.error` symbol slot, so symbol
 		// presets can restyle it) + localized label, bold error — the same
 		// "title carries the verdict" layering as an output block's error header.
-		// TODO(recovery-actions): 本轮只做视觉与提示层。若要加"查看详情"等恢复动作，
-		// 需要打通的事件通路：1) 在 app-keybindings 注册专用键位（ANSI 路径目前
-		// 只有 formatErrorBlock 的 ctrl+o 展开通路，作用于 transcript 的 inline
-		// error，而非本横幅）；2) interactive-mode 在 showPinnedError 构造本组件时
-		// 传入 onAction 回调并接住该键（interactive-mode 由并行任务独占，禁止本轮
-		// 接线）；3) 组件层参照下方 handleNativeEvent 的 "details"/"dismiss" 通路
-		// 为 ANSI 键盘事件新增 action 分支。接线前不得渲染任何动作按钮。
+		// ANSI 快捷键交互与恢复动作：支持 Esc 关闭 (dismiss) 与 Ctrl+O 展开/折叠
+		// (toggleDetails) 详细错误信息；由 interactive-mode 在 showPinnedError 挂载时
+		// 通过 addInputListener 分发按键并更新渲染。
 		this.addChild(new Text(theme.bold(theme.fg("error", `${theme.status.error} 错误`)), 1, 0));
-		this.addChild(
-			new WidthAwareText(
-				contentWidth =>
-					formatErrorBlock(message, contentWidth, MAX_BANNER_ROWS, line => theme.fg("error", line)),
-				1,
-				0,
-			),
+		this.#bodyText = new WidthAwareText(
+			contentWidth =>
+				formatErrorBlock(message, contentWidth, this.#expanded ? Infinity : MAX_BANNER_ROWS, line =>
+					theme.fg("error", line),
+				),
+			1,
+			0,
 		);
+		this.addChild(this.#bodyText);
 		// Meta layer: dim dismissal hint, localized like the composer hints.
-		this.addChild(new Text(theme.fg("dim", "发送下一条消息后自动消失"), 1, 0));
+		this.addChild(new Text(theme.fg("dim", "发送下一条消息后自动消失 [Esc 关闭 · Ctrl+O 详情]"), 1, 0));
 		this.addChild(new DynamicBorder(str => theme.fg("error", str)));
+	}
+
+	get isExpanded(): boolean {
+		return this.#expanded;
+	}
+
+	dismiss(): void {
+		this.#onDismiss?.();
+	}
+
+	toggleDetails(): void {
+		this.#expanded = !this.#expanded;
+		this.#native = undefined;
+		this.invalidate();
+	}
+
+	handleInput(data: string): boolean {
+		if (matchesKey(data, "escape")) {
+			this.dismiss();
+			return true;
+		}
+		if (matchesKey(data, "ctrl+o")) {
+			this.toggleDetails();
+			return true;
+		}
+		return false;
 	}
 
 	/**
@@ -103,11 +128,10 @@ export class ErrorBannerComponent extends Container {
 	handleNativeEvent(event: NativeUiEvent): void {
 		if (event.type !== "action") return;
 		if (event.act === "dismiss") {
-			this.#onDismiss?.();
+			this.dismiss();
 			return;
 		}
 		if (event.act !== "details") return;
-		this.#expanded = !this.#expanded;
-		this.#native = undefined;
+		this.toggleDetails();
 	}
 }

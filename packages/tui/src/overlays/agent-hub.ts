@@ -243,15 +243,17 @@ function compareFrozenRanks(a: FrozenRank, b: FrozenRank): number {
 	);
 }
 
+/** Activity row glyph: pending work is the only bright state (accent); completed
+ * events go quiet (dim), failures keep their key colors. */
 function activityGlyph(row: AgentActivityRow): string {
 	if (row.status === "error") return theme.fg("error", theme.status.error);
 	if (row.status === "aborted") return theme.fg("warning", theme.status.aborted);
 	if (row.status === "pending") return theme.fg("accent", theme.status.running);
 	switch (row.kind) {
 		case "response":
-			return theme.fg("success", "◆");
+			return theme.fg("dim", "◆");
 		case "tool":
-			return theme.fg("success", theme.status.success);
+			return theme.fg("dim", theme.status.success);
 		case "irc":
 			return theme.fg("accent", "→");
 		case "lifecycle":
@@ -266,9 +268,9 @@ function activityGlyphSpan(row: AgentActivityRow): TspSpan {
 	if (row.status === "pending") return span(theme.status.running, "accent");
 	switch (row.kind) {
 		case "response":
-			return span("◆", "success");
+			return span("◆", "dim");
 		case "tool":
-			return span(theme.status.success, "success");
+			return span(theme.status.success, "dim");
 		case "irc":
 			return span("→", "accent");
 		case "lifecycle":
@@ -1151,8 +1153,8 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 				[
 					text([span(activityClock(activity.timestamp), "mono dim")]),
 					text([activityGlyphSpan(activity)]),
-					text([span(sanitizeDisplaySingleLine(name), "mono muted")]),
-					text(sanitizeDisplaySingleLine(activity.summary), { truncate: "end", grow: 1 }),
+					text([span(sanitizeDisplaySingleLine(name), "mono")]),
+					text([span(sanitizeDisplaySingleLine(activity.summary), "muted")], { truncate: "end", grow: 1 }),
 				],
 				key,
 			);
@@ -1234,11 +1236,10 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 			counts.push(statusGlyphSpan(status), span(` ${count} ${status}`, statusTone(status)));
 		}
 		if (counts.length > 0) head.push(text(counts));
+		// One quiet header row: title, projection tabs, status counts, dim usage meta.
+		head.push(text(this.#usageSpans()));
 
-		const children: NativeChild[] = [
-			node("row", { gap: "sm", wrap: true, align: "center" }, head, "head"),
-			node("text", { spans: this.#usageSpans(), wrap: "word" }, undefined, "usage"),
-		];
+		const children: NativeChild[] = [node("row", { gap: "sm", wrap: true, align: "center" }, head, "head")];
 		if (this.#agentFilterEditing) {
 			children.push(
 				node(
@@ -1274,26 +1275,26 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 		return children;
 	}
 
+	/** Native twin of the header's dim usage meta: cost reads as a value, the rest dim. */
 	#usageSpans(): TspSpan[] {
 		const metrics = this.#aggregate;
 		const dot = theme.sep.dot;
 		if (metrics.reportedAgents === 0) return [span(`Usage —${dot}0/${this.#rows.length} measured`, "dim")];
 		const activeTime = formatMetricDuration(metrics);
-		return [
-			span(formatCost(metrics.cost), "statusLineCost"),
-			span(
-				[
-					"",
-					activeTime ? `${activeTime} agent time` : "agent time —",
-					`${formatNumber(metrics.requests)} req`,
-					`${formatNumber(metrics.tools)} tools`,
-					`${formatNumber(metrics.tokens)} tok`,
-					`${metrics.activeDurationAgents}/${metrics.reportedAgents} timed`,
-					`${metrics.reportedAgents}/${this.#rows.length} measured`,
-				].join(dot),
-				"dim",
-			),
+		const parts = [
+			span(formatCost(metrics.cost), "text"),
+			span(activeTime ?? "time —", "dim"),
+			span(`${formatNumber(metrics.requests)} req`, "dim"),
+			span(`${formatNumber(metrics.tools)} tools`, "dim"),
+			span(`${formatNumber(metrics.tokens)} tok`, "dim"),
+			span(`${metrics.reportedAgents}/${this.#rows.length} measured`, "dim"),
 		];
+		const spans: TspSpan[] = [];
+		for (const part of parts) {
+			if (spans.length > 0) spans.push(span(dot, "dim"));
+			spans.push(part);
+		}
+		return spans;
 	}
 
 	#describeRoster(nativeTree: boolean): NativeNode {
@@ -1337,10 +1338,12 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 	}
 
 	#agentLabel(ref: TRecord, selected: boolean, showParent: boolean): TspSpan[] {
+		// Name reads bold only on the focused row or a live agent (mirrors the ANSI rows).
+		const nameTone = selected ? "accent strong" : ref.status === "running" ? "strong" : undefined;
 		const label = [
 			statusGlyphSpan(ref.status),
 			span(" "),
-			span(sanitizeDisplaySingleLine(ref.id), selected ? "accent strong" : "strong"),
+			nameTone ? span(sanitizeDisplaySingleLine(ref.id), nameTone) : span(sanitizeDisplaySingleLine(ref.id)),
 		];
 		if (showParent && ref.parentId && ref.parentId !== MAIN_AGENT_ID) {
 			label.push(span(`  ↳ ${sanitizeDisplaySingleLine(ref.parentId)}`, "dim"));
@@ -1457,7 +1460,7 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 		out.push(
 			node(
 				"section",
-				{ head: [span("Recent activity", "accent strong")] },
+				{ head: [span("Recent activity", "dim strong")] },
 				[
 					node(
 						"list",
@@ -1540,10 +1543,12 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 		const label = [activityGlyphSpan(activity), span(" ")];
 		if (role && this.#getRoleInfo) label.push(roleBadgeSpan(role, this.#getRoleInfo(role)), span(" "));
 		const title = activity.kind === "tool" ? (activity.toolName ?? activity.title) : activity.title;
+		// Name reads bold only on a live agent; the event title is plain text.
+		const agentId = sanitizeDisplaySingleLine(activity.agentId);
 		label.push(
-			span(sanitizeDisplaySingleLine(activity.agentId), "strong"),
+			ref?.status === "running" ? span(agentId, "strong") : span(agentId),
 			span(" "),
-			span(sanitizeDisplaySingleLine(title), activity.kind === "response" ? "success" : "muted"),
+			span(sanitizeDisplaySingleLine(title)),
 		);
 		return node(
 			"item",
@@ -1817,7 +1822,7 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 		this.#hitRows.length = 0;
 		const innerWidth = Math.max(1, width - 4);
 		const contentRows = Math.max(1, termHeight - 4);
-		const body: string[] = [this.#sectionTabs()];
+		const body: string[] = [];
 		const selectedAgent = this.#rows[this.#selectedRow]?.id;
 		const scope =
 			this.#activityScope === "all"
@@ -1828,14 +1833,21 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 		const search = this.#activitySearchEditing
 			? theme.fg("accent", `search: ${filterText(this.#activitySearch)}`)
 			: this.#activitySearch.getValue()
-				? `search: ${this.#activitySearch.getValue()}`
-				: "search: —";
-		body.push(
-			theme.fg(
-				"dim",
-				`${scope}${theme.sep.dot}${this.#activityFilter}${theme.sep.dot}${this.#activityFollow ? "following" : "paused"}${theme.sep.dot}${search}`,
-			),
-		);
+				? theme.fg("dim", `search: ${this.#activitySearch.getValue()}`)
+				: theme.fg("dim", "search: —");
+		// One quiet header: section tabs with the dim scope/filter/search meta
+		// riding after. Narrow widths shed the scope parts first and keep the
+		// search field.
+		const dot = theme.fg("dim", theme.sep.dot);
+		const metaParts = [scope, this.#activityFilter, this.#activityFollow ? "following" : "paused"];
+		const dimMeta = (parts: readonly string[]): string => parts.map(part => theme.fg("dim", part)).join(dot);
+		let header = `${this.#sectionTabs()} ${dimMeta(metaParts)}${dot}${search}`;
+		while (metaParts.length > 0 && visibleWidth(header) > width) {
+			metaParts.shift();
+			const meta = metaParts.length > 0 ? `${dimMeta(metaParts)}${dot}` : "";
+			header = `${this.#sectionTabs()} ${meta}${search}`;
+		}
+		body.push(truncateToWidth(header, Math.max(1, width)));
 		if (contentRows >= 8) body.push("");
 
 		const budget = Math.max(0, contentRows - body.length);
@@ -1885,15 +1897,18 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 		const role = observed?.progress?.modelRole ?? ref?.history?.modelRole;
 		const roleBadge = role && this.#getRoleInfo ? `${formatRoleBadge(role, this.#getRoleInfo(role))} ` : "";
 		const agent = sanitizeLine(activity.agentId, Math.max(8, Math.min(18, Math.floor(width * 0.18))));
+		// Name reads bold only on the focused row or a live agent; the event title
+		// is plain text and the summary prose muted.
+		const styledAgent = selected || ref?.status === "running" ? theme.bold(agent) : theme.fg("text", agent);
 		const title = sanitizeLine(
 			activity.kind === "tool" ? (activity.toolName ?? activity.title) : activity.title,
 			width,
 		);
 		const prefix =
 			`${cursor} ${theme.fg("dim", activityClock(activity.timestamp))} ${activityGlyph(activity)} ` +
-			`${roleBadge}${theme.bold(agent)} ${theme.fg(activity.kind === "response" ? "success" : "muted", title)}`;
+			`${roleBadge}${styledAgent} ${theme.fg("text", title)}`;
 		const available = Math.max(1, width - visibleWidth(prefix) - visibleWidth(theme.sep.dot));
-		return `${prefix}${theme.fg("dim", theme.sep.dot)}${sanitizeLine(activity.summary, available)}`;
+		return `${prefix}${theme.fg("dim", theme.sep.dot)}${theme.fg("muted", sanitizeLine(activity.summary, available))}`;
 	}
 	#renderTable(width: number, termHeight: number): string[] {
 		this.#hitRows.length = 0;
@@ -2085,39 +2100,41 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 		return { lines, hitRows };
 	}
 
+	/**
+	 * One quiet header line: bold title, dim projection, the status counts, then
+	 * dim usage meta (model-browser round-7 language). Narrow widths shed whole
+	 * meta segments from the right before anything is truncated; the title and
+	 * the status counts are the last to go.
+	 */
 	#summaryLines(width: number): string[] {
-		const active = (label: string): string => theme.bg("selectedBg", theme.bold(theme.fg("accent", ` ${label} `)));
-		const inactive = (label: string): string => theme.fg("muted", ` ${label} `);
-		const projection =
-			this.#viewMode === "roster"
-				? `${active("Flat")}${theme.fg("dim", "/")}${inactive("By parent")}`
-				: `${inactive("Flat")}${theme.fg("dim", "/")}${active("By parent")}`;
+		const limit = Math.max(1, width);
+		const dot = theme.fg("dim", theme.sep.dot);
+		const join = (parts: readonly string[]): string => parts.join(dot);
+		const head: string[] = [
+			`${theme.bold("Roster")} ${theme.fg("dim", `· ${this.#viewMode === "roster" ? "flat" : "by parent"}`)}`,
+		];
 		const counts = this.#statusSummary();
-		const header = `${theme.bold("Roster")}${theme.fg("dim", theme.sep.dot)}${projection}${counts ? theme.fg("dim", theme.sep.dot) + counts : ""}`;
-		const lines = wrapTextWithAnsi(header, Math.max(1, width));
+		if (counts) head.push(counts);
 
+		const meta: string[] = [];
 		const metrics = this.#aggregate;
-		if (metrics.reportedAgents === 0) {
-			lines.push(
-				...wrapTextWithAnsi(
-					theme.fg("dim", `Usage —${theme.sep.dot}0/${this.#rows.length} measured`),
-					Math.max(1, width),
-				),
+		if (metrics.reportedAgents > 0) {
+			const activeTime = formatMetricDuration(metrics);
+			meta.push(
+				theme.fg("text", formatCost(metrics.cost)),
+				theme.fg("dim", activeTime ?? "time —"),
+				theme.fg("dim", `${formatNumber(metrics.requests)} req`),
+				theme.fg("dim", `${formatNumber(metrics.tools)} tools`),
+				theme.fg("dim", `${formatNumber(metrics.tokens)} tok`),
+				theme.fg("dim", `${metrics.reportedAgents}/${this.#rows.length} measured`),
 			);
-			return lines;
 		}
-		const activeTime = formatMetricDuration(metrics);
-		const usage = [
-			theme.fg("statusLineCost", formatCost(metrics.cost)),
-			theme.fg("dim", activeTime ? `${activeTime} agent time` : "agent time —"),
-			theme.fg("dim", `${formatNumber(metrics.requests)} req`),
-			theme.fg("dim", `${formatNumber(metrics.tools)} tools`),
-			theme.fg("dim", `${formatNumber(metrics.tokens)} tok`),
-			theme.fg("dim", `${metrics.activeDurationAgents}/${metrics.reportedAgents} timed`),
-			theme.fg("dim", `${metrics.reportedAgents}/${this.#rows.length} measured`),
-		].join(theme.fg("dim", theme.sep.dot));
-		lines.push(...wrapTextWithAnsi(usage, Math.max(1, width)));
-		return lines;
+		let line = join([...head, ...meta]);
+		while (meta.length > 0 && visibleWidth(line) > limit) {
+			meta.pop();
+			line = join([...head, ...meta]);
+		}
+		return [truncateToWidth(line, limit)];
 	}
 
 	#statusSummary(): string {
@@ -2164,9 +2181,18 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 		const addWrapped = (text: string, maxRows = 2): void => {
 			for (const wrapped of wrapTextWithAnsi(sanitizeLine(text), Math.max(1, width)).slice(0, maxRows)) add(wrapped);
 		};
+		// Detail hierarchy (output-block's language): section labels read dim bold,
+		// values plain text, meta suffixes dim, prose muted, and the " · "
+		// separators ride the borderMuted slot.
+		const sep = theme.fg("borderMuted", theme.sep.dot);
+		const dimFacts = (parts: readonly string[]): string =>
+			parts
+				.filter(Boolean)
+				.map(part => theme.fg("dim", part))
+				.join(sep);
 		const section = (label: string, contentRows = 0): void => {
 			if (lines.length > 0 && lines.length + 1 + contentRows < rows) add();
-			add(theme.bold(theme.fg("accent", label)));
+			add(theme.fg("dim", theme.bold(label)));
 		};
 
 		add(`${statusGlyph(ref.status)} ${theme.bold(sanitizeDisplaySingleLine(ref.displayName || ref.id))}`);
@@ -2174,16 +2200,14 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 		const lifecycleDetails = [
 			metrics ? formatMetricDuration(metrics) : undefined,
 			`active ${formatAge(Math.max(1, Math.round((Date.now() - ref.lastActivity) / 1000)))}`,
-		].filter(Boolean);
-		add(
-			`${statusText(ref.status, ref.status)}${theme.fg("dim", `${theme.sep.dot}${lifecycleDetails.join(theme.sep.dot)}`)}`,
-		);
+		].filter((detail): detail is string => Boolean(detail));
+		add([statusText(ref.status, ref.status), dimFacts(lifecycleDetails)].join(sep));
 		const modelDetails: string[] = [];
 		const modelRole = progress?.modelRole ?? ref.history?.modelRole;
 		if (modelRole && this.#getRoleInfo) modelDetails.push(formatRoleBadge(modelRole, this.#getRoleInfo(modelRole)));
 		const badge = modelBadge(ref, observed);
 		if (badge) modelDetails.push(badge);
-		if (modelDetails.length > 0) add(modelDetails.join(theme.sep.dot));
+		if (modelDetails.length > 0) add(modelDetails.join(sep));
 
 		const task = observed?.description ?? progress?.task ?? ref.activity;
 		if (task) {
@@ -2235,15 +2259,21 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 		if (artifacts?.branchName) addWrapped(`Worktree branch ${artifacts.branchName}`);
 
 		if (lines.length < rows) add();
-		if (lines.length < rows) add(theme.bold(theme.fg("accent", "Recent activity")));
+		if (lines.length < rows) add(theme.fg("dim", theme.bold("Recent activity")));
 		const activityBudget = Math.max(0, rows - lines.length);
 		const activity = this.#activity.recent(ref.id, activityBudget);
 		if (activity.length === 0 && activityBudget > 0) add(theme.fg("muted", "No response or tool activity yet"));
 		else {
 			for (const event of activity) {
 				const title = sanitizeLine(event.kind === "tool" ? (event.toolName ?? event.title) : event.title, width);
-				const prefix = `${theme.fg("dim", activityClock(event.timestamp))} ${activityGlyph(event)} ${theme.fg("muted", title)} `;
-				add(`${prefix}${sanitizeLine(event.summary, Math.max(1, width - visibleWidth(prefix)))}`);
+				const prefix = `${theme.fg("dim", activityClock(event.timestamp))} ${activityGlyph(event)} `;
+				const titleText = sanitizeLine(title, Math.max(1, width - visibleWidth(prefix)));
+				const restWidth = Math.max(
+					1,
+					width - visibleWidth(prefix) - visibleWidth(titleText) - (event.summary ? 1 : 0),
+				);
+				const summary = event.summary ? ` ${theme.fg("muted", sanitizeLine(event.summary, restWidth))}` : "";
+				add(`${prefix}${titleText}${summary}`);
 			}
 		}
 		const maxScroll = Math.max(0, lines.length - rows);
@@ -2255,8 +2285,12 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 
 	/**
 	 * One agent entry keeps identity/model metadata on one line when it fits,
-	 * then packs task and all five usage metrics together below. Narrow rows wrap
-	 * only those dense secondary fields.
+	 * then packs task and the usage metrics together below. The name reads bold
+	 * only on the focused row or a live agent; settled rows sit in the plain
+	 * text slot. The selectedBg band marks the focused selection and the mouse
+	 * hover — the row is padded out first so the band spans the full row width
+	 * (model-browser round-7). Narrow widths shed the task prose, then whole
+	 * metadata cells, keeping the name and its status glyph.
 	 */
 	#renderEntry(
 		ref: TRecord,
@@ -2274,7 +2308,7 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 			? treeBranch(ref, max, this.#treeDepthById, this.#treeParentById, this.#treeLastSiblingById)
 			: "";
 		const id = sanitizeDisplaySingleLine(ref.id);
-		const styledId = selected ? theme.bold(theme.fg("accent", id)) : theme.bold(id);
+		const styledId = selected ? theme.bold(theme.fg("accent", id)) : ref.status === "running" ? theme.bold(id) : id;
 		const fields: string[] = [`${cursor} ${branch}${statusGlyph(ref.status)} ${styledId}`];
 		if (this.#viewMode === "roster" && ref.parentId && ref.parentId !== MAIN_AGENT_ID) {
 			fields.push(theme.fg("dim", `↳ ${sanitizeDisplaySingleLine(ref.parentId)}`));
@@ -2299,7 +2333,7 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 		}
 		const badge = modelBadge(ref, observed);
 		if (badge) meta.push(badge);
-		const right = meta.join(theme.sep.dot);
+		const right = meta.join(theme.fg("dim", theme.sep.dot));
 
 		const entry: string[] = [];
 		const detailIndent = Math.min(max - 1, 4 + visibleWidth(branch));
@@ -2323,13 +2357,18 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 				: padding(metadataIndent);
 		const detailWidth = Math.max(1, max - detailIndent);
 		const task = observed?.description ?? observed?.progress?.task ?? ref.activity;
-		if (task) {
+		// Narrow rows drop the prose before the metadata columns; both yield the
+		// name + status line last.
+		if (task && detailWidth >= 16) {
 			entry.push(`${indent}${theme.fg("muted", truncateToWidth(sanitizeLine(task, detailWidth), detailWidth))}`);
 		}
 		const age = formatAge(Math.max(1, Math.round((Date.now() - ref.lastActivity) / 1000)));
-		const metadata = metrics ? formatMetricColumns(metrics, age) : `usage ${theme.sep.dot} ${age}`;
-		entry.push(`${metadataPrefix}${theme.fg("dim", metadata)}`);
-		if (!hovered) return entry;
+		const metaWidth = max - metadataIndent;
+		if (metaWidth >= 4) {
+			const metadata = metrics ? formatMetricColumns(metrics, age, metaWidth) : `usage ${theme.sep.dot} ${age}`;
+			entry.push(truncateToWidth(`${metadataPrefix}${theme.fg("dim", metadata)}`, max));
+		}
+		if (!selected && !hovered) return entry;
 		return entry.map(lineRow => {
 			const rowWidth = visibleWidth(lineRow);
 			return theme.bg("selectedBg", rowWidth < max ? lineRow + padding(max - rowWidth) : lineRow);

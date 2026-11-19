@@ -129,7 +129,7 @@ describe("SelectList", () => {
 		expect(visibleIndexOf(rendered[0]!, "Show changelog")).toBe(visibleIndexOf(rendered[1]!, "Show all"));
 	});
 
-	it("styles icons on unselected rows only, leaving the selected row to selectedText", () => {
+	it("preserves icon styles on both selected and unselected rows", () => {
 		const themeWithIcon: SelectListTheme = { ...testTheme, icon: (text: string) => `«${text}»` };
 		const items = [
 			{ value: "first", label: "first", icon: "★" },
@@ -139,9 +139,60 @@ describe("SelectList", () => {
 		const list = new SelectList(items, 5, themeWithIcon);
 		const rendered = list.render(80);
 
-		expect(rendered[0]).toContain("★");
-		expect(rendered[0]).not.toContain("«");
+		expect(rendered[0]).toContain("«★");
 		expect(rendered[1]).toContain("«☂");
+	});
+
+	it("restores visual hierarchy on selected row: highlights only primary text and keeps description muted", () => {
+		const hierarchyTheme: SelectListTheme = {
+			...testTheme,
+			selectedText: (text: string) => `\x1b[31m${text}\x1b[39m`,
+			description: (text: string) => `\x1b[32m${text}\x1b[39m`,
+			icon: (text: string) => `\x1b[33m${text}\x1b[39m`,
+		};
+		const items = [
+			{ value: "item1", label: "Item One", description: "First description", icon: "★" },
+			{ value: "item2", label: "Item Two", description: "Second description", icon: "☂" },
+		];
+
+		const list = new SelectList(items, 5, hierarchyTheme);
+		const rendered = list.render(80);
+
+		// Selected row: cursor unstyled, icon styled by icon(), only label styled by selectedText, description styled by description()
+		expect(rendered[0]).toContain("→ ");
+		expect(rendered[0]).not.toContain("\x1b[31m→");
+		expect(rendered[0]).toContain("\x1b[33m★ \x1b[39m");
+		expect(rendered[0]).toContain("\x1b[31mItem One\x1b[39m");
+		expect(rendered[0]).toContain("\x1b[32m");
+		expect(rendered[0]).toContain("First description\x1b[39m");
+		expect(rendered[0]).not.toContain("\x1b[31mFirst description");
+	});
+
+	it("pads full row width for selectedRow and hovered to eliminate ragged background", () => {
+		const bandTheme: SelectListTheme = {
+			...testTheme,
+			selectedRow: (text: string) => `\x1b[44m${text}\x1b[49m`,
+			hovered: (text: string) => `\x1b[45m${text}\x1b[49m`,
+		};
+		const items = [
+			{ value: "a", label: "short" },
+			{ value: "b", label: "another item" },
+		];
+
+		const list = new SelectList(items, 5, bandTheme);
+		const rendered = list.render(50);
+
+		// Selected row should be wrapped in selectedRow and padded to 50 chars
+		expect(rendered[0].startsWith("\x1b[44m")).toBe(true);
+		expect(rendered[0].endsWith("\x1b[49m")).toBe(true);
+		expect(visibleWidth(rendered[0])).toBe(50);
+
+		// Hover row should be wrapped in hovered and padded to 50 chars
+		list.setHoverIndex(1);
+		const renderedHover = list.render(50);
+		expect(renderedHover[1].startsWith("\x1b[45m")).toBe(true);
+		expect(renderedHover[1].endsWith("\x1b[49m")).toBe(true);
+		expect(visibleWidth(renderedHover[1])).toBe(50);
 	});
 
 	it("keeps descriptions aligned when the primary text is truncated", () => {

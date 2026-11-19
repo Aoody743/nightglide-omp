@@ -15,12 +15,7 @@ import { Markdown } from "../components/markdown";
 import { Text } from "../components/text";
 import { visibleWidth, wrapTextWithAnsi } from "../utils";
 import { sanitizeText } from "@oh-my-pi/pi-utils";
-import {
-	effortLadderBadgeToken,
-	effortLadderGlyph,
-	effortLadderToken,
-	themeThinkingWord,
-} from "../chat/effort-ladder";
+import { effortLadderBadgeToken, effortLadderGlyph, effortLadderToken, themeThinkingWord } from "../chat/effort-ladder";
 import type { RenderResultOptions } from "./renderer";
 import { formatAgentStatRun, renderAgentTreeRow } from "./agent-tree";
 import { getMarkdownTheme, theme, type Theme } from "../theme/theme";
@@ -1123,7 +1118,8 @@ function renderAgentResult(
 	// on narrow rows the extra columns would truncate the role text.
 	const modelBadgeShown = isFeedModelBadgeEnabled() && Boolean(result.resolvedModelIdentity ?? result.resolvedModel);
 	const roleBadge = truncateTaskRow(
-		agentTypeBadge(result.agent, theme) + (modelBadgeShown ? "" : effortGlyphBadge(result.resolvedThinkingLevel, theme)),
+		agentTypeBadge(result.agent, theme) +
+			(modelBadgeShown ? "" : effortGlyphBadge(result.resolvedThinkingLevel, theme)),
 		Math.max(0, maxWidth - visibleWidth(`${indent}${icon} ${displayId}${statusBadge}`)),
 	);
 	const badges = `${roleBadge}${statusBadge}`;
@@ -1846,7 +1842,10 @@ function effortBadgeSpan(level: ConfiguredThinkingLevel | undefined): TspSpan | 
 }
 
 /** Prefix the agent row's task text with the ladder badge span when a rung resolves. */
-function withEffortBadge(level: ConfiguredThinkingLevel | undefined, task: TspAgentProps["task"]): TspAgentProps["task"] {
+function withEffortBadge(
+	level: ConfiguredThinkingLevel | undefined,
+	task: TspAgentProps["task"],
+): TspAgentProps["task"] {
 	const badge = effortBadgeSpan(level);
 	if (!badge || !task) return task;
 	return typeof task === "string" ? [badge, span(task)] : [badge, ...task];

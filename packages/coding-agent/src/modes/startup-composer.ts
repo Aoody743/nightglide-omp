@@ -72,7 +72,12 @@ export function beginStartupComposer(options: PrepaintComposerOptions = {}): voi
 	const theme = { ...cached.theme, ...options.theme };
 	initThemeSync(theme.symbolPreset, theme.colorBlindMode, theme.darkTheme ?? "nightglide-flight", theme.lightTheme);
 	setMagicKeywords(MAGIC_KEYWORDS);
-	const preferences = { ...COMPOSER_DEFAULTS, composerShape: "nightglide" as const, ...cached.preferences, ...options.preferences };
+	const preferences = {
+		...COMPOSER_DEFAULTS,
+		composerShape: "nightglide" as const,
+		...cached.preferences,
+		...options.preferences,
+	};
 	const welcome: ComposerWelcomeUpdate = { version: options.version ?? "" };
 	const composer = new Composer({
 		terminal: options.terminal,

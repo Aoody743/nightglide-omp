@@ -236,7 +236,9 @@ export class WelcomeComponent implements Component {
 	// Bypassed while the intro animation runs (every frame differs).
 	#cachedWidth = -1;
 	#cachedLines: string[] | undefined;
-	#native: { tip: string | undefined; context: WelcomeContext | undefined; cols: number; node: NativeNode } | undefined;
+	#native:
+		| { tip: string | undefined; context: WelcomeContext | undefined; cols: number; node: NativeNode }
+		| undefined;
 
 	constructor(private version: string) {}
 	get tip(): string | undefined {
@@ -456,6 +458,12 @@ export class WelcomeComponent implements Component {
 			const tip = termWidth >= TIP_MIN_COLUMNS ? this.#renderTip(room) : [];
 			if (tip.length > 0) lines.push("", ...tip.flatMap(line => centerBlock([line], termWidth)));
 			return lines;
+		}
+
+		// When vertical rows are small (<= 24, e.g. 80x24 terminal), collapse multi-line logo,
+		// lockup, subtitle, and tip, rendering only the single-line quiet navigation line and rule.
+		if ((process.stdout?.rows || 30) <= 24) {
+			return this.#renderNavLines(termWidth, context);
 		}
 
 		// Nightglide Live Execution: Block Brand Mark + Half-Block Wordmark

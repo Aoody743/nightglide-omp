@@ -2132,10 +2132,7 @@ export class ModelRegistry {
 			this.#implicitLocalProviders.add("lm-studio");
 			if (Bun.env.LM_STUDIO_BASE_URL) this.#implicitProviderEndpointEnv.set("lm-studio", "LM_STUDIO_BASE_URL");
 		}
-		if (
-			(Boolean(Bun.env.OMLX_BASE_URL) || configuredProviders.has("omlx")) &&
-			!disabledProviders.has("omlx")
-		) {
+		if ((Boolean(Bun.env.OMLX_BASE_URL) || configuredProviders.has("omlx")) && !disabledProviders.has("omlx")) {
 			this.#discoverableProviders.push({
 				provider: "omlx",
 				api: "openai-completions",

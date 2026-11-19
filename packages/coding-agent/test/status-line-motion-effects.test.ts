@@ -59,11 +59,15 @@ function fixture(): { component: StatusLineComponent; render: () => string } {
 }
 
 /**
- * The brand glyph's foreground (the fade's only output), truecolor or 256-color as the detected
- * terminal allows; undefined when none is set.
+ * The `pi` segment glyph's foreground (the fade's only output), truecolor or 256-color as the
+ * detected terminal allows; undefined when none is set. Anchored on the segment's own
+ * `\x1b[39m` reset — the group wrapper paints its padding spaces in `theme.getFgAnsi("text")`
+ * first, so the row's *first* fg code belongs to the wrapper, not the brand.
  */
 function brandColor(row: string): string | undefined {
-	return /\x1b\[(?:0;)?38;(?:2;\d+;\d+;\d+|5;\d+)m/.exec(row)?.[0];
+	const reset = row.indexOf("\x1b[39m");
+	const scoped = reset === -1 ? row : row.slice(0, reset);
+	return scoped.match(/\x1b\[(?:0;)?38;(?:2;\d+;\d+;\d+|5;\d+)m/g)?.at(-1);
 }
 
 describe("status line decorative motion", () => {
@@ -71,17 +75,21 @@ describe("status line decorative motion", () => {
 		vi.useFakeTimers({ now: 0 });
 		const setIntervalSpy = vi.spyOn(globalThis, "setInterval");
 
-		// Default: the idle→working transition arms the 40 ms fade timer, and the brand color right
-		// after the transition is a blend that differs from where it settles.
+		// Default: the idle→working transition arms the 40 ms fade timer, and mid-fade the brand
+		// color is a blend that differs from both the idle color and where it settles.
 		const animated = fixture();
-		animated.render();
+		const idle = brandColor(animated.render());
 		animated.component.markActivityStart();
+		animated.render(); // arms the fade at the transition edge
+		vi.advanceTimersByTime(220);
 		const midFade = brandColor(animated.render());
 		expect(setIntervalSpy.mock.calls.filter(([, ms]) => ms === 40)).toHaveLength(1);
 		vi.advanceTimersByTime(1000);
 		animated.component.invalidate();
 		const settled = brandColor(animated.render());
+		expect(idle).toBeDefined();
 		expect(midFade).toBeDefined();
+		expect(midFade).not.toBe(idle);
 		expect(midFade).not.toBe(settled);
 		animated.component.markActivityEnd();
 		animated.component.dispose();

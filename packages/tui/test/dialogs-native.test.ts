@@ -320,9 +320,9 @@ describe("dialogs under a native surface", () => {
 				return props && "selected" in props ? props.selected : undefined;
 			};
 			expect(rows().map(line => line.replace(/[│❯>\s]+/g, " ").trim())).toEqual([
-				"Approve",
-				"Approve bash for this session",
-				"Deny",
+				"Approve [y]",
+				"Approve bash for this session [s]",
+				"Deny [n]",
 			]);
 			dialog.handleInput(DOWN);
 			// Tern's list shows the same highlight the arrows moved.
@@ -358,7 +358,7 @@ describe("dialogs under a native surface", () => {
 					.split("\n")
 					.filter(line => /Approve|Deny|Remember/.test(line))
 					.map(line => line.replace(/[│❯>\s]+/g, " ").trim());
-			expect(rows().slice(1)).toEqual(["Approve Directory: ~/src", "Approve File", "Approve Once", "Deny"]);
+			expect(rows().slice(1)).toEqual(["Approve Directory: ~/src", "Approve File", "Approve Once [y]", "Deny [n]"]);
 			now.mockReturnValue(1_000 + APPROVE_ARM_MS);
 			// Approve Once is highlighted on mount: the least the call can be granted.
 			for (let step = 0; step < 3; step++) dialog.handleInput(UP);
@@ -677,6 +677,59 @@ describe("dialogs under a native surface", () => {
 		} finally {
 			harness.stop();
 		}
+	});
+
+	it("approval: selected option row has full-width selectedBg band and micro shortcut badges", () => {
+		const dialog = new ApprovalDialogComponent("Allow tool: bash\nCommand: ls", {
+			onApprove: vi.fn(),
+			onDeny: vi.fn(),
+		});
+		const selectedBg = theme.getBgAnsi("selectedBg");
+		const rows = dialog.render(60);
+		const selectedRow = rows.find(line => stripVTControlCharacters(line).includes("Approve [y]"));
+		const unselectedRow = rows.find(line => stripVTControlCharacters(line).includes("Deny [n]"));
+		expect(selectedRow).toBeDefined();
+		expect(selectedRow).toContain(selectedBg);
+		expect(unselectedRow).toBeDefined();
+		expect(unselectedRow).not.toContain(selectedBg);
+	});
+
+	it("approval: supports single-key direct hotkeys y, s, n without draft", () => {
+		const now = vi.spyOn(performance, "now").mockReturnValue(1_000);
+		try {
+			const callbacks = { onApprove: vi.fn(), onDeny: vi.fn() };
+			const onSession = vi.fn();
+			const dialog = new ApprovalDialogComponent("Allow tool: bash\nCommand: ls", callbacks, {
+				session: { label: "Session", onApprove: onSession },
+			});
+			now.mockReturnValue(1_000 + APPROVE_ARM_MS);
+			dialog.handleInput("y");
+			expect(callbacks.onApprove).toHaveBeenCalledTimes(1);
+
+			const dialog2 = new ApprovalDialogComponent("Allow tool: bash\nCommand: ls", callbacks, {
+				session: { label: "Session", onApprove: onSession },
+			});
+			now.mockReturnValue(1_000 + 2 * APPROVE_ARM_MS);
+			dialog2.handleInput("s");
+			expect(onSession).toHaveBeenCalledTimes(1);
+
+			const dialog3 = new ApprovalDialogComponent("Allow tool: bash\nCommand: ls", callbacks);
+			dialog3.handleInput("n");
+			expect(callbacks.onDeny).toHaveBeenCalledTimes(1);
+		} finally {
+			now.mockRestore();
+		}
+	});
+
+	it("approval: styles non-bash details with dim label and text value", () => {
+		const dialog = new ApprovalDialogComponent("Allow tool: write\nPath: /tmp/out.txt", {
+			onApprove: vi.fn(),
+			onDeny: vi.fn(),
+		});
+		const rendered = dialog.render(80);
+		const pathLine = rendered.find(line => stripVTControlCharacters(line).includes("Path: /tmp/out.txt"));
+		expect(pathLine).toBeDefined();
+		expect(pathLine).toContain(theme.getFgAnsi("dim"));
 	});
 
 	it("plan review: the title heading titles the sheet and is not repeated in the body; Copy copies what `c` does", () => {

@@ -374,6 +374,7 @@ export function getSelectListTheme(): SelectListTheme {
 		return {
 			selectedPrefix: (text: string) => text,
 			selectedText: (text: string) => text,
+			selectedRow: (text: string) => text,
 			description: (text: string) => text,
 			scrollInfo: (text: string) => text,
 			noMatch: (text: string) => text,
@@ -385,12 +386,13 @@ export function getSelectListTheme(): SelectListTheme {
 	return {
 		selectedPrefix: (text: string) => theme.fg("accent", text),
 		selectedText: (text: string) => theme.fg("accent", text),
+		selectedRow: (text: string) => theme.bgFill("selectedBg", text),
 		description: (text: string) => theme.fg("muted", text),
 		scrollInfo: (text: string) => theme.fg("muted", text),
 		noMatch: (text: string) => theme.fg("muted", text),
 		symbols: getSymbolTheme(),
 		icon: (text: string) => theme.fg("muted", text),
-		hovered: (text: string) => theme.bg("selectedBg", text),
+		hovered: (text: string) => theme.bgFill("selectedBg", text),
 	};
 }
 /**
@@ -447,6 +449,8 @@ export function getSettingsListTheme(): SettingsListTheme {
 			hint: (text: string) => text,
 			heading: (text: string) => text,
 			section: (text: string) => text,
+			separator: (text: string) => text,
+			selectedRow: (text: string) => text,
 			hovered: (text: string) => text,
 		};
 	}
@@ -454,16 +458,25 @@ export function getSettingsListTheme(): SettingsListTheme {
 		label: (text: string, selected: boolean, changed: boolean) =>
 			changed ? theme.fg("statusLineGitDirty", text) : selected ? theme.fg("accent", text) : text,
 		value: (text: string, selected: boolean, changed: boolean) =>
-			changed ? theme.fg("statusLineGitDirty", text) : selected ? theme.fg("accent", text) : theme.fg("muted", text),
-		description: (text: string) => theme.fg("dim", text),
+			changed ? theme.fg("statusLineGitDirty", text) : selected ? theme.fg("accent", text) : theme.fg("dim", text),
+		description: (text: string) => theme.fg("muted", text),
 		warning: (text: string) => theme.fg("warning", text),
 		warningMark: theme.status.warning,
 		cursor: theme.fg("accent", `${theme.nav.cursor} `),
 		hint: (text: string) => theme.fg("dim", text),
+		// Group headings speak the markdown H2 tier — bold + mdHeading, no
+		// underline (underline is the H1 tier); out-of-section headings fade to
+		// dim so the active section's heading is the brightest line in the pane.
 		heading: (text: string, dimmed: boolean) =>
-			dimmed ? theme.fg("dim", theme.underline(text)) : theme.fg("muted", theme.bold(theme.underline(text))),
+			dimmed ? theme.fg("dim", text) : theme.fg("mdHeading", theme.bold(text)),
 		section: (text: string, active: boolean) =>
-			active ? theme.fg("accent", theme.bold(text)) : theme.fg("muted", text),
-		hovered: (text: string) => theme.bg("selectedBg", text),
+			active ? theme.fg("accent", theme.bold(text)) : theme.fg("dim", text),
+		// The keyboard selection paints the composer band: full-row selectedBg
+		// behind the accent cursor and label; bgFill resumes the band across
+		// nested resets so styled chunks cannot punch holes in it.
+		selectedRow: (text: string) => theme.bgFill("selectedBg", text),
+		// The pane separator sits in the border slot, quiet like the frame chrome.
+		separator: (text: string) => theme.fg("borderMuted", text),
+		hovered: (text: string) => theme.bgFill("selectedBg", text),
 	};
 }

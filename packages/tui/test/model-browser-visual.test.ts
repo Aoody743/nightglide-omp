@@ -239,9 +239,7 @@ describe("model browser native detail spans", () => {
 		const browser = createBrowser();
 		browser.selectSelector("anthropic/claude-sonnet");
 		const detail = findNode(browser.describe(), "omp.model-browser.detail")!;
-		const all = (detail.c ?? [])
-			.filter(child => "k" in child && child.k === "text")
-			.flatMap(spansOf);
+		const all = (detail.c ?? []).filter(child => "k" in child && child.k === "text").flatMap(spansOf);
 		expect(all).toContainEqual({ t: "Quick and cheap.", s: "muted" });
 	});
 });

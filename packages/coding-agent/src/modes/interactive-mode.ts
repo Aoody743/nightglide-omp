@@ -8894,14 +8894,31 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.#uiHelpers.showError(message);
 	}
 
+	#pinnedErrorInputListenerDispose: (() => void) | undefined;
+
 	showPinnedError(message: string): void {
 		this.#hidePlanReview();
-		this.errorBannerContainer.clear();
-		this.errorBannerContainer.addChild(new ErrorBannerComponent(message, () => this.clearPinnedError()));
+		this.clearPinnedError();
+		const banner = new ErrorBannerComponent(message, () => this.clearPinnedError());
+		this.errorBannerContainer.addChild(banner);
+		this.#pinnedErrorInputListenerDispose = this.ui.addInputListener?.(
+			data => {
+				if (banner.handleInput(data)) {
+					this.ui.requestRender();
+					return { consume: true };
+				}
+				return undefined;
+			},
+			{ prepend: true },
+		);
 		this.ui.requestRender();
 	}
 
 	clearPinnedError(): void {
+		if (this.#pinnedErrorInputListenerDispose) {
+			this.#pinnedErrorInputListenerDispose();
+			this.#pinnedErrorInputListenerDispose = undefined;
+		}
 		if (this.errorBannerContainer.children.length === 0) return;
 		this.errorBannerContainer.clear();
 		this.ui.requestRender();

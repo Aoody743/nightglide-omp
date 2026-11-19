@@ -412,4 +412,35 @@ describe("WelcomeComponent", () => {
 			if (previousThemeName !== undefined) await setTheme(previousThemeName);
 		}
 	});
+
+	it("collapses multi-line art and tip to quiet nav line when rows <= 24 in live mode", () => {
+		const previousNodeEnv = process.env.NODE_ENV;
+		const previousRows = process.stdout.rows;
+		process.env.NODE_ENV = "production";
+		try {
+			Object.defineProperty(process.stdout, "rows", { value: 24, configurable: true });
+			const welcome = new WelcomeComponent("1.0.0");
+			const rows = welcome.render(80, { project: "proj", model: "model" }).map(row => Bun.stripANSI(row));
+			// Collapsed to only 2 lines: the navigation row and the border rule
+			expect(rows).toHaveLength(2);
+			expect(rows[0]).toContain("✦ nightglide");
+			expect(rows[0]).toContain("proj");
+			expect(rows[0]).toContain("model");
+			expect(rows[1]?.trim()).toMatch(/^─+$/);
+
+			// When rows > 24, renders the full brand art and tip
+			Object.defineProperty(process.stdout, "rows", { value: 30, configurable: true });
+			welcome.invalidate();
+			const fullRows = welcome.render(80, { project: "proj", model: "model" }).map(row => Bun.stripANSI(row));
+			expect(fullRows.length).toBeGreaterThan(2);
+			expect(fullRows.some(row => row.includes("✦ nightglide"))).toBe(true);
+			expect(fullRows.some(row => row.includes("████"))).toBe(true);
+		} finally {
+			if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+			else process.env.NODE_ENV = previousNodeEnv;
+			if (previousRows !== undefined) {
+				Object.defineProperty(process.stdout, "rows", { value: previousRows, configurable: true });
+			}
+		}
+	});
 });

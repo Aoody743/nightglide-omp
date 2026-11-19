@@ -123,6 +123,10 @@ export interface SettingsListTheme {
 	heading?: (text: string, dimmed: boolean) => string;
 	/** Style for sidebar section names in the split layout. Falls back to label/hint. */
 	section?: (text: string, active: boolean) => string;
+	/** Style for the split-layout pane separator (`│ `). Falls back to `hint` when omitted. */
+	separator?: (text: string) => string;
+	/** Full-row background band painted behind the keyboard-selected row. Omitted → no band. */
+	selectedRow?: (text: string) => string;
 	/** Hover band applied to the full row under the mouse pointer. */
 	hovered?: (text: string) => string;
 }
@@ -562,6 +566,37 @@ export class SettingsList implements Component {
 		return 0;
 	}
 
+	/**
+	 * The viewport's render plan: filtered-item indices in window order, with a
+	 * `null` spacer line before each group heading (except at the very top of
+	 * the window) so sections breathe apart. `height` is the line budget; a
+	 * spacer is emitted only together with its heading, so a blank line never
+	 * takes a slot the heading needed and spacers give way before rows do.
+	 */
+	#windowPlan(startIndex: number, height: number): (number | null)[] {
+		const plan: (number | null)[] = [];
+		const items = this.#filteredItems;
+		for (let i = startIndex; i < items.length && plan.length < height; i++) {
+			const item = items[i]!;
+			if (item.heading && plan.length > 0) {
+				if (plan.length + 2 > height) break;
+				plan.push(null);
+			}
+			plan.push(i);
+		}
+		return plan;
+	}
+
+	/** Blank spacer lines the full list carries above item `index`: one per heading except a list-leading one. */
+	#spacersAbove(index: number): number {
+		let count = 0;
+		const bound = Math.min(index, this.#filteredItems.length);
+		for (let i = 1; i < bound; i++) {
+			if (this.#filteredItems[i]!.heading) count++;
+		}
+		return count;
+	}
+
 	/** Jump to the next/previous section; page through items when there are no sections. */
 	#jumpSection(delta: -1 | 1): void {
 		const sections = this.#sections();
@@ -801,6 +836,14 @@ export class SettingsList implements Component {
 			this.#theme.label(item.label, isSelected, item.changed === true) + (mark ? warningStyle(mark) : "") + labelPad;
 		const valueText = this.#theme.value(valuePlain, isSelected, item.changed === true);
 		const text = truncateToWidth(prefix + labelText + separator + valueText, Math.max(0, rowWidth));
+		// The keyboard selection paints the model-browser band: the row is
+		// padded out to its full width first, then wrapped, so the highlight
+		// spans the row and not just its text.
+		if (isSelected && this.#theme.selectedRow) {
+			const lineWidth = visibleWidth(text);
+			const padded = lineWidth < rowWidth ? text + padding(rowWidth - lineWidth) : text;
+			return this.#theme.selectedRow(padded);
+		}
 		// Pointer hover paints a band behind the whole row, distinct from the
 		// keyboard selection (cursor glyph + accent) which stays where it is.
 		if (hovered && this.#theme.hovered) {
@@ -848,34 +891,37 @@ export class SettingsList implements Component {
 			const maxLabelWidth = Math.min(30, labelWidths.length > 0 ? Math.max(...labelWidths) : 0);
 			const itemRowsOverflow = this.#filteredItems.length > viewportHeight;
 			const itemRowWidth = Math.max(0, width - (itemRowsOverflow ? 1 : 0));
-			const visibleItems = this.#filteredItems.slice(startIndex, startIndex + viewportHeight);
+			// The plan spends the viewport budget on window rows plus the blank
+			// lines above group headings; when the budget runs out, spacers are
+			// skipped first and no blank line is ever rendered without its heading.
+			const plan = this.#windowPlan(startIndex, this.#maxVisible);
 			// In the flat layout the active section's heading row carries the
 			// section-focus cursor (the split layout shows it in the sidebar).
 			const active = sections[this.#activeSectionIndex(sections)];
 			const focusedHeadingIndex = this.#sectionFocus && active?.name ? active.firstItemIndex - 1 : -1;
-			const itemRows = visibleItems.map((item, index) =>
-				this.#renderItemRow(
-					item,
-					startIndex + index,
-					maxLabelWidth,
-					itemRowWidth,
-					false,
-					startIndex + index === focusedHeadingIndex,
-				),
-			);
-			visibleItems.forEach((item, index) => {
-				this.#hitRows[index] = item.heading ? undefined : item.id;
+			const itemRows: string[] = [];
+			plan.forEach((entry, line) => {
+				if (entry === null) {
+					itemRows.push("");
+					this.#hitRows[line] = undefined;
+					return;
+				}
+				const item = this.#filteredItems[entry]!;
+				itemRows.push(
+					this.#renderItemRow(item, entry, maxLabelWidth, itemRowWidth, false, entry === focusedHeadingIndex),
+				);
+				this.#hitRows[line] = item.heading ? undefined : item.id;
 			});
 			const scrollView = new ScrollView(itemRows, {
-				height: viewportHeight,
+				height: itemRows.length,
 				scrollbar: "auto",
-				totalRows: this.#filteredItems.length,
+				totalRows: this.#filteredItems.length + this.#spacersAbove(this.#filteredItems.length),
 				theme: {
 					track: text => this.#theme.hint(text),
 					thumb: text => this.#theme.label(text, true, false),
 				},
 			});
-			scrollView.setScrollOffset(startIndex);
+			scrollView.setScrollOffset(startIndex + this.#spacersAbove(startIndex));
 			lines.push(...scrollView.render(width));
 			// Pad short lists to the full viewport so the panel height is constant.
 			while (lines.length < this.#maxVisible) lines.push("");
@@ -967,24 +1013,29 @@ export class SettingsList implements Component {
 		const maxLabelWidth = Math.min(30, labelWidths.length > 0 ? Math.max(...labelWidths) : 0);
 		const overflow = this.#filteredItems.length > viewportHeight;
 		const rowWidth = Math.max(0, paneWidth - (overflow ? 1 : 0));
+		// Same plan as the flat layout: heading spacer lines fit under the
+		// viewport budget and never displace rows the pane would show.
+		const plan = this.#windowPlan(startRow, this.#maxVisible);
 		const itemRows: string[] = [];
-		for (let r = 0; r < viewportHeight; r++) {
-			const index = startRow + r;
-			const item = this.#filteredItems[index];
-			if (!item) break;
-			const dimmed = index < activeStart || index > active.lastItemIndex;
-			itemRows.push(this.#renderItemRow(item, index, maxLabelWidth, rowWidth, dimmed));
+		for (const entry of plan) {
+			if (entry === null) {
+				itemRows.push("");
+				continue;
+			}
+			const item = this.#filteredItems[entry]!;
+			const dimmed = entry < activeStart || entry > active.lastItemIndex;
+			itemRows.push(this.#renderItemRow(item, entry, maxLabelWidth, rowWidth, dimmed));
 		}
 		const scrollView = new ScrollView(itemRows, {
-			height: viewportHeight,
+			height: itemRows.length,
 			scrollbar: "auto",
-			totalRows: this.#filteredItems.length,
+			totalRows: this.#filteredItems.length + this.#spacersAbove(this.#filteredItems.length),
 			theme: {
 				track: text => this.#theme.hint(text),
 				thumb: text => this.#theme.label(text, true, false),
 			},
 		});
-		scrollView.setScrollOffset(startRow);
+		scrollView.setScrollOffset(startRow + this.#spacersAbove(startRow));
 		const paneRows = scrollView.render(paneWidth);
 
 		// Hit maps: sidebar rows resolve to each section's first item; pane rows
@@ -993,12 +1044,13 @@ export class SettingsList implements Component {
 		for (let i = 0; i < sectionNames.length; i++) {
 			this.#sidebarHitRows[i] = this.#filteredItems[sections[i].firstItemIndex]?.id;
 		}
-		for (let r = 0; r < viewportHeight; r++) {
-			const item = this.#filteredItems[startRow + r];
-			if (item && !item.heading) this.#hitRows[r] = item.id;
-		}
+		plan.forEach((entry, line) => {
+			if (entry === null) return;
+			const item = this.#filteredItems[entry]!;
+			if (!item.heading) this.#hitRows[line] = item.id;
+		});
 
-		const separator = this.#theme.hint("│ ");
+		const separator = (this.#theme.separator ?? this.#theme.hint)("│ ");
 		const lines: string[] = [];
 		const height = Math.max(this.#maxVisible, sidebarRows.length);
 		for (let i = 0; i < height; i++) {

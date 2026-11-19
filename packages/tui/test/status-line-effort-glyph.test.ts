@@ -2,11 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { ThinkingLevel } from "@oh-my-pi/pi-agent-core";
 import type { SegmentContext } from "../src/status-line/segments";
 import { describeSegment, renderSegment, thinkingLevelWord } from "../src/status-line/segments";
-import {
-	activeThinkingEffort,
-	resetActiveThinkingEffortForTests,
-	themeThinkingWord,
-} from "../src/chat/effort-ladder";
+import { activeThinkingEffort, resetActiveThinkingEffortForTests, themeThinkingWord } from "../src/chat/effort-ladder";
 import { getThemeByName, initTheme, setThemeInstance, theme } from "../src/theme";
 
 beforeAll(async () => {
@@ -143,7 +139,10 @@ describe("status line model segment effort glyph", () => {
 		renderSegment("model", createContext(ThinkingLevel.Off));
 		expect(activeThinkingEffort()).toBe("off");
 		const noThinking = createContext(ThinkingLevel.High);
-		(noThinking.session.state as { model?: { id: string; name: string; thinking?: boolean } }).model = { id: "m", name: "M" };
+		(noThinking.session.state as { model?: { id: string; name: string; thinking?: boolean } }).model = {
+			id: "m",
+			name: "M",
+		};
 		renderSegment("model", noThinking);
 		expect(activeThinkingEffort()).toBeUndefined();
 	});
@@ -153,7 +152,10 @@ describe("status line model segment effort glyph", () => {
 		expect(thinkingLevelWord(createContext(ThinkingLevel.Off).session)).toBe("off");
 		// No model thinking capability: no word at all, nothing to publish.
 		const noThinking = createContext(ThinkingLevel.High);
-		(noThinking.session.state as { model?: { id: string; name: string; thinking?: boolean } }).model = { id: "m", name: "M" };
+		(noThinking.session.state as { model?: { id: string; name: string; thinking?: boolean } }).model = {
+			id: "m",
+			name: "M",
+		};
 		expect(thinkingLevelWord(noThinking.session)).toBeUndefined();
 	});
 });
@@ -178,7 +180,10 @@ describe("status line model segment native describe", () => {
 		const offSpan = view!.spans.find(s => s.t === "off");
 		expect(offSpan?.s).toBe("dim");
 		for (const glyph of ["·", "◦", "○", "◎", "✦"]) {
-			expect(view!.spans.some(s => s.t === glyph), `glyph ${glyph}`).toBe(false);
+			expect(
+				view!.spans.some(s => s.t === glyph),
+				`glyph ${glyph}`,
+			).toBe(false);
 		}
 	});
 });

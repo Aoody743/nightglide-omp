@@ -91,7 +91,7 @@ describe("thinking pulse effort ladder", () => {
 		expect(line).toContain(theme.fg("thinkingMinimal", frames[0]!));
 		expect(line).toContain(theme.fg("dim", " · "));
 		// The badge word reuses the symbol preset's own vocabulary ("○ min").
-	expect(line).toContain(theme.fg("dim", "· min"));
+		expect(line).toContain(theme.fg("dim", "· min"));
 	});
 
 	it("quietens the pulse on the low rung", () => {

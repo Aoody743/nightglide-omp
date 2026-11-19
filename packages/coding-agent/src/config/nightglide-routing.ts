@@ -10,7 +10,11 @@
 import { modelKind, type Model } from "@oh-my-pi/pi-catalog/types";
 import { pickDefaultAvailableModel, resolveModelRoleValue, formatModelString } from "./model-resolver";
 import { register } from "./registry";
-import { installRetryFallbackRole, isRetryFallbackModelKey, type RetryFallbackChains } from "../session/retry-fallback-chains";
+import {
+	installRetryFallbackRole,
+	isRetryFallbackModelKey,
+	type RetryFallbackChains,
+} from "../session/retry-fallback-chains";
 import { cfgRetryFallbackChains } from "../session/settings";
 import type { Settings } from "./settings";
 import { cfgToolsApproval, cfgToolsApprovalMode } from "../tools/settings";

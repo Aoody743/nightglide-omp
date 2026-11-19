@@ -16,7 +16,15 @@
  * scroll the details, and with a full prompt the expand key
  * (`app.tools.expand`) swaps it in, wrapped.
  */
-import { type Component, Ellipsis, ScrollView, type TUI, truncateToWidth, wrapTextWithAnsi } from "../index";
+import {
+	type Component,
+	Ellipsis,
+	ScrollView,
+	type TUI,
+	truncateToWidth,
+	visibleWidth,
+	wrapTextWithAnsi,
+} from "../index";
 import { formatKeyHints, formatTooltipKey } from "../app-keybindings";
 import { bottomBorder, divider, OverlayPanel, PanelDivider, PanelRows, row, topBorder } from "../chrome/overlay-box";
 import { editorKey, editorKeys } from "../chrome/keybinding-hints";
@@ -69,6 +77,12 @@ const WRITE_OR_EXECUTE_TOOLS: ReadonlySet<string> = new Set([
 function isWriteOrExecuteApproval(prompt: string): boolean {
 	const name = /^Allow tool: (\S+)\s*$/.exec(prompt.split("\n", 1)[0] ?? "")?.[1];
 	return name !== undefined && WRITE_OR_EXECUTE_TOOLS.has(name);
+}
+
+/** True when the prompt's `Allow tool: <name>` header names bash. */
+function isBashApproval(prompt: string): boolean {
+	const name = /^Allow tool: (\S+)\s*$/.exec(prompt.split("\n", 1)[0] ?? "")?.[1];
+	return name === "bash";
 }
 
 /**
@@ -172,6 +186,23 @@ function promptDetails(lines: string[]): string[] {
 
 const ALLOWED_SEGMENT_RE = /^(\s*)✓(\s+)(.+)(\s+\((?:allowed: .*|\d+ allowed segments?)\))$/u;
 const PROMPTED_SEGMENT_RE = /^(\s*)\?(\s+)(.+)(\s+\((?:requires approval|prompt: .*|critical pattern)\))$/u;
+const KEY_VALUE_RE = /^(\s*)([A-Za-z0-9_.-]+:)(?:(\s+)(.*))?$/;
+
+function styleKeyValueLine(line: string): { ansi: string; spans?: TspSpan[] } {
+	const match = KEY_VALUE_RE.exec(line);
+	if (!match) {
+		return { ansi: line === "" ? "" : theme.fg("text", line) };
+	}
+	const [, indent = "", label = "", space = " ", value] = match;
+	if (value !== undefined) {
+		return {
+			ansi: `${indent}${theme.fg("dim", label)}${space}${theme.fg("text", value)}`,
+		};
+	}
+	return {
+		ansi: `${indent}${theme.fg("dim", label)}`,
+	};
+}
 
 /**
  * Indexes `[start, end)` of compound bash segment rows: the indented rows right after the first
@@ -186,12 +217,22 @@ function segmentRowRange(details: readonly string[]): readonly [number, number] 
 	return [label + 1, end];
 }
 
-/** Styles each detail row: segment rows by their covered/prompted marker, the rest in accent. */
-function styleApprovalDetails(details: readonly string[]): { ansi: string; spans?: TspSpan[] }[] {
-	const [start, end] = segmentRowRange(details);
-	return details.map((line, index) =>
-		index >= start && index < end ? styleSegmentLine(line) : { ansi: theme.fg("accent", line) },
-	);
+/** Styles each detail row: segment rows by their covered/prompted marker, bash command rows in accent, non-bash key-value rows with dim labels and text values. */
+function styleApprovalDetails(details: readonly string[], isBash = false): { ansi: string; spans?: TspSpan[] }[] {
+	if (isBash) {
+		const [start, end] = segmentRowRange(details);
+		return details.map((line, index) =>
+			index >= start && index < end ? styleSegmentLine(line) : { ansi: theme.fg("accent", line) },
+		);
+	}
+	return details.map(line => styleKeyValueLine(line));
+}
+
+function getChoiceShortcut(answer: ApprovalAnswer, drafting: boolean): string | undefined {
+	if (answer === "once") return "y";
+	if (answer === "session") return "s";
+	if (answer === "deny") return drafting ? undefined : "n";
+	return undefined;
 }
 
 function styleSegmentLine(line: string): { ansi: string; spans?: TspSpan[] } {
@@ -354,6 +395,20 @@ export class ApprovalDialogComponent implements Component {
 			this.#editDraft(draft, keyData);
 			return;
 		}
+		if (!draft) {
+			if (keyData === "y" || keyData === "Y") {
+				if (performance.now() >= this.#armedAt) this.#finish("once");
+				return;
+			}
+			if ((keyData === "s" || keyData === "S") && this.options.session) {
+				if (performance.now() >= this.#armedAt) this.#finish("session");
+				return;
+			}
+			if (keyData === "n" || keyData === "N") {
+				this.#finish("deny");
+				return;
+			}
+		}
 		const page = Math.max(1, this.#bodyRows - 1);
 		if (matchesSelectUp(keyData)) this.#moveChoice(-1);
 		else if (matchesSelectDown(keyData)) this.#moveChoice(1);
@@ -410,6 +465,10 @@ export class ApprovalDialogComponent implements Component {
 		return this.#expanded && this.#full ? this.#full : this.#summary;
 	}
 
+	get #isBash(): boolean {
+		return isBashApproval(this.#title);
+	}
+
 	render(width: number): readonly string[] {
 		const innerWidth = Math.max(1, width - 4);
 		let lines = this.#detailLines(innerWidth);
@@ -437,10 +496,19 @@ export class ApprovalDialogComponent implements Component {
 		this.#choiceRows.setLines(
 			this.#choices.map((choice, index) => {
 				const label = drafting && choice.answer === "deny" ? DENY_AND_SEND_LABEL : choice.label;
-				if (index !== shown) return truncateToWidth(`  ${label}`, innerWidth, Ellipsis.Unicode);
+				const shortcut = getChoiceShortcut(choice.answer, drafting);
+				const badge = shortcut ? ` [${shortcut}]` : "";
+				if (index !== shown) {
+					const unselected = `  ${label}${badge ? theme.fg("dim", badge) : ""}`;
+					return truncateToWidth(unselected, innerWidth, Ellipsis.Unicode);
+				}
 				const color = choice.answer === "deny" ? "error" : "accent";
-				const row = truncateToWidth(`${theme.nav.cursor} ${label}`, innerWidth, Ellipsis.Unicode);
-				return theme.bold(theme.fg(color, row));
+				const selectedText = `${theme.nav.cursor} ${label}${badge}`;
+				const truncated = truncateToWidth(selectedText, innerWidth, Ellipsis.Unicode);
+				const styled = theme.bold(theme.fg(color, truncated));
+				const widthDiff = innerWidth - visibleWidth(styled);
+				const padded = widthDiff > 0 ? styled + " ".repeat(widthDiff) : styled;
+				return theme.bgFill("selectedBg", padded);
 			}),
 		);
 		this.#footer.setLines([theme.fg("dim", this.#footerHint(overflows, drafting))]);
@@ -483,7 +551,7 @@ export class ApprovalDialogComponent implements Component {
 		];
 		if (this.#details.length > 0) {
 			// One clipped row per detail like the text view; expanded details wrap.
-			const styledRows = styleApprovalDetails(this.#details);
+			const styledRows = styleApprovalDetails(this.#details, this.#isBash);
 			const rows = this.#details.map((line, index) => {
 				const styled = styledRows[index]!;
 				const content = styled.spans ? { spans: styled.spans } : { text: line };
@@ -528,11 +596,11 @@ export class ApprovalDialogComponent implements Component {
 	/** Detail rows at `width`: one clipped row per detail, or wrapped rows once expanded. */
 	#detailLines(width: number): string[] {
 		if (!this.#expanded) {
-			return styleApprovalDetails(this.#details).map(styled =>
+			return styleApprovalDetails(this.#details, this.#isBash).map(styled =>
 				truncateToWidth(styled.ansi, width, Ellipsis.Unicode),
 			);
 		}
-		const styledRows = styleApprovalDetails(this.#details);
+		const styledRows = styleApprovalDetails(this.#details, this.#isBash);
 		return this.#details.flatMap((line, index) =>
 			line === "" ? [""] : wrapTextWithAnsi(styledRows[index]!.ansi, width),
 		);

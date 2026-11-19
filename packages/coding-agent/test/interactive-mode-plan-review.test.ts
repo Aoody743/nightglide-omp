@@ -1214,6 +1214,17 @@ describe("InteractiveMode plan review rendering", () => {
 		await expect(choice).resolves.toBeUndefined();
 	});
 
+	it("routes Esc to dismiss pinned error banner via input dispatch", () => {
+		mode.showPinnedError("Codex rate limit reached");
+		expect(mode.errorBannerContainer.children.length).toBe(1);
+
+		// Esc injected through TUI input pipeline
+		mode.ui.injectDebugInput("\x1b");
+
+		// Banner is dismissed and container cleared
+		expect(mode.errorBannerContainer.children.length).toBe(0);
+	});
+
 	it("copies the overlay's current edited plan markdown from the real plan review overlay", async () => {
 		let capturedOverlay: PlanReviewOverlay | undefined;
 		const overlayHandle = { hide: vi.fn() };

@@ -1077,9 +1077,15 @@ export class AgentsHubComponent implements Component {
 			const hovered = i === this.#rowHover;
 			const cursor = selected && listFocused ? theme.fg("accent", theme.nav.cursor) : " ";
 			if (rowDef.kind === "new") {
-				let line = ` ${cursor} ${theme.fg(selected ? "accent" : "dim", "+ New agent…")}`;
-				if (hovered) line = theme.bg("selectedBg", line);
-				lines.push(truncateToWidth(line, width));
+				let line = truncateToWidth(` ${cursor} ${theme.fg(selected ? "accent" : "dim", "+ New agent…")}`, width);
+				// The selectedBg band marks the focused selection and the mouse hover;
+				// the row is padded out first so the band spans the full row width.
+				if (selected || hovered) {
+					const w = visibleWidth(line);
+					if (w < width) line += " ".repeat(width - w);
+					line = theme.bg("selectedBg", line);
+				}
+				lines.push(line);
 				continue;
 			}
 			const agent = rowDef.agent;
@@ -1107,7 +1113,9 @@ export class AgentsHubComponent implements Component {
 				line = `${line}${" ".repeat(width - lineWidth - rightWidth - 1)}${right}`;
 			}
 			line = truncateToWidth(line, width);
-			if (hovered) {
+			// The selectedBg band marks the focused selection and the mouse hover;
+			// the row is padded out first so the band spans the full row width.
+			if (selected || hovered) {
 				const w = visibleWidth(line);
 				if (w < width) line += " ".repeat(width - w);
 				line = theme.bg("selectedBg", line);
@@ -1116,20 +1124,23 @@ export class AgentsHubComponent implements Component {
 		}
 
 		// Selected-agent detail block pinned to the bottom of the body pane.
+		// Detail hierarchy (output-block's language): the divider and the "off"
+		// flags sit in the quiet slots, labels read dim, values plain text,
+		// prose muted, and the resolved model keeps its success key color.
 		while (lines.length < rows - detailRows) lines.push("");
 		const agent = this.#selectedAgent();
-		lines.push(theme.fg("border", "─".repeat(Math.max(1, width))));
+		lines.push(theme.fg("borderMuted", "─".repeat(Math.max(1, width))));
 		if (agent) {
-			lines.push(truncateToWidth(` ${theme.fg("dim", replaceTabs(agent.description))}`, width));
+			lines.push(truncateToWidth(` ${theme.fg("muted", replaceTabs(agent.description))}`, width));
 			const patterns = this.#deps.effectiveModelPatterns(agent);
 			const resolved = this.#deps.resolvePatterns(patterns);
-			const modelLine = `${theme.fg("muted", "model:")} ${patterns.length > 0 ? replaceTabs(patterns.join(",")) : theme.fg("dim", "(session model)")}${resolved ? ` ${theme.fg("dim", "→")} ${theme.fg("success", resolved)}` : ""}`;
+			const modelLine = `${theme.fg("dim", "model:")} ${patterns.length > 0 ? replaceTabs(patterns.join(",")) : theme.fg("dim", "(session model)")}${resolved ? ` ${theme.fg("dim", "→")} ${theme.fg("success", resolved)}` : ""}`;
 			lines.push(truncateToWidth(` ${modelLine}`, width));
 			const prewalk = this.#deps.effectivePrewalkPattern(agent);
 			const advisor = this.#deps.effectiveAdvisorPattern(agent);
 			const flagLine = [
-				`${theme.fg("muted", "prewalk:")} ${prewalk ? theme.fg("success", prewalk) : theme.fg("dim", "off")}`,
-				`${theme.fg("muted", "advisor:")} ${advisor ? theme.fg("success", advisor) : theme.fg("dim", "off")}`,
+				`${theme.fg("dim", "prewalk:")} ${prewalk ?? theme.fg("dim", "off")}`,
+				`${theme.fg("dim", "advisor:")} ${advisor ?? theme.fg("dim", "off")}`,
 				agent.filePath ? theme.fg("dim", shortenPath(agent.filePath)) : "",
 			]
 				.filter(Boolean)
@@ -1653,7 +1664,8 @@ export class AgentsHubComponent implements Component {
 			{
 				label: [
 					agent.disabled ? span(`${theme.status.disabled} `, "dim") : span(`${theme.status.enabled} `, "success"),
-					span(agent.name, agent.disabled ? "dim" : "strong"),
+					// Names read plain (the list marks the selection); disabled rows dim.
+					span(agent.name, agent.disabled ? "dim" : undefined),
 				],
 				detail: [span(SOURCE_LABEL[agent.source].toLowerCase(), "dim")],
 				value: value.length > 0 ? value : undefined,
@@ -1677,18 +1689,18 @@ export class AgentsHubComponent implements Component {
 		const prewalk = this.#deps.effectivePrewalkPattern(agent);
 		const advisor = this.#deps.effectiveAdvisorPattern(agent);
 		const children: NativeChild[] = [
-			text([span(agent.description, "dim")], { wrap: "word", lines: 2 }),
+			text([span(agent.description, "muted")], { wrap: "word", lines: 2 }),
 			node("kv", {
 				items: [
-					{ k: [span("model", "muted")], v: model },
-					{ k: [span("prewalk", "muted")], v: [prewalk ? span(prewalk, "success") : span("off", "dim")] },
-					{ k: [span("advisor", "muted")], v: [advisor ? span(advisor, "success") : span("off", "dim")] },
+					{ k: [span("model", "dim")], v: model },
+					{ k: [span("prewalk", "dim")], v: [prewalk ? span(prewalk) : span("off", "dim")] },
+					{ k: [span("advisor", "dim")], v: [advisor ? span(advisor) : span("off", "dim")] },
 				],
 				layout: "inline",
 			}),
 		];
 		if (agent.filePath) children.push(text([span(shortenPath(agent.filePath), "path dim")], { truncate: "middle" }));
-		return node("section", { head: [span(agent.name, "accent strong")] }, children, "detail");
+		return node("section", { head: [span(agent.name, "strong")] }, children, "detail");
 	}
 
 	#describeCreate(): NativeChild[] {

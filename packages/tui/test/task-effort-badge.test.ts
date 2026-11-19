@@ -80,7 +80,19 @@ describe("task card effort glyph badge", () => {
 			["max", "✦"],
 		] as const) {
 			const component = taskToolRenderer.renderResult(
-				{ content: [], details: { projectAgentsDir: null, totalDurationMs: 0, results: [], progress: [runningProgress({ resolvedThinkingLevel: level as unknown as AgentProgress["resolvedThinkingLevel"] })] } },
+				{
+					content: [],
+					details: {
+						projectAgentsDir: null,
+						totalDurationMs: 0,
+						results: [],
+						progress: [
+							runningProgress({
+								resolvedThinkingLevel: level as unknown as AgentProgress["resolvedThinkingLevel"],
+							}),
+						],
+					},
+				},
 				{ expanded: false, isPartial: true },
 				theme,
 			);
@@ -97,7 +109,11 @@ describe("task card effort glyph badge", () => {
 				details: {
 					projectAgentsDir: null,
 					totalDurationMs: 0,
-					results: [finishedResult({ resolvedThinkingLevel: "high" as unknown as AgentProgress["resolvedThinkingLevel"] })],
+					results: [
+						finishedResult({
+							resolvedThinkingLevel: "high" as unknown as AgentProgress["resolvedThinkingLevel"],
+						}),
+					],
 				},
 			},
 			{ expanded: false, isPartial: false },
@@ -139,7 +155,11 @@ describe("task card effort glyph badge", () => {
 				details: {
 					projectAgentsDir: null,
 					totalDurationMs: 0,
-					results: [finishedResult({ resolvedThinkingLevel: "xhigh" as unknown as AgentProgress["resolvedThinkingLevel"] })],
+					results: [
+						finishedResult({
+							resolvedThinkingLevel: "xhigh" as unknown as AgentProgress["resolvedThinkingLevel"],
+						}),
+					],
 				},
 			},
 			{ expanded: false, isPartial: false },

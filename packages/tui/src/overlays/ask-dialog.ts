@@ -242,10 +242,10 @@ function renderQuestionTitle(question: ExtensionAskDialogQuestion, width: number
 }
 /** Wrap an option description exactly as the option list renders it, so
  *  overflow detection and expanded rendering stay in sync with the row. */
-function wrapOptionDescription(description: string, contentWidth: number): string[] {
+function wrapOptionDescription(description: string, contentWidth: number, indentWidth = 4): string[] {
 	const mdTheme = getMarkdownTheme();
 	const rendered = renderInlineMarkdown(description.trim(), mdTheme, t => theme.fg("muted", t));
-	return wrapTextWithAnsi(rendered, Math.max(1, contentWidth - 6));
+	return wrapTextWithAnsi(rendered, Math.max(1, contentWidth - indentWidth));
 }
 
 /** True when any option description of the question wraps past the collapsed
@@ -485,6 +485,19 @@ function noteForSubmittedAnswer(
 	return option && state.selectedOptions.has(option.label) ? { text: state.note, option: option.label } : undefined;
 }
 
+function renderOptionLabel(rawLabel: string, mdTheme: MarkdownTheme, baseColor: (t: string) => string): string {
+	const match = rawLabel.match(/^(.*?)(\s*(?:\(Recommended\)|\[Recommended\]|\(推荐\)|\[推荐\]))(.*)$/);
+	if (!match) {
+		return renderInlineMarkdown(rawLabel, mdTheme, baseColor);
+	}
+	const [, prefix, badge, suffix] = match;
+	const renderedPrefix = prefix ? renderInlineMarkdown(prefix, mdTheme, baseColor) : "";
+	const badgeText = badge.includes("推荐") ? "[推荐]" : "[Recommended]";
+	const renderedBadge = theme.bold(theme.fg("warning", badgeText));
+	const renderedSuffix = suffix ? renderInlineMarkdown(suffix, mdTheme, baseColor) : "";
+	return `${renderedPrefix}${renderedPrefix ? " " : ""}${renderedBadge}${renderedSuffix}`;
+}
+
 function renderRowLabel(
 	rowItem: QuestionRow,
 	question: ExtensionAskDialogQuestion,
@@ -500,10 +513,11 @@ function renderRowLabel(
 	const option = isOption ? question.options[rowItem.optionIndex ?? -1] : undefined;
 	const checked =
 		option !== undefined ? state.selectedOptions.has(option.label) : isOther && state.customInput !== undefined;
-	const color = selected ? "accent" : checked ? "toolOutput" : "text";
+	const baseColor = (t: string) =>
+		selected ? theme.fg("accent", t) : checked ? theme.bold(theme.fg("text", t)) : theme.fg("text", t);
 	const marker = `${theme.fg(checked ? "success" : "dim", optionMarker(theme, question.multi, checked))} `;
 	const cursor = selected ? theme.fg("accent", `${theme.nav.cursor} `) : "  ";
-	const label = renderInlineMarkdown(rowItem.label, mdTheme, t => theme.fg(color, t));
+	const label = renderOptionLabel(rowItem.label, mdTheme, baseColor);
 	const noteMarker = state.note && state.noteRowKey === rowItem.key ? theme.fg("success", "  ✎ note") : "";
 	// `width` is already the inner content width supplied by OverlayPanel; when
 	// a scrollbar is needed, renderRows() calls this again with one less column.
@@ -513,6 +527,7 @@ function renderRowLabel(
 	const labelWidth = Math.max(1, width - visibleWidth(cursor) - visibleWidth(marker) - noteWidth);
 	const wrappedLabel = wrapTextWithAnsi(label, labelWidth);
 	const indent = padding(visibleWidth(cursor) + visibleWidth(marker));
+	const indentWidth = visibleWidth(indent);
 	const lines = [`${cursor}${marker}${wrappedLabel[0] ?? ""}${noteMarker}`];
 	for (let i = 1; i < wrappedLabel.length; i++) {
 		lines.push(`${indent}${wrappedLabel[i] ?? ""}`);
@@ -520,10 +535,10 @@ function renderRowLabel(
 	if (rowItem.kind === "option") {
 		const option = question.options[rowItem.optionIndex ?? -1];
 		if (option?.description?.trim()) {
-			const wrapped = wrapOptionDescription(option.description, width);
+			const wrapped = wrapOptionDescription(option.description, width, indentWidth);
 			const shown = expanded ? wrapped : wrapped.slice(0, MAX_DESC_ROWS);
 			for (const line of shown) {
-				lines.push(`      ${truncateToWidth(line, Math.max(1, width - 6), Ellipsis.Unicode)}`);
+				lines.push(`${indent}${truncateToWidth(line, Math.max(1, width - indentWidth), Ellipsis.Unicode)}`);
 			}
 		}
 		if (option?.preview?.trim()) {
@@ -533,7 +548,9 @@ function renderRowLabel(
 	}
 	if (isOther && state.customInput !== undefined) {
 		const preview = replaceTabs(state.customInput).replace(/\s+/g, " ").trim();
-		lines.push(theme.fg("muted", `      ${truncateToWidth(preview, Math.max(1, width - 6), Ellipsis.Unicode)}`));
+		lines.push(
+			theme.fg("muted", `${indent}${truncateToWidth(preview, Math.max(1, width - indentWidth), Ellipsis.Unicode)}`),
+		);
 	}
 	return lines;
 }

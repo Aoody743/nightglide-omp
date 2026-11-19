@@ -44,7 +44,7 @@ import type { TspPrefsControl, TspPrefsProps } from "@oh-my-pi/pi-wire";
 import { prefsSectionId } from "../components/settings-list";
 import { getCurrentThemeName, getSelectListTheme, getSettingsListTheme, theme } from "../theme/theme";
 import { AUTO_THINKING, type ConfiguredThinkingLevel } from "../thinking";
-import { getTabBarTheme } from "../chrome/shared";
+import type { TabBarTheme } from "../components/tab-bar";
 import { type ComposerPreviewStatusSource, ComposerShapePreview } from "./composer-shape-preview";
 import { getComposerShapeOptions } from "./composer-shape-registry";
 import { bottomBorder, divider, row, topBorder } from "../chrome/overlay-box";
@@ -90,6 +90,23 @@ const ESCAPE = "\x1b";
 
 /** Footer hint set of the settings overlay, by what currently owns the keys. */
 type SettingsHintMode = "search" | "plugins" | "sections" | "rows" | "rows-sections";
+
+/**
+ * The settings tab strip, in the model-browser selection language: the active
+ * tab carries the selectedBg band with an accent label, every other tab stays
+ * dim so the band is the only bright element on the row. Tab gaps remain the
+ * bar's plain two-space separator.
+ */
+export function getSettingsTabBarTheme(): TabBarTheme {
+	return {
+		label: text => theme.bold(theme.fg("accent", text)),
+		activeTab: text => theme.bg("selectedBg", theme.fg("accent", text)),
+		inactiveTab: text => theme.fg("dim", text),
+		mutedTab: text => theme.fg("dim", text),
+		hoverTab: text => theme.bg("selectedBg", theme.fg("text", text)),
+		hint: text => theme.fg("dim", text),
+	};
+}
 
 /** The settings tab strip; muted tabs (no search matches) keep their place, dimmed. */
 function settingsTabsNode(tabs: readonly Tab[], active: string | undefined): NativeNode {
@@ -661,7 +678,7 @@ export class SettingsSelectorComponent implements Component {
 		// "(tab to cycle)" hint (folded into the footer hint line).
 		const tabs = getSettingsTabs();
 		this.#tabs = tabs;
-		this.#tabBar = new TabBar("", tabs, getTabBarTheme());
+		this.#tabBar = new TabBar("", tabs, getSettingsTabBarTheme());
 		this.#tabBar.showHint = false;
 		this.#tabBar.onTabChange = () => {
 			const tabId = this.#tabBar.getActiveTab().id as SettingTab | "plugins";

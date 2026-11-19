@@ -69,6 +69,8 @@ export interface SelectListTheme {
 	icon?: (text: string) => string;
 	/** Hover band applied to the full row under the mouse pointer. */
 	hovered?: (text: string) => string;
+	/** Full row highlight band applied when this item is selected. */
+	selectedRow?: (text: string) => string;
 }
 
 export interface SelectListTruncatePrimaryContext {
@@ -457,14 +459,22 @@ export class SelectList implements Component, MouseRoutable {
 			for (const row of itemRows) {
 				if (rows.length >= visualBudget) break;
 				this.#hitRows[rows.length] = i;
+				if (this.layout.renderItem !== undefined) {
+					rows.push(row);
+					continue;
+				}
+				if (item.disabled) {
+					rows.push(this.theme.description(row));
+					continue;
+				}
+				const lineWidth = visibleWidth(row);
+				const padded = lineWidth < rowWidth ? row + padding(rowWidth - lineWidth) : row;
 				const styled =
-					this.layout.renderItem !== undefined
-						? row
-						: item.disabled
-							? this.theme.description(row)
-							: hovered && this.theme.hovered
-								? this.theme.hovered(row)
-								: row;
+					isSelected && this.theme.selectedRow
+						? this.theme.selectedRow(padded)
+						: hovered && this.theme.hovered
+							? this.theme.hovered(padded)
+							: row;
 				rows.push(styled);
 			}
 		}
@@ -527,8 +537,8 @@ export class SelectList implements Component, MouseRoutable {
 	): string[] {
 		const layout = this.#computeItemLayout(item, isSelected, width, primaryColumnWidth, iconColumnWidth);
 		const { prefix, truncatedValue, spacing } = layout;
-		const iconCell =
-			layout.iconCell && !isSelected && this.theme.icon ? this.theme.icon(layout.iconCell) : layout.iconCell;
+		const iconCell = layout.iconCell && this.theme.icon ? this.theme.icon(layout.iconCell) : layout.iconCell;
+		const valueText = isSelected ? this.theme.selectedText(truncatedValue) : truncatedValue;
 
 		if (layout.kind === "description") {
 			const { descriptionSingleLine, descriptionStart, remainingWidth } = layout;
@@ -537,14 +547,7 @@ export class SelectList implements Component, MouseRoutable {
 				if (wrapped.length === 0) wrapped.push("");
 				const indent = padding(descriptionStart);
 				const first = wrapped[0] ?? "";
-				if (isSelected) {
-					const rows = [this.theme.selectedText(`${prefix}${iconCell}${truncatedValue}${spacing}${first}`)];
-					for (let i = 1; i < wrapped.length; i++) {
-						rows.push(this.theme.selectedText(`${indent}${wrapped[i]}`));
-					}
-					return rows;
-				}
-				const rows = [prefix + iconCell + truncatedValue + this.theme.description(spacing + first)];
+				const rows = [prefix + iconCell + valueText + this.theme.description(spacing + first)];
 				for (let i = 1; i < wrapped.length; i++) {
 					rows.push(this.theme.description(`${indent}${wrapped[i]}`));
 				}
@@ -552,16 +555,10 @@ export class SelectList implements Component, MouseRoutable {
 			}
 
 			const truncatedDesc = truncateToWidth(descriptionSingleLine, remainingWidth, Ellipsis.Omit);
-			if (isSelected) {
-				return [this.theme.selectedText(`${prefix}${iconCell}${truncatedValue}${spacing}${truncatedDesc}`)];
-			}
-			return [prefix + iconCell + truncatedValue + this.theme.description(spacing + truncatedDesc)];
+			return [prefix + iconCell + valueText + this.theme.description(spacing + truncatedDesc)];
 		}
 
-		if (isSelected) {
-			return [this.theme.selectedText(`${prefix}${iconCell}${truncatedValue}`)];
-		}
-		return [prefix + iconCell + truncatedValue];
+		return [prefix + iconCell + valueText];
 	}
 
 	#computeItemRowCount(item: SelectItem, width: number, primaryColumnWidth: number, iconColumnWidth: number): number {

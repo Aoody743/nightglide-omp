@@ -661,6 +661,15 @@ export class PlanReviewOverlay implements Component {
 			this.callbacks.onCancel();
 			return;
 		}
+		if (/^[1-9]$/.test(keyData)) {
+			const index = Number(keyData) - 1;
+			if (index >= 0 && index < this.#options.length && !this.#disabled.has(index)) {
+				this.#focus = "actions";
+				this.#selectedIndex = index;
+				this.#confirmSelection();
+				return;
+			}
+		}
 		if (this.#focus !== "actions" && keyData === "u") {
 			this.#undoLast();
 			return;
@@ -1224,15 +1233,15 @@ export class PlanReviewOverlay implements Component {
 			// The cursor marks the selected option; it dims when actions are not the
 			// focused region so the active region's highlight stays unambiguous.
 			const cursor = selected ? theme.fg(active ? "accent" : "dim", `${theme.nav.cursor} `) : "  ";
+			const displayLabel = i < 9 ? `[${i + 1}] ${label}` : label;
 			let text = isDisabled
-				? theme.fg("dim", label)
+				? theme.fg("dim", displayLabel)
 				: selected && active
-					? theme.bold(theme.fg("accent", label))
-					: theme.fg("text", label);
-			// A pointer hovering an option paints a highlight band behind its label,
-			// distinct from the keyboard selection (cursor glyph + bold accent) which
-			// stays where it is. One space of padding gives the band a button shape.
-			if (hovered) text = theme.bg("selectedBg", ` ${text} `);
+					? theme.bold(theme.fg("accent", displayLabel))
+					: theme.fg("text", displayLabel);
+			// Keyboard selection and pointer hover both paint a highlight band behind the label.
+			// One space of padding gives the band a button capsule shape.
+			if ((selected && active) || hovered) text = theme.bgFill("selectedBg", ` ${text} `);
 			return cursor + text;
 		});
 	}
@@ -1605,7 +1614,7 @@ export class PlanReviewOverlay implements Component {
 			// The decision bar: Tern lays the list out as buttons, the first one the hero.
 			const optionItems = this.#options.map((label, i) =>
 				item(`o${i}`, {
-					label,
+					label: i < 9 ? `[${i + 1}] ${label}` : label,
 					disabled: this.#disabled.has(i) || undefined,
 					hint: i === this.#selectedIndex ? ["enter"] : undefined,
 				}),

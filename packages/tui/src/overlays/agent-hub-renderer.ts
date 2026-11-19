@@ -1,5 +1,6 @@
 import { ThinkingLevel } from "@oh-my-pi/pi-agent-core";
 import type { TspSpan, TspTone } from "@oh-my-pi/pi-wire";
+import { effortLadderBadgeToken, effortLadderGlyph, effortLadderToken, themeThinkingWord } from "../chat/effort-ladder";
 import { span } from "../native/describe";
 import { Ellipsis, visibleWidth } from "../utils";
 import { formatMetricRow } from "../components/metric";
@@ -39,13 +40,18 @@ export function clampHubLine(line: string, width: number): string {
 	return truncateToWidth(line.replace(/[\r\n]+/g, " "), Math.max(1, width), Ellipsis.Omit);
 }
 
-/** Semantic tone of each roster status; shared by the ANSI glyphs and native spans. */
+/**
+ * Semantic tone of each roster status; shared by the ANSI glyphs and native
+ * spans. Three states, one bright: running is the only live thing on the panel
+ * and keeps the accent; settled agents go quiet (dim), parked ones shadow
+ * further (muted), and aborts keep the error key color.
+ */
 const STATUS_TONE = {
 	running: "accent",
-	idle: "success",
+	idle: "dim",
 	parked: "muted",
 	aborted: "error",
-} as const satisfies Record<AgentStatus, TspTone & ThemeColor>;
+} as const satisfies Record<AgentStatus, ThemeColor>;
 
 function statusSymbol(status: AgentStatus): string {
 	switch (status) {
@@ -65,8 +71,8 @@ export function statusGlyph(status: AgentRecordLike["status"]): string {
 	return theme.fg(STATUS_TONE[status], statusSymbol(status));
 }
 
-/** Native tone for a roster status. */
-export function statusTone(status: AgentStatus): TspTone {
+/** Native span style for a roster status (the dim settled state is style-only). */
+export function statusTone(status: AgentStatus): string {
 	return STATUS_TONE[status];
 }
 
@@ -112,31 +118,20 @@ function showsThinkingLevel(level: ThinkingLevel | undefined): level is Exclude<
 	return level !== undefined && level !== ThinkingLevel.Off && level !== ThinkingLevel.Inherit;
 }
 
-/** Model id + thinking level (`sonnet-4-6 ◒ high`), level colored per theme. */
-function formatModelBadge(modelId: string, level: ThinkingLevel | undefined): string {
-	const model = theme.fg("muted", sanitizeDisplaySingleLine(modelId));
-	if (!showsThinkingLevel(level)) return model;
-	const display = theme.thinking[level] ?? level;
-	return `${model} ${theme.getThinkingBorderColor(level)(display)}`;
+/** The effort-ladder badge (`◎ high`): one rung glyph plus the symbol preset's
+ * own word, dim on the quiet rungs — the same badge the Task cards and thinking
+ * collapse heads render, so the panel cannot drift from the ladder. */
+function effortBadgeLabel(level: ThinkingLevel): string {
+	const glyph = effortLadderGlyph(level);
+	const word = themeThinkingWord(theme.thinking[level as keyof typeof theme.thinking] ?? level, level);
+	return glyph ? `${glyph} ${word}` : word;
 }
 
-/** Theme token matching {@link Theme.getThinkingBorderColor} for native spans. */
-function thinkingToken(level: ThinkingLevel): ThemeColor {
-	switch (level) {
-		case ThinkingLevel.Minimal:
-			return "thinkingMinimal";
-		case ThinkingLevel.Low:
-			return "thinkingLow";
-		case ThinkingLevel.Medium:
-			return "thinkingMedium";
-		case ThinkingLevel.High:
-			return "thinkingHigh";
-		case ThinkingLevel.XHigh:
-		case ThinkingLevel.Max:
-			return "thinkingXhigh";
-		default:
-			return "thinkingOff";
-	}
+/** Model id + effort rung (`sonnet-4-6 ◎ high`), rung colored per the effort ladder. */
+function formatModelBadge(modelId: string, level: ThinkingLevel | undefined): string {
+	const model = theme.fg("dim", sanitizeDisplaySingleLine(modelId));
+	if (!showsThinkingLevel(level)) return model;
+	return `${model} ${theme.fg(effortLadderBadgeToken(level) ?? "dim", effortBadgeLabel(level))}`;
 }
 
 /** Host-resolved model-role label and color. */
@@ -233,7 +228,7 @@ export function modelChip(ref: AgentRecordLike, observed: ObservableSession | un
 	return {
 		text: sanitizeDisplaySingleLine(badge.model),
 		level: showsThinkingLevel(badge.level) ? badge.level : undefined,
-		dot: showsThinkingLevel(badge.level) ? thinkingToken(badge.level) : undefined,
+		dot: showsThinkingLevel(badge.level) ? effortLadderToken(badge.level) : undefined,
 		fallback: badge.fallback,
 	};
 }
@@ -244,9 +239,9 @@ export function modelBadgeSpans(ref: AgentRecordLike, observed: ObservableSessio
 	if (!badge) return undefined;
 	const spans: TspSpan[] = [];
 	if (badge.fallback) spans.push(span("fallback → ", "warning"));
-	spans.push(span(sanitizeDisplaySingleLine(badge.model), "muted"));
+	spans.push(span(sanitizeDisplaySingleLine(badge.model), "dim"));
 	if (showsThinkingLevel(badge.level)) {
-		spans.push(span(` ${theme.thinking[badge.level] ?? badge.level}`, thinkingToken(badge.level)));
+		spans.push(span(` ${effortBadgeLabel(badge.level)}`, effortLadderBadgeToken(badge.level) ?? "dim"));
 	}
 	return spans;
 }
@@ -291,28 +286,55 @@ export function metricsText(metrics: AgentMetrics): string {
 
 /** Row-grid variant of {@link formatMetrics}: fixed-width cells so every agent's metadata
  * line shares one column layout instead of flowing after wrapped text. Cost is left-aligned
- * so the line starts flush; the numeric cells are right-aligned so units line up. */
-export function formatMetricColumns(metrics: AgentMetrics, age: string): string {
-	return renderTableRow(
-		[
-			{ text: formatCost(metrics.cost) },
-			{ text: formatMetricDuration(metrics) ?? "—" },
-			{ text: `${formatNumber(metrics.requests)} req` },
-			{ text: `${formatNumber(metrics.tools)} tools` },
-			{ text: `${formatNumber(metrics.tokens)} tok` },
-			{ text: age },
-		],
-		[
-			{ width: 8, align: "left", overflow: "allow" },
-			{ width: 13, align: "right", overflow: "truncate" },
-			{ width: 8, align: "right", overflow: "truncate" },
-			{ width: 9, align: "right", overflow: "truncate" },
-			{ width: 8, align: "right", overflow: "truncate" },
-			{ width: 8, align: "right", overflow: "truncate" },
-		],
-		undefined,
-		{ gap: " ", fit: false },
-	);
+ * so the line starts flush; the numeric cells are right-aligned so units line up.
+ *
+ * With `maxWidth`, cells shed whole (never truncated mid-word) when the row
+ * cannot fit, lowest priority first — `tools`, `req`, `tok`, `age`, `time`,
+ * `cost` — mirroring the native picker's column priorities. */
+export function formatMetricColumns(metrics: AgentMetrics, age: string, maxWidth?: number): string {
+	const cells = [
+		{ text: formatCost(metrics.cost), width: 8, align: "left" as const, overflow: "allow" as const, priority: 6 },
+		{
+			text: formatMetricDuration(metrics) ?? "—",
+			width: 13,
+			align: "right" as const,
+			overflow: "truncate" as const,
+			priority: 5,
+		},
+		{
+			text: `${formatNumber(metrics.requests)} req`,
+			width: 8,
+			align: "right" as const,
+			overflow: "truncate" as const,
+			priority: 2,
+		},
+		{
+			text: `${formatNumber(metrics.tools)} tools`,
+			width: 9,
+			align: "right" as const,
+			overflow: "truncate" as const,
+			priority: 1,
+		},
+		{
+			text: `${formatNumber(metrics.tokens)} tok`,
+			width: 8,
+			align: "right" as const,
+			overflow: "truncate" as const,
+			priority: 3,
+		},
+		{ text: age, width: 8, align: "right" as const, overflow: "truncate" as const, priority: 4 },
+	];
+	if (maxWidth !== undefined) {
+		const max = Math.max(1, maxWidth);
+		const rowWidth = (list: typeof cells): number =>
+			list.reduce((sum, cell) => sum + cell.width, 0) + Math.max(0, list.length - 1);
+		while (cells.length > 1 && rowWidth(cells) > max) {
+			let drop = 0;
+			for (let i = 1; i < cells.length; i++) if (cells[i]!.priority < cells[drop]!.priority) drop = i;
+			cells.splice(drop, 1);
+		}
+	}
+	return renderTableRow(cells, cells, undefined, { gap: " ", fit: false });
 }
 
 export function contextGauge(tokens: number, window: number): string {

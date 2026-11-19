@@ -302,9 +302,7 @@ describe("applyNightglideRouting local vs user fallback chains", () => {
 			const chain = chains[role] ?? [];
 			expect(chain.length).toBeGreaterThan(0);
 			for (const entry of chain) {
-				expect(entry.startsWith("omlx/") || entry.startsWith("ollama/") || entry.startsWith("mybox/")).toBe(
-					true,
-				);
+				expect(entry.startsWith("omlx/") || entry.startsWith("ollama/") || entry.startsWith("mybox/")).toBe(true);
 			}
 		}
 	});

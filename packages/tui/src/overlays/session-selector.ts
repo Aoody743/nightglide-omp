@@ -554,6 +554,7 @@ class SessionList<T extends SessionSelectorEntry> implements Component {
 	// scroll window. Only consulted while the picker holds the alternate screen
 	// (where the overlay enables mouse tracking and paints from screen row 0).
 	#hitRows: (number | undefined)[] = [];
+	#hoveredIndex: number | null = null;
 	readonly #searchInput: Input;
 	onSelect?: (session: T) => void;
 	onCancel?: () => void;
@@ -711,6 +712,7 @@ class SessionList<T extends SessionSelectorEntry> implements Component {
 	}
 
 	#filterSessions(query: string): void {
+		this.#hoveredIndex = null;
 		this.#scanGeneration++;
 		this.#itemsVersion++;
 		if (this.#scanTimer !== undefined) {
@@ -870,6 +872,7 @@ class SessionList<T extends SessionSelectorEntry> implements Component {
 
 	/** Cancel pending async search work; idempotent, called on every picker exit path. */
 	dispose(): void {
+		this.#hoveredIndex = null;
 		this.#scanGeneration++;
 		if (this.#scanTimer !== undefined) {
 			clearTimeout(this.#scanTimer);
@@ -910,10 +913,22 @@ class SessionList<T extends SessionSelectorEntry> implements Component {
 		return this.#hitRows[line];
 	}
 
+	getHoverIndex(): number | null {
+		return this.#hoveredIndex;
+	}
+
+	setHoverIndex(index: number | null): void {
+		if (this.#hoveredIndex !== index) {
+			this.#hoveredIndex = index;
+			this.onRequestRender?.();
+		}
+	}
+
 	/** Wheel notch: move the selection one step (clamped, no wrap). */
 	handleWheel(delta: -1 | 1): void {
 		if (this.#menu.visibleItems.length === 0) return;
 		this.#selectionMoved = true;
+		this.#hoveredIndex = null;
 		this.#menu.move(delta, false);
 	}
 
@@ -1306,6 +1321,8 @@ class SessionList<T extends SessionSelectorEntry> implements Component {
 			const session = filtered[i];
 			if (!session) continue;
 			const isSelected = i === this.#menu.selectedIndex;
+			const isHovered = i === this.#hoveredIndex;
+			const isHighlighted = isSelected || isHovered;
 
 			// Normalize first message to single line
 			const normalizedMessage = session.firstMessage.replace(/\n/g, " ").trim();
@@ -1321,20 +1338,22 @@ class SessionList<T extends SessionSelectorEntry> implements Component {
 			const pinPrefixWidth = isPinned ? visibleWidth(`${theme.icon.pin} `) : 0;
 			const maxTextWidth = Math.max(0, maxWidth - pinPrefixWidth);
 
+			const cardLines: string[] = [];
+
 			if (session.title) {
 				// Has title: show title on first line, dimmed first message on second line
 				const truncatedTitle = truncateToWidth(session.title, maxTextWidth);
 				const titleLine = `${cursor}${pinPrefix}${isSelected ? theme.bold(truncatedTitle) : truncatedTitle}`;
-				sessionLines.push(titleLine);
+				cardLines.push(titleLine);
 
-				// Second line: dimmed first message preview
+				// Second line: first message preview (muted on highlight for contrast against selectedBg, dim otherwise)
 				const truncatedPreview = truncateToWidth(normalizedMessage, maxWidth);
-				sessionLines.push(`  ${theme.fg("dim", truncatedPreview)}`);
+				cardLines.push(`  ${theme.fg(isHighlighted ? "muted" : "dim", truncatedPreview)}`);
 			} else {
 				// No title: show first message as main line
 				const truncatedMsg = truncateToWidth(normalizedMessage, maxTextWidth);
 				const messageLine = `${cursor}${pinPrefix}${isSelected ? theme.bold(truncatedMsg) : truncatedMsg}`;
-				sessionLines.push(messageLine);
+				cardLines.push(messageLine);
 			}
 
 			// Metadata line: date + file size + current marker + lifecycle status
@@ -1346,7 +1365,7 @@ class SessionList<T extends SessionSelectorEntry> implements Component {
 			const modified = formatSessionDate(session.modified);
 			let metadata = `  ${dim(modified)} ${dot} ${dim(formatBytes(session.size))}`;
 			if (currentPath !== undefined && session.path === currentPath) {
-				metadata += ` ${dot} ${theme.fg("accent", "current")}`;
+				metadata += ` ${dot} ${theme.inverse(theme.bold(theme.fg("accent", " current ")))}`;
 			}
 			const status = formatSessionStatus(session.status);
 			if (status) {
@@ -1359,8 +1378,17 @@ class SessionList<T extends SessionSelectorEntry> implements Component {
 				metadata += ` ${dot} ${dim(shortenPath(session.cwd))}`;
 			}
 			const metadataLine = truncateToWidth(metadata, rowWidth);
+			cardLines.push(metadataLine);
 
-			sessionLines.push(metadataLine);
+			for (const line of cardLines) {
+				if (isHighlighted) {
+					const w = visibleWidth(line);
+					const paddedLine = w < rowWidth ? `${line}${padding(rowWidth - w)}` : line;
+					sessionLines.push(theme.bgFill("selectedBg", paddedLine));
+				} else {
+					sessionLines.push(line);
+				}
+			}
 			// Blank separator between sessions; the last block ends flush against
 			// the footer, whose leading blank provides the same gap.
 			if (i < endIndex - 1) sessionLines.push("");
@@ -1400,6 +1428,26 @@ class SessionList<T extends SessionSelectorEntry> implements Component {
 	}
 
 	handleInput(keyData: string): void {
+		if (keyData.startsWith("\x1b[<")) {
+			routeSgrMouseInput(keyData, event => {
+				if (event.wheel !== null) {
+					this.handleWheel(event.wheel);
+					return true;
+				}
+				if (event.motion) {
+					const index = this.hitTestSession(event.row);
+					this.setHoverIndex(index ?? null);
+					return true;
+				}
+				if (event.leftClick) {
+					const index = this.hitTestSession(event.row);
+					if (index !== undefined) this.selectAndConfirm(index);
+					return true;
+				}
+				return true;
+			});
+			return;
+		}
 		const keybindings = getKeybindings();
 		// `app.session.delete` (Backspace or Delete by default) requests delete
 		// confirmation from the parent. macOS laptops have no dedicated Forward
@@ -1434,24 +1482,28 @@ class SessionList<T extends SessionSelectorEntry> implements Component {
 		}
 		// Up arrow
 		if (matchesSelectUp(keyData)) {
+			this.#hoveredIndex = null;
 			this.#selectionMoved = true;
 			this.#menu.move(-1, false);
 			return;
 		}
 		// Down arrow
 		if (matchesSelectDown(keyData)) {
+			this.#hoveredIndex = null;
 			this.#selectionMoved = true;
 			this.#menu.move(1, false);
 			return;
 		}
 		// Page up - jump up by maxVisible items
 		if (matchesKey(keyData, "pageUp")) {
+			this.#hoveredIndex = null;
 			this.#selectionMoved = true;
 			this.#menu.move(-this.#pageSize(), false);
 			return;
 		}
 		// Page down - jump down by maxVisible items
 		if (matchesKey(keyData, "pageDown")) {
+			this.#hoveredIndex = null;
 			this.#selectionMoved = true;
 			this.#menu.move(this.#pageSize(), false);
 			return;
@@ -2335,7 +2387,8 @@ export class SessionSelectorComponent<T extends SessionSelectorEntry = SessionSe
 	 * SGR mouse reports, delivered only while the picker holds the alternate
 	 * screen (the fullscreen overlay enables tracking and paints from screen row
 	 * 0). Wheel scrolls the list; a left click resumes the session under the
-	 * pointer. Mouse is inert while the delete-confirmation dialog is open.
+	 * pointer; mouse motion updates the hover index. Mouse is inert while the
+	 * delete-confirmation dialog is open.
 	 */
 	#handleMouse(data: string): void {
 		if (this.#confirmationDialog || this.#renameDialog) return;
@@ -2344,11 +2397,22 @@ export class SessionSelectorComponent<T extends SessionSelectorEntry = SessionSe
 				this.#sessionList.handleWheel(event.wheel);
 				return true;
 			}
+			if (event.motion) {
+				const line = event.row - this.#listLineOffset;
+				const index =
+					event.row < this.#footerStart && line >= 0 ? this.#sessionList.hitTestSession(line) : undefined;
+				this.#sessionList.setHoverIndex(index ?? null);
+				return true;
+			}
 			if (!event.leftClick || event.row >= this.#footerStart) return true;
 			const index = this.#sessionList.hitTestSession(event.row - this.#listLineOffset);
 			if (index !== undefined) this.#sessionList.selectAndConfirm(index);
 			return true;
 		});
+	}
+
+	getHoverIndex(): number | null {
+		return this.#sessionList.getHoverIndex();
 	}
 
 	getSessionList(): SessionList<T> {

@@ -98,6 +98,17 @@ function effortHeadBadge(level: string | undefined): { text: string; token: Them
 }
 
 type ThinkingContentBlock = Extract<AssistantMessage["content"][number], { type: "thinking" }>;
+/**
+ * Prose markdown component enforcing GATE-DIM-003: typesetting column width is
+ * constrained to at most 90 columns on wide screens (120~160 columns) to prevent
+ * visual fatigue from excessive line length, while outer row width remains left-aligned.
+ */
+class TextMarkdown extends Markdown {
+	override render(width: number): readonly string[] {
+		return super.render(Math.min(width, 90));
+	}
+}
+
 /** Renders one text or thinking block: Markdown, or {@link FigureMarkdown} for text holding a ```svg fence. */
 type ProseBlock = Markdown | FigureMarkdown;
 /** A streamed block the fast path updates in place. */
@@ -1545,10 +1556,11 @@ export class AssistantMessageComponent extends Container {
 		// Trim like the live children, dropping the trailing blank line a frozen
 		// prefix still carries.
 		const trimmed = text.trim();
+		const renderWidth = kind === "text" ? Math.min(width, 90) : width;
 		if (this.#transcriptBlockFinalized) {
 			const md = this.#createMarkdown(kind, trimmed, locks);
 			md.openTableTail = openTable;
-			return md.render(width);
+			return md.render(renderWidth);
 		}
 		const head = this.#stableHeadRenderer;
 		const replay = this.#stableReplayRenderer;
@@ -1556,20 +1568,20 @@ export class AssistantMessageComponent extends Container {
 		if (renderer?.index === index && renderer.kind === kind) {
 			renderer.md.setText(trimmed);
 			renderer.md.openTableTail = openTable;
-			return trimFabricatedCloser(renderer.md.render(width), trimmed);
+			return trimFabricatedCloser(renderer.md.render(renderWidth), trimmed);
 		}
 		const md = this.#createMarkdown(kind, trimmed, locks);
 		md.openTableTail = openTable;
 		if (role === "head") this.#stableHeadRenderer = { index, kind, md };
 		else if (role === "replay") this.#stableReplayRenderer = { index, kind, md };
-		return trimFabricatedCloser(md.render(width), trimmed);
+		return trimFabricatedCloser(md.render(renderWidth), trimmed);
 	}
 
 	/** Markdown for a text or thinking block; live children and stable-row renders share it so stable rows prefix the block render. */
 	#createMarkdown(kind: StablePartKind, text: string, tableLocks?: TableLocks): Markdown {
 		const md =
 			kind === "text"
-				? new Markdown(text, 1, 0, this.#getProseTheme(), this.#getProseTextStyle(), 0)
+				? new TextMarkdown(text, 1, 0, this.#getProseTheme(), this.#getProseTextStyle(), 0)
 				: new Markdown(text, 1, 0, getMarkdownTheme(), {
 						color: (value: string) => theme.fg("thinkingText", value),
 						italic: true,

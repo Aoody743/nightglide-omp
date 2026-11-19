@@ -92,7 +92,9 @@ describe("status line routing segment", () => {
 		const ctx = createRoutingContext({ getNightglideRoutingMode: () => "local" });
 		// The `routing:` qualifier is dim; the applied mode keeps the accent that
 		// ties the segment visually to the model name beside it.
-		expect(renderSegment("routing", ctx).content).toBe(`${theme.fg("dim", "routing:")}${theme.fg("accent", "local")}`);
+		expect(renderSegment("routing", ctx).content).toBe(
+			`${theme.fg("dim", "routing:")}${theme.fg("accent", "local")}`,
+		);
 	});
 
 	it("marks an explicit non-local default under local routing", () => {

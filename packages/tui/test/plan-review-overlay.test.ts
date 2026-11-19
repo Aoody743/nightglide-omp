@@ -1101,4 +1101,38 @@ describe("PlanReviewOverlay", () => {
 		expect(hoverRow(overlay, "Approve and keep context")).toBe(true);
 		expect(optionLineRaw(overlay, "Approve and keep context")).not.toContain(selectedBg);
 	});
+
+	it("paints a selectedBg capsule on the keyboard-focused option", () => {
+		const overlay = new PlanReviewOverlay(
+			"plan body text",
+			{ promptTitle: "next", options: APPROVAL_OPTIONS },
+			{ onPick: vi.fn(), onCancel: vi.fn() },
+		);
+		const selectedBg = theme.getBgAnsi("selectedBg");
+		expect(optionLineRaw(overlay, "Approve and execute")).toContain(selectedBg);
+		expect(optionLineRaw(overlay, "Approve and compact context")).not.toContain(selectedBg);
+	});
+
+	it("confirms the option directly on single-digit key 1..9", () => {
+		const onPick = vi.fn();
+		const overlay = new PlanReviewOverlay(
+			"plan body text",
+			{ promptTitle: "next", options: APPROVAL_OPTIONS },
+			{ onPick, onCancel: vi.fn() },
+		);
+		overlay.handleInput("2");
+		expect(onPick).toHaveBeenCalledTimes(1);
+		expect(onPick).toHaveBeenCalledWith("Approve and compact context");
+	});
+
+	it("ignores number key if the target option is disabled", () => {
+		const onPick = vi.fn();
+		const overlay = new PlanReviewOverlay(
+			"plan body text",
+			{ promptTitle: "next", options: APPROVAL_OPTIONS, disabledIndices: [1] },
+			{ onPick, onCancel: vi.fn() },
+		);
+		overlay.handleInput("2");
+		expect(onPick).not.toHaveBeenCalled();
+	});
 });

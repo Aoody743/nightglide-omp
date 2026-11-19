@@ -919,12 +919,16 @@ export class UsageDashboardComponent implements Component {
 				this.#renderCardLines(card, cardWidth, labelLines[index]!, layout),
 			);
 			const height = Math.max(...rowCards.map(card => card.length));
+			const divider =
+				CARD_GUTTER >= 3
+					? `${" ".repeat(Math.floor((CARD_GUTTER - 1) / 2))}${theme.fg("borderMuted", "│")}${" ".repeat(CARD_GUTTER - 1 - Math.floor((CARD_GUTTER - 1) / 2))}`
+					: " ".repeat(CARD_GUTTER);
 			for (let lineIdx = 0; lineIdx < height; lineIdx++) {
 				const segments = rowCards.map(card => {
 					const line = card[lineIdx] ?? "";
 					return line + " ".repeat(Math.max(0, cardWidth - visibleWidth(line)));
 				});
-				lines.push(segments.join(" ".repeat(CARD_GUTTER)).trimEnd());
+				lines.push(segments.join(divider).trimEnd());
 			}
 			if (start + columns < active.length) lines.push("");
 		}
@@ -950,7 +954,7 @@ export class UsageDashboardComponent implements Component {
 	#heatRamp(): string[] {
 		const mode = theme.getColorMode();
 		const darkBackground = (colorLuma(theme.getColorHex("text")) ?? 1) > 0.5;
-		const from = darkBackground ? { r: 20, g: 20, b: 24 } : { r: 244, g: 244, b: 246 };
+		const from = darkBackground ? { r: 20, g: 20, b: 24 } : { r: 195, g: 200, b: 215 };
 		const to = hexToRgb(theme.getColorHex("accent"));
 		return [0.3, 0.5, 0.72, 1].map(t =>
 			colorToAnsi(

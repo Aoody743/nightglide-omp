@@ -4,6 +4,7 @@ import {
 	Input,
 	matchesKey,
 	padding,
+	routeSgrMouseInput,
 	Spacer,
 	Text,
 	truncateToWidth,
@@ -117,11 +118,35 @@ class HistoryResultsList implements Component {
 	#menu: MenuSelection<HistorySearchEntry>;
 	#tokens: string[] = [];
 	#maxVisible = MAX_VISIBLE;
+	#hoveredIndex: number | null = null;
 	/** Highlighted prompt text per entry, valid for one `(tokens, budget)` pair; reset on invalidate (theme). */
 	#highlightCache = new WeakMap<HistorySearchEntry, { tokens: string[]; budget: number; text: string }>();
 
 	constructor(menu: MenuSelection<HistorySearchEntry>) {
 		this.#menu = menu;
+	}
+
+	getHoverIndex(): number | null {
+		return this.#hoveredIndex;
+	}
+
+	setHoverIndex(index: number | null): void {
+		this.#hoveredIndex = index;
+	}
+
+	hitTest(line: number): number | undefined {
+		const items = this.#menu.visibleItems;
+		if (items.length === 0) return undefined;
+		const { start: startIndex, end: endIndex } = centeredViewportRange(
+			this.#menu.selectedIndex,
+			items.length,
+			this.#maxVisible,
+		);
+		const index = startIndex + line;
+		if (line >= 0 && index >= startIndex && index < endIndex && index < items.length) {
+			return index;
+		}
+		return undefined;
 	}
 
 	setTokens(tokens: string[]): void {
@@ -168,6 +193,7 @@ class HistoryResultsList implements Component {
 			const entry = items[i];
 			if (!entry) continue;
 			const isSelected = i === this.#menu.selectedIndex;
+			const isHovered = i === this.#hoveredIndex;
 
 			const timeStr = pickerAge(entry.created_at * 1000);
 			const timeWidth = visibleWidth(timeStr);
@@ -185,8 +211,8 @@ class HistoryResultsList implements Component {
 			}
 
 			rows.push(
-				isSelected
-					? theme.bg("selectedBg", truncateToWidth(line, rowWidth, Ellipsis.Omit, true))
+				isSelected || isHovered
+					? theme.bgFill("selectedBg", truncateToWidth(line, rowWidth, Ellipsis.Omit, true))
 					: truncateToWidth(line, rowWidth),
 			);
 		}
@@ -211,6 +237,7 @@ export class HistorySearchComponent extends OverlayPanel {
 	#resultsQuery: string | undefined;
 	#searchTimer: NodeJS.Timeout | undefined;
 	#onRequestRender?: () => void;
+	#listLineOffset = 4;
 
 	constructor(historyStorage: HistorySource, onSelect: (prompt: string) => void, onCancel: () => void) {
 		super("History", "omp.overlay.history");
@@ -271,50 +298,80 @@ export class HistorySearchComponent extends OverlayPanel {
 		this.#onRequestRender = callback;
 	}
 
+	getHoverIndex(): number | null {
+		return this.#resultsList.getHoverIndex();
+	}
+
+	getResultsList(): HistoryResultsList {
+		return this.#resultsList;
+	}
+
+	override render(width: number): readonly string[] {
+		const innerWidth = Math.max(1, width - 4);
+		const s0 = this.children[0]?.render(innerWidth).length ?? 1;
+		const s1 = this.children[1]?.render(innerWidth).length ?? 1;
+		const s2 = this.children[2]?.render(innerWidth).length ?? 1;
+		this.#listLineOffset = 1 + s0 + s1 + s2;
+		return super.render(width);
+	}
+
 	override dispose(): void {
+		this.#resultsList.setHoverIndex(null);
 		this.#cancelPendingSearch();
 		super.dispose();
 	}
 
 	handleInput(keyData: string): void {
+		if (keyData.startsWith("\x1b[<")) {
+			this.#handleMouse(keyData);
+			return;
+		}
+
 		if (matchesSelectUp(keyData)) {
 			this.#flushPendingSearch();
+			this.#resultsList.setHoverIndex(null);
 			this.#menu.move(-1, false);
 			return;
 		}
 
 		if (matchesSelectDown(keyData)) {
 			this.#flushPendingSearch();
+			this.#resultsList.setHoverIndex(null);
 			this.#menu.move(1, false);
 			return;
 		}
 
 		if (matchesSelectPageUp(keyData)) {
 			this.#flushPendingSearch();
+			this.#resultsList.setHoverIndex(null);
 			this.#menu.move(-MAX_VISIBLE, false);
 			return;
 		}
 
 		if (matchesSelectPageDown(keyData)) {
 			this.#flushPendingSearch();
+			this.#resultsList.setHoverIndex(null);
 			this.#menu.move(MAX_VISIBLE, false);
 			return;
 		}
 
 		if (matchesKey(keyData, "home")) {
 			this.#flushPendingSearch();
+			this.#resultsList.setHoverIndex(null);
 			this.#menu.moveToBoundary("first");
 			return;
 		}
 
 		if (matchesKey(keyData, "end")) {
 			this.#flushPendingSearch();
+			this.#resultsList.setHoverIndex(null);
 			this.#menu.moveToBoundary("last");
 			return;
 		}
 
 		if (matchesKey(keyData, "delete") && this.#searchInput.getCursor() === this.#searchInput.getValue().length) {
 			this.#flushPendingSearch();
+			this.#resultsList.setHoverIndex(null);
 			const selected = this.#menu.selectedItem;
 			if (selected) {
 				this.#historyStorage.delete(selected.id);
@@ -337,8 +394,44 @@ export class HistorySearchComponent extends OverlayPanel {
 			return;
 		}
 
+		this.#resultsList.setHoverIndex(null);
 		this.#searchInput.handleInput(keyData);
 		this.#scheduleResults();
+	}
+
+	#handleMouse(data: string): void {
+		routeSgrMouseInput(data, event => {
+			if (event.wheel !== null) {
+				this.#flushPendingSearch();
+				this.#resultsList.setHoverIndex(null);
+				this.#menu.move(event.wheel, false);
+				this.#onRequestRender?.();
+				return true;
+			}
+			const line = event.row - this.#listLineOffset;
+			if (event.motion) {
+				const index = line >= 0 ? this.#resultsList.hitTest(line) : undefined;
+				const target = index ?? null;
+				if (this.#resultsList.getHoverIndex() !== target) {
+					this.#resultsList.setHoverIndex(target);
+					this.#onRequestRender?.();
+				}
+				return true;
+			}
+			if (event.leftClick) {
+				const index = line >= 0 ? this.#resultsList.hitTest(line) : undefined;
+				if (index !== undefined) {
+					this.#flushPendingSearch();
+					this.#menu.setSelectedIndex(index);
+					const selected = this.#menu.selectedItem;
+					if (selected) {
+						this.#onSelect(selected.prompt);
+					}
+				}
+				return true;
+			}
+			return false;
+		});
 	}
 
 	/**
@@ -512,6 +605,7 @@ export class HistorySearchComponent extends OverlayPanel {
 
 	#updateResults(): void {
 		this.#cancelPendingSearch();
+		this.#resultsList.setHoverIndex(null);
 		const query = this.#searchInput.getValue().trim();
 		this.#resultsQuery = query;
 		const results = query
