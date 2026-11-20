@@ -18,7 +18,7 @@ import {
 	type TUIOptions,
 	type ViewportSize,
 } from "../tui";
-import { wrapLiteralLine } from "../utils";
+import { visibleWidth, wrapLiteralLine } from "../utils";
 import type { DescribeContext, NativeChild, NativeSurface, NativeSurfaceProvider } from "../native/node";
 import { sameItems } from "../native/memo";
 import { postmortem } from "@oh-my-pi/pi-utils";
@@ -248,6 +248,7 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 	#headerBefore: readonly Component[] = [];
 	#headerAfter: readonly Component[] = [];
 	#runtimeChildren: readonly Component[] = [];
+	#sidebar: Component | undefined;
 	#nativeDock: readonly Component[] | undefined;
 	#nativeTail: readonly Container[] = [];
 	/** Cache-driven status line shown until {@link setStatusComponent} mounts the session's. */
@@ -426,10 +427,31 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 		return this.#rowsBelow.get(root);
 	}
 
+	/** The sidebar is part of the viewport, not a modal overlay. */
+	setSidebar(sidebar: Component | undefined): void {
+		this.#sidebar = sidebar;
+		this.ui.requestRender();
+	}
+
+	#contentWidth(columns: number): number {
+		return this.#sidebar && columns >= 100 ? columns - 27 : Math.max(1, columns);
+	}
+
+	#withSidebar(lines: readonly string[], columns: number): readonly string[] {
+		if (!this.#sidebar || columns < 100) return lines;
+		const width = this.#contentWidth(columns);
+		const sidebar = this.#sidebar.render(26);
+		return lines.map((line, i) => {
+			const side = sidebar[i];
+			if (side === undefined) return line;
+			return line + " ".repeat(Math.max(0, width - visibleWidth(line) + 1)) + side;
+		});
+	}
+
 	/** Compose the bounded mutable viewport and the next ordered history append. */
 	renderFrame(viewport: ViewportSize): TerminalFramePlan {
 		if (!this.#started || this.#stopped) return { viewport: [] };
-		const width = Math.max(1, viewport.columns);
+		const width = this.#contentWidth(viewport.columns);
 		const rows = Math.max(0, viewport.rows);
 		if (this.#resizeRetiredHeaderStart !== undefined) {
 			this.#retiredHeaderStart = this.#resizeRetiredHeaderStart;
@@ -444,13 +466,13 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 			this.#lastClickSpans = [];
 			this.#lastViewportRows = [];
 			this.#syncLinkHints([], 0);
-			const viewport: string[] = [];
+			const frameRows: string[] = [];
 			for (const root of roots) {
 				const rendered = root.render(width);
 				if (!this.#runtimeMounted && root === this.editor) this.#recordBootstrapEditorRows(rendered.length);
-				viewport.push(...rendered);
+				frameRows.push(...rendered);
 			}
-			return { viewport: viewport.slice(-rows) };
+			return { viewport: this.#withSidebar(frameRows.slice(-rows), viewport.columns) };
 		}
 		const transcript = roots[transcriptIndex] as TranscriptContainer;
 		const preRoots = this.#renderRoots(roots.slice(0, transcriptIndex), width);
@@ -592,7 +614,10 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 			this.#retiredHeaderStart = Math.max(0, history.rows.length - visibleHeaderRows);
 		}
 		const painted = this.#paintHoverBand(mutable, spans);
-		return { history, viewport: this.#linkHints?.hints.paint(painted, width) ?? painted };
+		return {
+			history,
+			viewport: this.#withSidebar(this.#linkHints?.hints.paint(painted, width) ?? painted, viewport.columns),
+		};
 	}
 
 	/**
@@ -824,7 +849,7 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 	/** Render the semantic transcript tail while the terminal borrows its resize buffer. */
 	renderResizeFrame(viewport: ViewportSize): readonly string[] {
 		if (!this.#started || this.#stopped) return [];
-		const width = Math.max(1, viewport.columns);
+		const width = this.#contentWidth(viewport.columns);
 		const rows = Math.max(0, viewport.rows);
 		const tail = this.#runtimeMounted
 			? this.#renderResizeTail(width, rows)
@@ -840,7 +865,10 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 			header = this.#header.render(width);
 		}
 		const rendered = [...header, ...tail];
-		return rendered.length <= rows ? rendered : rendered.slice(rendered.length - rows);
+		return this.#withSidebar(
+			rendered.length <= rows ? rendered : rendered.slice(rendered.length - rows),
+			viewport.columns,
+		);
 	}
 
 	/** Replays committed presentation without changing logical retirement state. */

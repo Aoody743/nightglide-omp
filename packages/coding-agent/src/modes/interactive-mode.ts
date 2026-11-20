@@ -56,6 +56,12 @@ import type { JobWidgetRegistry } from "../job-widgets/types";
 import { sameItems } from "@oh-my-pi/pi-tui/native/memo";
 import { describeSegmentTrack, renderSegmentTrack, type TrackSegment } from "@oh-my-pi/pi-tui/chrome/segment-track";
 import type { WorkingRowSpec } from "@oh-my-pi/pi-tui/components/loader";
+import { NightglideSidebar } from "@oh-my-pi/pi-tui/components/nightglide-sidebar";
+import type { NightglideSidebarSubagent } from "@oh-my-pi/pi-tui/components/nightglide-sidebar";
+import { NightglideScene } from "@oh-my-pi/pi-tui/components/nightglide-scene";
+import { NightglideShell, type NightglideShellState } from "@oh-my-pi/pi-tui/components/nightglide-shell";
+import { matchesKey } from "@oh-my-pi/pi-tui/keys";
+import { parseSgrMouse } from "@oh-my-pi/pi-tui/mouse";
 import { formatDoubleTap } from "@oh-my-pi/pi-tui/key-hint-format";
 import { thinkingLevelWord } from "@oh-my-pi/pi-tui/status-line/segments";
 import type { TspChecklistItem, TspChecklistPhase, TspSpan, TspText, TspTreeNode } from "@oh-my-pi/pi-wire";
@@ -1853,6 +1859,11 @@ export class InteractiveMode implements InteractiveModeContext {
 	#sessionInfoOverlayHandle: OverlayHandle | undefined;
 	#jobsSheetHandle: OverlayHandle | undefined;
 	#spotlightSheetHandle: OverlayHandle | undefined;
+	#sidebar: NightglideSidebar | undefined;
+	#sidebarOpen = false;
+	#sidebarMode: "compact" | "detailed" = "compact";
+	#nightglideScene: NightglideScene;
+	#glideShell: NightglideShell | undefined;
 	/** Re-renders the open jobs sheet so output tails and pids stay live. */
 	#jobsSheetTimer: NodeJS.Timeout | undefined;
 	#planReviewOwner: object | undefined;
@@ -2312,6 +2323,19 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.editorContainer = new Container();
 		this.editorContainer.addChild(this.editor);
 		this.statusLine = new StatusLineComponent(session, statusLineHost);
+		// Status sidebar, default collapsed; real state
+		// read fresh on every render from session/registry (no fabrication).
+		this.#sidebar = new NightglideSidebar(() => this.#nightglideState());
+		this.#wireSidebarToggle();
+		// Demo/verification affordance: start with the sidebar open
+		// (NIGHTGLIDE_SIDEBAR=open). Not a documented user setting yet.
+		if (Bun.env.NIGHTGLIDE_SIDEBAR === "open") this.#openSidebar();
+		this.#nightglideScene = new NightglideScene(
+			() => this.ui.requestRender(),
+			() => this.ui.terminal.rows,
+		);
+		// Glide spike: NIGHTGLIDE_GLIDE=1 starts in the fullscreen layout; F2 toggles.
+		if (Bun.env.NIGHTGLIDE_GLIDE === "1") queueMicrotask(() => this.#setGlide(true));
 		// Native segment clicks open what their slash commands and keys open.
 		this.statusLine.onNativeAction = action => {
 			switch (action) {
@@ -2581,6 +2605,7 @@ export class InteractiveMode implements InteractiveModeContext {
 				this.modelCycleContainer,
 				this.#toastStack,
 				this.deferredCommandContainer,
+				this.#nightglideScene,
 				// Judge batches and automatic downloads stay editor-anchored and update
 				// independently of transcript output, directly above the working/throughput/title row.
 				this.progressHudContainer,
@@ -8212,6 +8237,8 @@ export class InteractiveMode implements InteractiveModeContext {
 
 	stop(): void {
 		this.#closeAttempt?.abort();
+		this.#nightglideScene.dispose();
+		this.#setGlide(false);
 		this.syncIdleMaintenanceView(null);
 		this.#hidePlanReview();
 		this.#appearanceRefreshRequest = undefined;
@@ -8895,6 +8922,141 @@ export class InteractiveMode implements InteractiveModeContext {
 	}
 
 	#pinnedErrorInputListenerDispose: (() => void) | undefined;
+
+	/** Live session facts shared by the inline sidebar and the Glide shell. */
+	#nightglideState(): NightglideShellState {
+		let subagents: NightglideSidebarSubagent[] = [];
+		try {
+			subagents = this.#observerRegistry
+				.getSessions()
+				.filter(s => s.kind === "subagent")
+				.map(s => ({
+					label: s.label || s.agent || "agent",
+					status: s.status,
+					currentTool: s.progress?.currentTool,
+				}));
+		} catch {
+			// registry may not exist yet during early construction renders
+			subagents = [];
+		}
+		const model = this.session.state.model;
+		return {
+			model: model?.name || model?.id || undefined,
+			thinkingLevel: this.session.isAutoThinking
+				? this.session.autoResolvedThinkingLevel()
+				: this.session.thinkingLevel,
+			autoPending: this.session.isAutoThinking && !this.session.autoResolvedThinkingLevel(),
+			subagents,
+			activeTools: this.pendingTools.size,
+			detailed: this.#sidebarMode === "detailed",
+			streaming: this.session.isStreaming,
+		};
+	}
+
+	/** Editor-anchored roots the Glide shell hosts inside its composer card. */
+	#glideDock(): Component[] {
+		return [
+			this.pendingShellContainer,
+			this.pendingMessagesContainer,
+			this.todoContainer,
+			this.subagentContainer,
+			this.btwContainer,
+			this.reportContainer,
+			this.omfgContainer,
+			this.cleanseContainer,
+			this.errorBannerContainer,
+			this.modelCycleContainer,
+			this.#toastStack,
+			this.deferredCommandContainer,
+			this.progressHudContainer,
+			this.statusContainer,
+			this.attachmentChipsContainer,
+			this.hookWidgetContainerAbove,
+			this.editorContainer,
+			this.hookWidgetContainerBelow,
+		];
+	}
+
+	#setGlide(on: boolean): void {
+		if (on === (this.#glideShell !== undefined)) return;
+		if (on) {
+			this.#glideShell = new NightglideShell({
+				transcript: this.chatContainer,
+				dock: () => this.#glideDock(),
+				status: () => this.statusLine,
+				state: () => this.#nightglideState(),
+				focusTargets: () => [this.editor],
+				rows: () => this.ui.terminal.rows,
+				requestRender: () => this.ui.requestRender(),
+			});
+			this.ui.setScreenProvider(this.#glideShell);
+		} else {
+			const shell = this.#glideShell;
+			this.#glideShell = undefined;
+			this.ui.setScreenProvider(undefined);
+			shell?.dispose();
+		}
+	}
+
+	#toggleNightglideSidebar(): void {
+		if (this.#sidebarOpen) {
+			// cycle: open → detailed → collapsed
+			if (this.#sidebarMode === "compact") {
+				this.#sidebarMode = "detailed";
+				this.ui.requestRender();
+				hintUsage.record("sidebar");
+				return;
+			}
+			this.composer.setSidebar(undefined);
+			this.#sidebarOpen = false;
+			this.#sidebarMode = "compact";
+		} else {
+			this.#openSidebar();
+			hintUsage.record("sidebar");
+		}
+		this.ui.requestRender();
+	}
+
+	#wireSidebarToggle(): void {
+		this.ui.addInputListener?.(data => {
+			if (this.ui.hasOverlay()) return undefined;
+			if (this.keybindings.matches(data, "app.nightglide.glide")) {
+				this.#setGlide(this.#glideShell === undefined);
+				return { consume: true };
+			}
+			const shell = this.#glideShell;
+			if (shell) {
+				const mouse = parseSgrMouse(data);
+				if (mouse) {
+					// The shell owns the pointer: wheel scrolls the conversation, the
+					// rest is swallowed so raw reports never reach the editor.
+					if (mouse.wheel !== null) shell.wheel(mouse.wheel);
+					return { consume: true };
+				}
+				if (matchesKey(data, "pageUp")) {
+					shell.scrollPages(1);
+					return { consume: true };
+				}
+				if (matchesKey(data, "pageDown")) {
+					shell.scrollPages(-1);
+					return { consume: true };
+				}
+				if (matchesKey(data, "enter") || matchesKey(data, "return")) shell.scrollToBottom();
+			}
+			if (this.keybindings.matches(data, "app.nightglide.sidebar")) {
+				this.#toggleNightglideSidebar();
+				return { consume: true };
+			}
+			return undefined;
+		});
+	}
+
+	#openSidebar(): void {
+		if (this.#sidebarOpen || !this.#sidebar) return;
+		this.#sidebarOpen = true;
+		this.composer.setSidebar(this.#sidebar);
+		this.ui.requestRender();
+	}
 
 	showPinnedError(message: string): void {
 		this.#hidePlanReview();

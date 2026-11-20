@@ -1087,6 +1087,15 @@ export class TUI extends Container {
 	// normal screen. #altPreviousLines is the last alt frame, diffed row by row
 	// against the next one.
 	#altActive = false;
+	/**
+	 * Fullscreen screen provider (Nightglide Glide mode). While set, the engine
+	 * holds the alternate buffer and paints this component's full-height frame
+	 * as the base layer under any overlays. Unlike a fullscreen overlay it never
+	 * takes focus and does not count for {@link hasOverlay}, so the editor and
+	 * every app keybinding keep working. Normal-screen history retirement stays
+	 * paused while it is set and resumes when it is cleared.
+	 */
+	#screenProvider: (Component & Partial<OverlayFocusOwner>) | undefined;
 	#mouseTracking: MouseTrackingState = "off";
 	/** Product-owned probe for opt-in normal-buffer click capture (`tui.mouse`). Read every frame. */
 	#inlineMouseProvider: (() => boolean) | undefined;
@@ -1413,6 +1422,18 @@ export class TUI extends Container {
 	}
 
 	/** Check if there are any visible overlays */
+	/** Install or clear the fullscreen screen provider (see {@link #screenProvider}). */
+	setScreenProvider(provider: (Component & Partial<OverlayFocusOwner>) | undefined): void {
+		if (this.#screenProvider === provider) return;
+		this.#screenProvider = provider;
+		this.requestRender(true);
+	}
+
+	/** Whether a fullscreen screen provider currently owns the terminal. */
+	hasScreenProvider(): boolean {
+		return this.#screenProvider !== undefined;
+	}
+
 	hasOverlay(): boolean {
 		return this.overlayStack.some(o => this.#isOverlayVisible(o));
 	}
@@ -4089,12 +4110,15 @@ export class TUI extends Container {
 		// requests it, borrow the terminal's alternate buffer and paint only the
 		// modal there; the normal screen and all accounting stay untouched.
 		const topOverlay = this.#getTopmostVisibleOverlay();
-		const wantAlt = topOverlay?.options?.fullscreen === true;
+		const wantAlt = topOverlay?.options?.fullscreen === true || this.#screenProvider !== undefined;
 		const wantMouse: MouseTrackingState =
 			topOverlay === undefined
-				? this.#inlineMouseProvider?.() === true
-					? "inline"
-					: "off"
+				? // A screen provider owns scrolling: capture the wheel like a fullscreen app.
+					this.#screenProvider !== undefined
+					? "full"
+					: this.#inlineMouseProvider?.() === true
+						? "inline"
+						: "off"
 				: wantAlt && topOverlay.options?.mouseTracking !== false
 					? "full"
 					: "off";
@@ -4702,24 +4726,33 @@ export class TUI extends Container {
 	 * The normal transcript is never composited into the alternate buffer.
 	 */
 	#renderAltFrame(width: number, height: number): void {
-		// oxlint-disable-next-line unicorn/no-new-array -- alt-frame length preallocation
-		const base: string[] = new Array(Math.max(0, height)).fill("");
+		const topOverlay = this.#getTopmostVisibleOverlay();
+		const screen = this.#screenProvider;
+		// A fullscreen overlay covers the screen provider; anything smaller
+		// composites over its frame.
+		const screenVisible = screen !== undefined && topOverlay?.options?.fullscreen !== true;
 		let lines: string[];
 		do {
 			this.#imageBudget.beginPass(false, true);
+			// oxlint-disable-next-line unicorn/no-new-array -- alt-frame length preallocation
+			const base: string[] = new Array(Math.max(0, height)).fill("");
+			if (screenVisible) {
+				const frame = screen.render(width);
+				for (let r = 0; r < height && r < frame.length; r++) base[r] = frame[r]!;
+			}
 			lines = this.#compositeOverlaysIntoWindow(base, width, height);
 		} while (this.#imageBudget.endPass());
 		const markers: { row: number; col: number }[] = [];
 		const prepared = this.#prepareLinesArray(lines, width, this.#altPreparedRows, height, markers);
-		const topOverlay = this.#getTopmostVisibleOverlay();
 		const focused = this.#focusedComponent;
+		const cursorOwner: Component | undefined = topOverlay?.component ?? (screenVisible ? screen : undefined);
 		const acceptsTerminalCursor =
-			topOverlay !== undefined &&
+			cursorOwner !== undefined &&
 			focused !== null &&
 			isFocusable(focused) &&
 			focused.focused &&
 			typeof focused.setUseTerminalCursor === "function" &&
-			isOverlayFocusTarget(topOverlay.component, focused);
+			isOverlayFocusTarget(cursorOwner, focused);
 		this.#emitAltFrame(prepared, width, height, true, acceptsTerminalCursor ? (markers[0] ?? null) : null);
 	}
 
