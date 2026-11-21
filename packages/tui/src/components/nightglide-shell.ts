@@ -16,7 +16,7 @@
  * session state through an injected accessor (no fabricated values).
  */
 import { effortLadderToken } from "../chat/effort-ladder";
-import type { TranscriptContainer } from "../chrome/transcript-container";
+import type { AnimationFrame, TranscriptContainer } from "../chrome/transcript-container";
 import { motionEffectsEnabled, onMotionEffectsChange } from "../motion-effects";
 import { bgAnsi, fgAnsi } from "../theme/color";
 import { getCurrentThemeName, theme } from "../theme/theme";
@@ -164,6 +164,32 @@ const EFFORT_FILL: Record<string, number> = { minimal: 2, low: 4, medium: 7, hig
 const EFFORT_CELLS = 12;
 const SIDE_WIDTH = 30;
 const WHEEL_LINES = 3;
+/** Consecutive rows that identify the scrolled-back view's position. */
+const ANCHOR_ROWS = 3;
+/** Rows of new output an anchored view can absorb in one paint before it drifts. */
+const ANCHOR_SLACK = 200;
+/** Same cadence the normal-screen viewport derives its animation tick from. */
+const FRAME_TICK_MS = 80;
+
+/** Index of `anchor` in `rows` nearest to `expected`, or -1. */
+function findAnchor(rows: readonly string[], anchor: readonly string[], expected: number): number {
+	const last = rows.length - anchor.length;
+	const matches = (at: number) => anchor.every((line, i) => rows[at + i] === line);
+	for (let d = 0; d <= Math.max(expected, last - expected); d++) {
+		if (expected - d >= 0 && expected - d <= last && matches(expected - d)) return expected - d;
+		if (d > 0 && expected + d <= last && expected + d >= 0 && matches(expected + d)) return expected + d;
+	}
+	return -1;
+}
+
+/** First run of {@link ANCHOR_ROWS} rows in `view` with visible text; blank rows match too often. */
+function captureAnchor(view: readonly string[]): { rows: readonly string[]; offset: number } | undefined {
+	for (let i = 0; i + ANCHOR_ROWS <= view.length; i++) {
+		const rows = view.slice(i, i + ANCHOR_ROWS);
+		if (rows.every(row => visibleWidth(row) > 0)) return { rows, offset: i };
+	}
+	return undefined;
+}
 
 export class NightglideShell implements Component, OverlayFocusOwner {
 	#deps: NightglideShellDeps;
@@ -172,7 +198,15 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 	#unsubscribe: () => void;
 	/** Rows scrolled back from the transcript tail (0 = following). */
 	#scroll = 0;
+	/**
+	 * While scrolled back: rows at the top of the view and their offset in it.
+	 * New output grows the tail below, so `#scroll` alone would slide the view
+	 * forward; each paint relocates these rows and corrects `#scroll`.
+	 */
+	#anchor: { rows: readonly string[]; offset: number } | undefined;
 	#lastBodyRows = 10;
+	/** Screen row of the conversation panel's top border in the last frame. */
+	#bodyTop = -1;
 
 	constructor(deps: NightglideShellDeps) {
 		this.#deps = deps;
@@ -189,6 +223,8 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 		const next = Math.max(0, this.#scroll + lines);
 		if (next === this.#scroll) return;
 		this.#scroll = next;
+		// The view moved on purpose: the next paint re-captures the anchor.
+		this.#anchor = undefined;
 		this.#deps.requestRender();
 	}
 
@@ -204,6 +240,22 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 
 	scrollToBottom(): void {
 		this.scrollLines(-this.#scroll);
+	}
+
+	/** True while the conversation is scrolled back from the live tail. */
+	isScrolledBack(): boolean {
+		return this.#scroll > 0;
+	}
+
+	/**
+	 * Left click at a 0-based screen cell. Clicking the conversation panel's top
+	 * border while scrolled back (where the "回看中" label sits) returns to the
+	 * live tail. Returns whether the click was used.
+	 */
+	click(row: number, _col: number): boolean {
+		if (this.#scroll === 0 || row !== this.#bodyTop) return false;
+		this.scrollToBottom();
+		return true;
 	}
 
 	#syncTimer(): void {
@@ -258,6 +310,7 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 		const out: string[] = [];
 		out.push(onBg(this.#header(W, fam, c), W, page));
 		if (sceneTop > 0) out.push(...renderPixelScene(W, sceneTop, phase, fam.dive, "top", scene, enc));
+		this.#bodyTop = out.length;
 
 		// --- body: conversation panel + information column --------------------
 		const showSide = W >= 100;
@@ -266,7 +319,7 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 		const mainInner = mainW - 4;
 		const convo = this.#conversation(mainInner, bodyRows - 2, c, fam);
 		const side = showSide ? this.#sidebar(sideW - 4, bodyRows - 2, c, fam) : [];
-		const label = this.#scroll > 0 ? c(fam.warm, ` ↑ 回看中 · 滚轮/PgDn 返回 `) : "";
+		const label = this.#scroll > 0 ? c(fam.warm, ` ↑ 回看中 · End 或点此回到底部 `) : "";
 		for (let r = 0; r < bodyRows; r++) {
 			let line = this.#panelRow(r, bodyRows, mainW, convo, border, page, label);
 			if (showSide) line += onBg(" ", 1, page) + this.#panelRow(r, bodyRows, sideW, side, border, page, "");
@@ -275,7 +328,8 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 
 		// --- composer card + status line --------------------------------------
 		out.push(onBg(`${border}╭${"─".repeat(W - 2)}╮`, W, page));
-		for (const row of dockRows) out.push(onBg(`${border}│\x1b[39m ${onBg(row, W - 4, page)}${page}${border} │`, W, page));
+		for (const row of dockRows)
+			out.push(onBg(`${border}│\x1b[39m ${onBg(row, W - 4, page)}${page}${border} │`, W, page));
 		out.push(onBg(`${border}╰${"─".repeat(W - 2)}╯`, W, page));
 		for (const row of statusRows) out.push(onBg(` ${row}`, W, page));
 
@@ -323,13 +377,25 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 
 	#conversation(width: number, rows: number, c: (hex: string, s: string) => string, fam: Family): string[] {
 		if (rows <= 0) return [];
-		const tail = this.#deps.transcript.renderTail(width, rows + this.#scroll);
-		if (tail.length === 0) return this.#emptyState(width, rows, c, fam);
+		const now = performance.now();
+		const frame: AnimationFrame = { now, tick: Math.floor(now / FRAME_TICK_MS) };
+		const slack = this.#anchor ? ANCHOR_SLACK : 0;
+		const tail = this.#deps.transcript.renderTail(width, rows + this.#scroll + slack, frame);
+		if (tail.length === 0) {
+			this.#anchor = undefined;
+			return this.#emptyState(width, rows, c, fam);
+		}
+		if (this.#anchor && this.#scroll > 0) {
+			const expected = tail.length - this.#scroll - rows + this.#anchor.offset;
+			const at = findAnchor(tail, this.#anchor.rows, expected);
+			if (at >= 0) this.#scroll = Math.max(0, tail.length - rows - (at - this.#anchor.offset));
+		}
 		// Clamp scroll at the top of the transcript.
 		const maxScroll = Math.max(0, tail.length - rows);
 		if (this.#scroll > maxScroll) this.#scroll = maxScroll;
 		const end = tail.length - this.#scroll;
 		const view = tail.slice(Math.max(0, end - rows), end);
+		this.#anchor = this.#scroll > 0 ? captureAnchor(view) : undefined;
 		const pad: string[] = [];
 		for (let i = view.length; i < rows; i++) pad.push("");
 		return [...pad, ...view];
@@ -339,7 +405,7 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 		const lines = [
 			theme.bold(c(fam.text, "向未知滑行")),
 			c(fam.soft, "在下方输入任务，按 Enter 发送"),
-			c(fam.soft, "滚轮 / PgUp 回看 · F2 切回经典模式"),
+			c(fam.soft, "滚轮 / PgUp 回看 · /copy 复制 · F2 切回经典模式"),
 		];
 		const out: string[] = [];
 		const top = Math.max(0, Math.floor((rows - lines.length) / 2));

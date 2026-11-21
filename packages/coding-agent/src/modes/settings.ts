@@ -707,6 +707,25 @@ export const cfgTuiMotion = register({
 	},
 });
 
+export const cfgNightglideLayout = register({
+	id: "nightglide.layout",
+	type: "enum",
+	values: ["classic", "glide"] as const,
+	default: "glide",
+	env: "NIGHTGLIDE_LAYOUT",
+	ui: {
+		tab: "appearance",
+		group: "Display",
+		label: "Nightglide Layout",
+		description:
+			"Classic keeps the inline transcript in your terminal's own scrollback. Glide paints a fullscreen window with scene bands, an information column and in-app scrolling. F2 switches for the current session",
+		options: [
+			{ value: "glide", label: "Glide", description: "Fullscreen layout with in-app scrolling (default)" },
+			{ value: "classic", label: "Classic", description: "Inline transcript in native scrollback" },
+		],
+	},
+});
+
 /** Effective animation settings: `tui.motion`'s preset under the user's own spinner interval and shimmer. */
 export const cfgMotionResolved = combine(
 	{ mode: cfgTuiMotion, spinnerInterval: cfgTuiSpinnerInterval, shimmer: cfgDisplayShimmer },

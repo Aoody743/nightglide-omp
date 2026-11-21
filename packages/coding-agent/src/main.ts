@@ -187,6 +187,7 @@ import {
 	cfgTuiSpinnerInterval,
 	cfgTuiMaxFps,
 	cfgTuiMotion,
+	cfgNightglideLayout,
 	cfgUpdateAuto,
 	cfgUpdateChannel,
 } from "./modes/settings";
@@ -2105,6 +2106,9 @@ export async function runRootCommand(
 		}
 		if (parsedArgs.motion !== undefined) {
 			cfgTuiMotion.override(settingsInstance, parsedArgs.motion);
+		}
+		if (parsedArgs.layout !== undefined) {
+			cfgNightglideLayout.override(settingsInstance, parsedArgs.layout);
 		}
 
 		await logger.time(

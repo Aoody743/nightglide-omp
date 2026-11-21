@@ -56,7 +56,11 @@ function valueNoise(x: number, y: number, salt: number): number {
 }
 
 function fbm(x: number, y: number, salt: number): number {
-	return valueNoise(x, y, salt) * 0.62 + valueNoise(x * 2.1, y * 2.1, salt + 7) * 0.28 + valueNoise(x * 4.3, y * 4.3, salt + 13) * 0.1;
+	return (
+		valueNoise(x, y, salt) * 0.62 +
+		valueNoise(x * 2.1, y * 2.1, salt + 7) * 0.28 +
+		valueNoise(x * 4.3, y * 4.3, salt + 13) * 0.1
+	);
 }
 
 /** 4x4 Bayer matrix for soft ramp edges. */
@@ -76,7 +80,14 @@ function depth(py: number, pixelRows: number, edge: SceneEdge): number {
 	return edge === "top" ? t : 1 - t;
 }
 
-function flightPixel(x: number, py: number, pixelRows: number, phase: number, edge: SceneEdge, pal: PixelPalette): string {
+function flightPixel(
+	x: number,
+	py: number,
+	pixelRows: number,
+	phase: number,
+	edge: SceneEdge,
+	pal: PixelPalette,
+): string {
 	const d = depth(py, pixelRows, edge);
 	const drift = phase * 0.35;
 	const salt = edge === "top" ? 11 : 29;
@@ -92,7 +103,14 @@ function flightPixel(x: number, py: number, pixelRows: number, phase: number, ed
 	return pal.page;
 }
 
-function divePixel(x: number, py: number, pixelRows: number, phase: number, edge: SceneEdge, pal: PixelPalette): string {
+function divePixel(
+	x: number,
+	py: number,
+	pixelRows: number,
+	phase: number,
+	edge: SceneEdge,
+	pal: PixelPalette,
+): string {
 	const d = depth(py, pixelRows, edge);
 	const salt = edge === "top" ? 41 : 53;
 	if (edge === "bottom") {
@@ -108,7 +126,9 @@ function divePixel(x: number, py: number, pixelRows: number, phase: number, edge
 			const sway = Math.sin(phase * 0.12 + root * 0.7 + fromBed * 0.5) * (fromBed / 3);
 			const center = root + 3 + sway;
 			if (Math.abs(x - center) < 0.9 - fromBed / (height * 3)) {
-				return seed > 0.85 ? pal.accent : plants[Math.min(plants.length - 1, Math.floor((fromBed / height) * plants.length))]!;
+				return seed > 0.85
+					? pal.accent
+					: plants[Math.min(plants.length - 1, Math.floor((fromBed / height) * plants.length))]!;
 			}
 		}
 	}

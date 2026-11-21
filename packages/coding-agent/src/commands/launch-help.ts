@@ -130,6 +130,14 @@ export const launchHelp = {
 			description:
 				"Repaint ceiling in frames per second (default 30; 1-120); keystroke echo keeps 30 fps. Overrides tui.maxFps and PI_MAX_FPS for this run",
 		}),
+		classic: Flags.boolean({
+			description:
+				"Start in the classic inline layout. Overrides nightglide.layout and NIGHTGLIDE_LAYOUT for this run",
+		}),
+		glide: Flags.boolean({
+			description:
+				"Start in the fullscreen Glide layout. Overrides nightglide.layout and NIGHTGLIDE_LAYOUT for this run",
+		}),
 		motion: Flags.string({
 			description:
 				"Animation preset: full (default), reduced (250 ms spinners, no shimmer or blink), or none (static). Overrides tui.motion and PI_MOTION for this run",

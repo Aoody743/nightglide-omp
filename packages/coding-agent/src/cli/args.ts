@@ -102,6 +102,8 @@ export interface Args {
 	spinnerInterval?: number;
 	/** `--max-fps <n>`: ephemeral `tui.maxFps` override — the ceiling on how often the TUI repaints. */
 	maxFps?: number;
+	/** `--classic` / `--glide`: ephemeral `nightglide.layout` override for this run. */
+	layout?: "classic" | "glide";
 	/** `--motion <full|reduced|none>`: ephemeral `tui.motion` override — one switch over every animation. */
 	motion?: MotionMode;
 	/** RPC modes only: run extensions without a UI; `rpc-ui` tool UI remains enabled. */
@@ -383,6 +385,10 @@ export function parseArgs(inputArgs: string[], extensionFlags?: Map<string, { ty
 			result.advisor = true;
 		} else if (arg === "--wait-async") {
 			result.waitAsync = true;
+		} else if (arg === "--classic") {
+			result.layout = "classic";
+		} else if (arg === "--glide") {
+			result.layout = "glide";
 		} else if (arg === "--external-thinking") {
 			result.externalThinking = true;
 		} else if (arg === "--prewalk") {

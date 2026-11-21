@@ -1297,8 +1297,14 @@ export class TranscriptContainer extends Container {
 	 * Render only the trailing `maxRows` semantic rows, walking blocks bottom-up.
 	 * Used by the transient resize-buffer repaint, which needs one viewport of
 	 * tail rows per resize event — never the full committed ledger.
+	 *
+	 * A surface that paints the tail continuously (the Glide screen provider)
+	 * passes its own `frame`: the normal-screen viewport, which otherwise
+	 * advances the animation frame, does not run while it is up, and live
+	 * blocks would keep drawing a stale spinner / elapsed time.
 	 */
-	renderTail(width: number, maxRows: number): readonly string[] {
+	renderTail(width: number, maxRows: number, frame?: AnimationFrame): readonly string[] {
+		if (frame) this.#lastFrame = frame;
 		this.#syncEntries();
 		const cap = Math.max(0, Math.trunc(maxRows));
 		if (cap === 0) return EMPTY_ROWS;

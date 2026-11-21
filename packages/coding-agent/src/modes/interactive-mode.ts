@@ -421,6 +421,7 @@ import {
 	cfgComposerPredictions,
 	cfgComposerShape,
 	cfgComposerTokenRate,
+	cfgNightglideLayout,
 	cfgDisplayAdvisorCollapsedLines,
 	cfgDisplayCacheMissMarker,
 	cfgDisplayCollapseCompacted,
@@ -2334,8 +2335,11 @@ export class InteractiveMode implements InteractiveModeContext {
 			() => this.ui.requestRender(),
 			() => this.ui.terminal.rows,
 		);
-		// Glide spike: NIGHTGLIDE_GLIDE=1 starts in the fullscreen layout; F2 toggles.
-		if (Bun.env.NIGHTGLIDE_GLIDE === "1") queueMicrotask(() => this.#setGlide(true));
+		// `nightglide.layout` (or --glide / NIGHTGLIDE_LAYOUT) picks the starting layout;
+		// NIGHTGLIDE_GLIDE=1 is kept from the spike. F2 switches for this session only.
+		if (cfgNightglideLayout.get(settings) === "glide" || Bun.env.NIGHTGLIDE_GLIDE === "1") {
+			queueMicrotask(() => this.#setGlide(true));
+		}
 		// Native segment clicks open what their slash commands and keys open.
 		this.statusLine.onNativeAction = action => {
 			switch (action) {
@@ -9028,9 +9032,11 @@ export class InteractiveMode implements InteractiveModeContext {
 			if (shell) {
 				const mouse = parseSgrMouse(data);
 				if (mouse) {
-					// The shell owns the pointer: wheel scrolls the conversation, the
-					// rest is swallowed so raw reports never reach the editor.
+					// The shell owns the pointer: wheel scrolls the conversation, a click
+					// on the scrolled-back label returns to the tail, the rest is
+					// swallowed so raw reports never reach the editor.
 					if (mouse.wheel !== null) shell.wheel(mouse.wheel);
+					else if (mouse.leftClick) shell.click(mouse.row, mouse.col);
 					return { consume: true };
 				}
 				if (matchesKey(data, "pageUp")) {
@@ -9039,6 +9045,12 @@ export class InteractiveMode implements InteractiveModeContext {
 				}
 				if (matchesKey(data, "pageDown")) {
 					shell.scrollPages(-1);
+					return { consume: true };
+				}
+				// End jumps back to the live tail only while scrolled back; otherwise
+				// it stays the editor's end-of-line key.
+				if (matchesKey(data, "end") && shell.isScrolledBack()) {
+					shell.scrollToBottom();
 					return { consume: true };
 				}
 				if (matchesKey(data, "enter") || matchesKey(data, "return")) shell.scrollToBottom();
