@@ -71,7 +71,6 @@ interface AppKeybindings {
 	"app.stt.pushToTalk": true;
 	"app.stt.toggle": true;
 	"app.live.toggle": true;
-	"app.nightglide.sidebar": true;
 	"app.nightglide.glide": true;
 }
 
@@ -119,10 +118,6 @@ export const KEYBINDINGS = {
 	"app.thinking.cycle": {
 		defaultKeys: "shift+tab",
 		description: "Cycle thinking level",
-	},
-	"app.nightglide.sidebar": {
-		defaultKeys: "ctrl+n",
-		description: "Toggle the status sidebar",
 	},
 	"app.nightglide.glide": {
 		defaultKeys: "f2",

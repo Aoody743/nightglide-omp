@@ -22,10 +22,27 @@ import { bgAnsi, fgAnsi } from "../theme/color";
 import { getCurrentThemeName, theme } from "../theme/theme";
 import type { Component, OverlayFocusOwner } from "../tui";
 import { truncateToWidth, visibleWidth } from "../utils";
-import type { NightglideSidebarState } from "./nightglide-sidebar";
 import { type PixelEncoder, type PixelPalette, renderPixelScene } from "./nightglide-pixel-scene";
 
-export interface NightglideShellState extends NightglideSidebarState {
+/** A subagent row in the information column, read from the live registry. */
+export interface NightglideShellSubagent {
+	label: string;
+	/** Registry status as reported (active, running, completed, failed, …). */
+	status: string;
+	/** The tool the agent is running right now, when known. */
+	currentTool?: string;
+}
+
+/** Live session facts the information column shows; nothing here is invented. */
+export interface NightglideShellState {
+	model: string | undefined;
+	/** Effective thinking level; undefined when it is not known. */
+	thinkingLevel: string | undefined;
+	/** Auto effort that resolves on the next turn. */
+	autoPending?: boolean;
+	subagents: NightglideShellSubagent[];
+	/** Main-session tools currently executing. */
+	activeTools?: number;
 	/** True while the main session is streaming a response. */
 	streaming: boolean;
 }
@@ -448,7 +465,7 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 			const name = truncateToWidth(agent.label, Math.max(4, width - 12));
 			const gap = " ".repeat(Math.max(1, width - 2 - visibleWidth(name) - visibleWidth(agent.status)));
 			out.push(`${c(hex, "■")} ${c(fam.text, name)}${gap}${c(hex, agent.status)}`);
-			if (st.detailed && agent.currentTool) out.push(c(fam.soft, `  ↳ ${agent.currentTool}`));
+			if (agent.currentTool) out.push(c(fam.soft, `  ↳ ${agent.currentTool}`));
 		}
 
 		section("Status");

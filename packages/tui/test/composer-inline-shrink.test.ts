@@ -119,7 +119,7 @@ function blankBand(terminal: VirtualTerminal, bottom = "EDITOR"): number {
 }
 
 /** Stream a 110-paragraph answer one paragraph per frame, then finalize it. */
-async function streamFinalizedAnswer(h: Harness, onLine?: (line: number) => void): Promise<void> {
+async function streamFinalizedAnswer(h: Harness): Promise<void> {
 	const message = new AssistantMessageComponent();
 	h.transcript.addChild(message);
 	const reply = (text: string): AssistantMessage => ({
@@ -141,7 +141,6 @@ async function streamFinalizedAnswer(h: Harness, onLine?: (line: number) => void
 	});
 	const lines = Array.from({ length: 110 }, (_, i) => `line${i}`);
 	for (let n = 1; n <= lines.length; n++) {
-		onLine?.(n);
 		message.updateContent(reply(lines.slice(0, n).join("\n\n")), { transient: true });
 		h.composer.ui.requestRender();
 		await h.scheduler.settle(h.terminal);
@@ -157,39 +156,6 @@ beforeAll(async () => {
 });
 
 describe("composer inline shrink (#11007)", () => {
-	it("keeps long replies in scrollback without committing sidebar content", async () => {
-		const h = makeHarness(120, 30, 0);
-		h.composer.setSidebar({ render: () => ["SIDEBAR-ONLY", "STATUS"] });
-		await h.scheduler.settle(h.terminal);
-		expect(h.composer.ui.hasOverlay()).toBe(false);
-		await streamFinalizedAnswer(h);
-		const buffer = h.terminal.getScrollBuffer().join("\n");
-		expect(buffer).toContain("line0");
-		expect(buffer).toContain("line109");
-		const history = h.terminal.getScrollBuffer().slice(0, -30).join("\n");
-		expect(history).not.toContain("SIDEBAR-ONLY");
-		expect(h.terminal.getViewport().join("\n")).toContain("SIDEBAR-ONLY");
-		h.composer.setSidebar(undefined);
-		await h.scheduler.settle(h.terminal);
-		expect(h.terminal.getViewport().join("\n")).not.toContain("SIDEBAR-ONLY");
-		h.composer.stop();
-	});
-
-	it("preserves a streaming answer while the sidebar opens and closes", async () => {
-		const h = makeHarness(120, 30, 0);
-		await h.scheduler.settle(h.terminal);
-		await streamFinalizedAnswer(h, line => {
-			if (line === 40) h.composer.setSidebar({ render: () => ["SIDEBAR-ONLY"] });
-			if (line === 80) h.composer.setSidebar(undefined);
-		});
-		const buffer = h.terminal.getScrollBuffer().join("\n");
-		for (let line = 0; line < 110; line++) {
-			expect(buffer).toMatch(new RegExp(`\\bline${line}\\b`));
-		}
-		expect(buffer).not.toContain("SIDEBAR-ONLY");
-		h.composer.stop();
-	});
-
 	it("answers an ask at the reported 54x112 geometry without losing, duplicating or stranding rows", async () => {
 		const h = makeHarness(112, 54);
 		await h.scheduler.settle(h.terminal);

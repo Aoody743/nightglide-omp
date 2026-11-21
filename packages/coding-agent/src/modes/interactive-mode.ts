@@ -56,10 +56,11 @@ import type { JobWidgetRegistry } from "../job-widgets/types";
 import { sameItems } from "@oh-my-pi/pi-tui/native/memo";
 import { describeSegmentTrack, renderSegmentTrack, type TrackSegment } from "@oh-my-pi/pi-tui/chrome/segment-track";
 import type { WorkingRowSpec } from "@oh-my-pi/pi-tui/components/loader";
-import { NightglideSidebar } from "@oh-my-pi/pi-tui/components/nightglide-sidebar";
-import type { NightglideSidebarSubagent } from "@oh-my-pi/pi-tui/components/nightglide-sidebar";
-import { NightglideScene } from "@oh-my-pi/pi-tui/components/nightglide-scene";
-import { NightglideShell, type NightglideShellState } from "@oh-my-pi/pi-tui/components/nightglide-shell";
+import {
+	NightglideShell,
+	type NightglideShellState,
+	type NightglideShellSubagent,
+} from "@oh-my-pi/pi-tui/components/nightglide-shell";
 import { matchesKey } from "@oh-my-pi/pi-tui/keys";
 import { parseSgrMouse } from "@oh-my-pi/pi-tui/mouse";
 import { formatDoubleTap } from "@oh-my-pi/pi-tui/key-hint-format";
@@ -1860,10 +1861,6 @@ export class InteractiveMode implements InteractiveModeContext {
 	#sessionInfoOverlayHandle: OverlayHandle | undefined;
 	#jobsSheetHandle: OverlayHandle | undefined;
 	#spotlightSheetHandle: OverlayHandle | undefined;
-	#sidebar: NightglideSidebar | undefined;
-	#sidebarOpen = false;
-	#sidebarMode: "compact" | "detailed" = "compact";
-	#nightglideScene: NightglideScene;
 	#glideShell: NightglideShell | undefined;
 	/** Re-renders the open jobs sheet so output tails and pids stay live. */
 	#jobsSheetTimer: NodeJS.Timeout | undefined;
@@ -2324,20 +2321,10 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.editorContainer = new Container();
 		this.editorContainer.addChild(this.editor);
 		this.statusLine = new StatusLineComponent(session, statusLineHost);
-		// Status sidebar, default collapsed; real state
-		// read fresh on every render from session/registry (no fabrication).
-		this.#sidebar = new NightglideSidebar(() => this.#nightglideState());
-		this.#wireSidebarToggle();
-		// Demo/verification affordance: start with the sidebar open
-		// (NIGHTGLIDE_SIDEBAR=open). Not a documented user setting yet.
-		if (Bun.env.NIGHTGLIDE_SIDEBAR === "open") this.#openSidebar();
-		this.#nightglideScene = new NightglideScene(
-			() => this.ui.requestRender(),
-			() => this.ui.terminal.rows,
-		);
-		// `nightglide.layout` (or --glide / NIGHTGLIDE_LAYOUT) picks the starting layout;
-		// NIGHTGLIDE_GLIDE=1 is kept from the spike. F2 switches for this session only.
-		if (cfgNightglideLayout.get(settings) === "glide" || Bun.env.NIGHTGLIDE_GLIDE === "1") {
+		this.#wireGlideInput();
+		// `nightglide.layout` (or --glide / --classic / NIGHTGLIDE_LAYOUT) picks the
+		// starting layout; F2 switches for this session only.
+		if (cfgNightglideLayout.get(settings) === "glide") {
 			queueMicrotask(() => this.#setGlide(true));
 		}
 		// Native segment clicks open what their slash commands and keys open.
@@ -2609,7 +2596,6 @@ export class InteractiveMode implements InteractiveModeContext {
 				this.modelCycleContainer,
 				this.#toastStack,
 				this.deferredCommandContainer,
-				this.#nightglideScene,
 				// Judge batches and automatic downloads stay editor-anchored and update
 				// independently of transcript output, directly above the working/throughput/title row.
 				this.progressHudContainer,
@@ -8241,7 +8227,6 @@ export class InteractiveMode implements InteractiveModeContext {
 
 	stop(): void {
 		this.#closeAttempt?.abort();
-		this.#nightglideScene.dispose();
 		this.#setGlide(false);
 		this.syncIdleMaintenanceView(null);
 		this.#hidePlanReview();
@@ -8927,9 +8912,9 @@ export class InteractiveMode implements InteractiveModeContext {
 
 	#pinnedErrorInputListenerDispose: (() => void) | undefined;
 
-	/** Live session facts shared by the inline sidebar and the Glide shell. */
+	/** Live session facts for the Glide information column. */
 	#nightglideState(): NightglideShellState {
-		let subagents: NightglideSidebarSubagent[] = [];
+		let subagents: NightglideShellSubagent[] = [];
 		try {
 			subagents = this.#observerRegistry
 				.getSessions()
@@ -8952,7 +8937,6 @@ export class InteractiveMode implements InteractiveModeContext {
 			autoPending: this.session.isAutoThinking && !this.session.autoResolvedThinkingLevel(),
 			subagents,
 			activeTools: this.pendingTools.size,
-			detailed: this.#sidebarMode === "detailed",
 			streaming: this.session.isStreaming,
 		};
 	}
@@ -9002,26 +8986,8 @@ export class InteractiveMode implements InteractiveModeContext {
 		}
 	}
 
-	#toggleNightglideSidebar(): void {
-		if (this.#sidebarOpen) {
-			// cycle: open → detailed → collapsed
-			if (this.#sidebarMode === "compact") {
-				this.#sidebarMode = "detailed";
-				this.ui.requestRender();
-				hintUsage.record("sidebar");
-				return;
-			}
-			this.composer.setSidebar(undefined);
-			this.#sidebarOpen = false;
-			this.#sidebarMode = "compact";
-		} else {
-			this.#openSidebar();
-			hintUsage.record("sidebar");
-		}
-		this.ui.requestRender();
-	}
-
-	#wireSidebarToggle(): void {
+	/** Glide owns F2 always, and the pointer and scroll keys while it is up. */
+	#wireGlideInput(): void {
 		this.ui.addInputListener?.(data => {
 			if (this.ui.hasOverlay()) return undefined;
 			if (this.keybindings.matches(data, "app.nightglide.glide")) {
@@ -9055,19 +9021,8 @@ export class InteractiveMode implements InteractiveModeContext {
 				}
 				if (matchesKey(data, "enter") || matchesKey(data, "return")) shell.scrollToBottom();
 			}
-			if (this.keybindings.matches(data, "app.nightglide.sidebar")) {
-				this.#toggleNightglideSidebar();
-				return { consume: true };
-			}
 			return undefined;
 		});
-	}
-
-	#openSidebar(): void {
-		if (this.#sidebarOpen || !this.#sidebar) return;
-		this.#sidebarOpen = true;
-		this.composer.setSidebar(this.#sidebar);
-		this.ui.requestRender();
 	}
 
 	showPinnedError(message: string): void {

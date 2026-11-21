@@ -14,7 +14,7 @@ import { formatDoubleTap, formatKeyHint, type KeybindingsManager } from "../app-
 import { theme } from "../theme/theme";
 
 /** Stable hint ids; persisted as usage-counter keys, so never rename one. */
-export type ComposerHintId = "agents" | "effort" | "sidebar";
+export type ComposerHintId = "agents" | "effort";
 
 /** Live state that hint conditions read. Built by the host on every render of the empty composer. */
 export interface ComposerHintContext {
@@ -60,16 +60,6 @@ export const COMPOSER_HINTS: readonly ComposerHint[] = [
 			if (ctx.conversationStarted) return undefined;
 			const key = ctx.keybindings.getKeys("app.thinking.cycle")[0];
 			return key ? { key: formatKeyHint(key), label: "to change thinking effort" } : undefined;
-		},
-	},
-	{
-		// Nightglide status sidebar (P2.1): shown until the toggle is used a few
-		// times; discoverability entry point for the default-collapsed panel.
-		id: "sidebar",
-		learnedAfter: 3,
-		resolve: ctx => {
-			const key = ctx.keybindings.getKeys("app.nightglide.sidebar")[0];
-			return key ? { key: formatKeyHint(key), label: "状态侧栏" } : undefined;
 		},
 	},
 ];
