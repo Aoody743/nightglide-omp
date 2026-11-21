@@ -61,11 +61,11 @@ describe("Mermaid rendering setting", () => {
 	it("draws Mermaid structure with the muted token and labels with the text token", async () => {
 		const dark = await getThemeByName("dark");
 		if (!dark) throw new Error("fallback theme unavailable");
-		const titaniumJson = getBuiltinThemes().titanium;
-		if (!titaniumJson) throw new Error("Titanium theme unavailable");
+		const titaniumJson = getBuiltinThemes()["nightglide-flight"];
+		if (!titaniumJson) throw new Error("Flight theme unavailable");
 
 		try {
-			// Titanium's border tokens are near-background, so it exposes a regression to UI-chrome strokes.
+			// Flight keeps muted, text and both border tokens distinct, so a stroke drawn with the wrong token shows.
 			const titanium = createTheme(titaniumJson, { mode: "truecolor" });
 			setThemeInstance(titanium);
 			const sgr = (token: "muted" | "text" | "border" | "borderMuted") =>

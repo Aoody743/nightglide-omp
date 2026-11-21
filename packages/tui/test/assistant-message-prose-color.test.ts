@@ -13,7 +13,7 @@ const PROSE = "Assistant prose must be themeable.";
 /** Distinctive hue for the token; its escape depends on the terminal's color depth. */
 const TOKEN_HEX = "#ff00ff";
 /** The base dark theme JSON — a known-valid theme we extend with the token. */
-const DARK_THEME_PATH = path.join(import.meta.dir, "..", "src", "theme", "dark.json");
+const DARK_THEME_PATH = path.join(import.meta.dir, "..", "src", "theme", "nightglide-flight.json");
 
 const originalImageProtocol = TERMINAL.imageProtocol;
 const originalAgentDir = process.env.PI_CODING_AGENT_DIR;

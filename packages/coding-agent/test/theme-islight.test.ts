@@ -1,9 +1,9 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { generateThemeVars } from "@oh-my-pi/pi-coding-agent/export/html";
-import { createTheme, getBuiltinThemes } from "@oh-my-pi/pi-tui/theme/loader";
+import { createTheme } from "@oh-my-pi/pi-tui/theme/loader";
 import {
 	getEditorTheme,
 	getResolvedThemeColors,
@@ -13,15 +13,49 @@ import {
 } from "@oh-my-pi/pi-tui/theme";
 import { Editor } from "@oh-my-pi/pi-tui";
 import { getAgentDir, getCustomThemesDir, removeWithRetries, setAgentDir } from "@oh-my-pi/pi-utils";
+import type { ThemeJson } from "@oh-my-pi/pi-tui/theme/schema";
+
+/**
+ * Nightglide ships only its own palettes. The engine contracts below (empty
+ * tokens, status-line classification, export fallbacks) still apply to user
+ * themes, so they run against OMP's former palettes kept as test fixtures and
+ * installed as custom themes under `omp-*` names.
+ */
+const FIXTURE_DIR = path.join(import.meta.dir, "fixtures", "omp-themes");
+const fixtureCache = new Map<string, ThemeJson>();
+function fixture(name: string): ThemeJson {
+	let json = fixtureCache.get(name);
+	if (!json) {
+		json = require(path.join(FIXTURE_DIR, `${name}.json`)) as ThemeJson;
+		fixtureCache.set(name, json);
+	}
+	return json;
+}
+
+let fixtureAgentDir: string;
+let agentDirBeforeFixtures = "";
+let agentDirEnvBeforeFixtures: string | undefined;
+beforeAll(async () => {
+	agentDirBeforeFixtures = getAgentDir();
+	agentDirEnvBeforeFixtures = process.env.PI_CODING_AGENT_DIR;
+	fixtureAgentDir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-theme-fixtures-"));
+	setAgentDir(fixtureAgentDir);
+	await fs.mkdir(getCustomThemesDir(), { recursive: true });
+	for (const file of await fs.readdir(FIXTURE_DIR)) {
+		await fs.copyFile(path.join(FIXTURE_DIR, file), path.join(getCustomThemesDir(), file));
+	}
+});
+afterAll(async () => {
+	setAgentDir(agentDirBeforeFixtures);
+	if (agentDirEnvBeforeFixtures === undefined) delete process.env.PI_CODING_AGENT_DIR;
+	else process.env.PI_CODING_AGENT_DIR = agentDirEnvBeforeFixtures;
+	await removeWithRetries(fixtureAgentDir);
+});
 
 function createBaseThemes() {
-	const builtins = getBuiltinThemes();
-	const lightJson = builtins.light;
-	const darkJson = builtins.dark;
-	if (!lightJson || !darkJson) throw new Error("Base light/dark themes are unavailable");
 	return {
-		light: createTheme(lightJson, { mode: "truecolor" }),
-		dark: createTheme(darkJson, { mode: "truecolor" }),
+		light: createTheme(fixture("omp-light"), { mode: "truecolor" }),
+		dark: createTheme(fixture("omp-dark"), { mode: "truecolor" }),
 	};
 }
 
@@ -30,14 +64,14 @@ describe("Theme.isLight", () => {
 		// porcelain styles a dark chat bubble (userMessageBg) on an otherwise-light
 		// theme with a light status line. Session accents render on the status line,
 		// so it must read as light — classifying by userMessageBg got this wrong.
-		expect((await getThemeByName("porcelain"))?.isLight).toBe(true);
-		expect((await getThemeByName("light-catppuccin"))?.isLight).toBe(true);
-		expect((await getThemeByName("dark-catppuccin"))?.isLight).toBe(false);
+		expect((await getThemeByName("omp-porcelain"))?.isLight).toBe(true);
+		expect((await getThemeByName("omp-light-catppuccin"))?.isLight).toBe(true);
+		expect((await getThemeByName("omp-dark-catppuccin"))?.isLight).toBe(false);
 	});
 
 	it("exposes the status-line surface luminance for accent sizing", async () => {
-		const light = await getThemeByName("light-catppuccin");
-		const dark = await getThemeByName("dark-catppuccin");
+		const light = await getThemeByName("omp-light-catppuccin");
+		const dark = await getThemeByName("omp-dark-catppuccin");
 		// Light themes hand the real surface luminance to getSessionAccentHex...
 		expect(light?.accentSurfaceLuminance).toBeGreaterThan(0.5);
 		// ...dark themes pass undefined so accents stay vivid.
@@ -56,7 +90,7 @@ describe("empty foreground contrast", () => {
 
 	it("chooses empty-token contrast from the controlled background", () => {
 		const { light } = createBaseThemes();
-		const porcelain = createTheme(getBuiltinThemes().porcelain, { mode: "truecolor" });
+		const porcelain = createTheme(fixture("omp-porcelain"), { mode: "truecolor" });
 
 		expect(light.getFgOnBgAnsi("userMessageText", "userMessageBg")).toBe("\x1b[38;2;0;0;0m");
 		expect(porcelain.getFgOnBgAnsi("userMessageText", "userMessageBg")).toBe("\x1b[38;2;229;229;231m");
@@ -64,8 +98,7 @@ describe("empty foreground contrast", () => {
 
 	it("preserves terminal defaults when the message background is also default", () => {
 		const { dark } = createBaseThemes();
-		const darkJson = getBuiltinThemes().dark;
-		if (!darkJson) throw new Error("Base dark theme is unavailable");
+		const darkJson = fixture("omp-dark");
 		const terminalDefault = createTheme(
 			{
 				...darkJson,
@@ -99,8 +132,7 @@ describe("empty foreground contrast", () => {
 
 	it("uses the normal text token for transparent composer text", () => {
 		const { dark } = createBaseThemes();
-		const poimandresJson = getBuiltinThemes()["light-poimandres"];
-		if (!poimandresJson) throw new Error("Light Poimandres theme is unavailable");
+		const poimandresJson = fixture("omp-light-poimandres");
 		try {
 			// poimandres `text` is #506477 → rgb(80,100,119); a transparent composer
 			// must paint typed text with it, never the `userMessageText` (#ffffff)
@@ -118,7 +150,7 @@ describe("empty foreground contrast", () => {
 	it("keeps filled composer text contrasted against its painted surface", () => {
 		const { dark } = createBaseThemes();
 		try {
-			setThemeInstance(createTheme(getBuiltinThemes().porcelain, { mode: "truecolor" }));
+			setThemeInstance(createTheme(fixture("omp-porcelain"), { mode: "truecolor" }));
 			const editor = new Editor(getEditorTheme());
 			editor.setBorderStyle("field");
 			editor.setText("typed");
@@ -151,12 +183,17 @@ describe("isLightTheme (standalone)", () => {
 	// canonical mismatch (dark bubble, light status line); sandstone/limestone
 	// exercise the custom-light path.
 	it.each([
-		["sandstone", true],
-		["limestone", true],
-		["porcelain", true],
+		["omp-sandstone", true],
+		["omp-limestone", true],
+		["omp-porcelain", true],
+		["omp-dark-catppuccin", false],
+		// Shipped themes and the legacy names that alias them.
+		["nightglide-cloudlight", true],
+		["nightglide-daybreak", true],
+		["nightglide-flight", false],
+		["nightglide-abyss", false],
 		["light", true],
 		["dark", false],
-		["dark-catppuccin", false],
 	])("classifies %s as isLight=%s", (name, expected) => {
 		expect(isLightTheme(name)).toBe(expected);
 	});
@@ -167,7 +204,7 @@ describe("getResolvedThemeColors HTML export defaults", () => {
 	// dark-theme grey) for every theme not literally named "light", making the
 	// session transcript text illegible on every custom light theme.
 	it("uses near-black for empty text tokens on light themes", async () => {
-		const colors = await getResolvedThemeColors("sandstone");
+		const colors = await getResolvedThemeColors("omp-sandstone");
 		expect(colors.text).toBe("#000000");
 		expect(colors.userMessageText).toBe("#000000");
 		expect(colors.customMessageText).toBe("#000000");
@@ -175,7 +212,7 @@ describe("getResolvedThemeColors HTML export defaults", () => {
 	});
 
 	it("uses light grey for empty text tokens on dark themes", async () => {
-		const colors = await getResolvedThemeColors("dark");
+		const colors = await getResolvedThemeColors("omp-dark");
 		expect(colors.text).toBe("#e5e5e7");
 		expect(colors.userMessageText).toBe("#e5e5e7");
 	});
@@ -201,7 +238,7 @@ describe("getResolvedThemeColors HTML export defaults", () => {
 		tempAgentDir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-theme-export-"));
 		setAgentDir(tempAgentDir);
 
-		const { export: _ignoredExport, ...themeWithoutExport } = getBuiltinThemes().porcelain;
+		const { export: _ignoredExport, ...themeWithoutExport } = fixture("omp-porcelain");
 		const customThemeName = "light-status-dark-export-derived";
 		await Bun.write(
 			path.join(getCustomThemesDir(), `${customThemeName}.json`),

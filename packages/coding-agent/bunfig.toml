@@ -1,0 +1,3 @@
+[test]
+# Upstream suites run against the classic layout; Glide has its own tests.
+preload = ["../../scripts/nightglide-test-preload.ts"]

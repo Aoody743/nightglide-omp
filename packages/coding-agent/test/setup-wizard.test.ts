@@ -55,7 +55,7 @@ function testScene(id: string, minVersion: number, shouldRun?: () => boolean): S
 }
 
 afterEach(async () => {
-	await initTheme(false, "unicode", false, "titanium", "light");
+	await initTheme(false, "unicode", false, "nightglide-flight", "nightglide-cloudlight");
 });
 
 describe("setup wizard scene selection", () => {
@@ -162,7 +162,7 @@ describe("setup wizard model selection", () => {
 	});
 
 	async function pickModelDuringSetup(settings: Settings): Promise<string> {
-		await initTheme(false, "unicode", false, "titanium", "dark");
+		await initTheme(false, "unicode", false, "nightglide-flight", "nightglide-cloudlight");
 		let available: Model[] = [];
 		const finished = Promise.withResolvers<string>();
 		const setModel = mock(
@@ -321,7 +321,7 @@ describe("setup wizard mouse routing", () => {
 	});
 
 	it("routes hit-tested mouse events at scene-local coordinates to scenes with routeMouse", async () => {
-		await initTheme(false, "unicode", false, "titanium", "light");
+		await initTheme(false, "unicode", false, "nightglide-flight", "nightglide-cloudlight");
 		const routed: { kind: string; line: number; col: number }[] = [];
 		const keys: string[] = [];
 		const scene: SetupScene = {
@@ -414,7 +414,7 @@ describe("setup wizard short terminals", () => {
 	}
 
 	it("keeps the selected provider row visible while navigating on a 24-row terminal", async () => {
-		await initTheme(false, "unicode", false, "titanium", "light");
+		await initTheme(false, "unicode", false, "nightglide-flight", "nightglide-cloudlight");
 		const component = new SetupWizardComponent(createSetupHost(shortTerminalCtx(24)), [providersSetupScene]);
 		void component.run();
 		component.handleInput("\r"); // splash → scene
@@ -436,7 +436,7 @@ describe("setup wizard short terminals", () => {
 	});
 
 	it("keeps the curated theme list and its selection visible on a 24-row terminal", async () => {
-		await initTheme(false, "unicode", false, "titanium", "light");
+		await initTheme(false, "unicode", false, "nightglide-flight", "nightglide-cloudlight");
 		const component = new SetupWizardComponent(createSetupHost(shortTerminalCtx(24)), [themeSetupScene]);
 		void component.run();
 		component.handleInput("\r"); // splash → scene
@@ -445,7 +445,14 @@ describe("setup wizard short terminals", () => {
 			const frame = component.render(80).map(line => Bun.stripANSI(line));
 			expect(frame.length).toBe(24);
 			expect(frame.some(line => line.trimStart().startsWith(theme.nav.cursor))).toBe(true);
-			for (const label of ["Match terminal", "Titanium", "Light", "Colorblind colors", "ANSI-safe", "Browse all"]) {
+			for (const label of [
+				"Match terminal",
+				"Flight",
+				"Cloudlight",
+				"Colorblind colors",
+				"ANSI-safe",
+				"Browse all",
+			]) {
 				expect(frame.some(line => line.includes(label))).toBe(true);
 			}
 		} finally {
@@ -457,7 +464,7 @@ describe("setup wizard short terminals", () => {
 
 describe("setup wizard theme previews", () => {
 	it("restores the selected glyph preset after previewing ANSI-safe mode", async () => {
-		await initTheme(false, "nerd", false, "titanium", "light");
+		await initTheme(false, "nerd", false, "nightglide-flight", "nightglide-cloudlight");
 		const settings = Settings.isolated({ symbolPreset: "nerd", colorBlindMode: false });
 		const setupScene = ALL_SCENES.find(scene => scene.id === "theme");
 		expect(setupScene).toBeDefined();
@@ -490,7 +497,7 @@ describe("setup wizard theme previews", () => {
 
 describe("setup wizard glyph scene", () => {
 	it("lists Nerd Font first and commits the chosen preset", async () => {
-		await initTheme(false, "unicode", false, "titanium", "light");
+		await initTheme(false, "unicode", false, "nightglide-flight", "nightglide-cloudlight");
 		const settings = Settings.isolated();
 		const scene = ALL_SCENES.find(s => s.id === "glyph-mode");
 		expect(scene).toBeDefined();

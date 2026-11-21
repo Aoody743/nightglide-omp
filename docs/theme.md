@@ -121,7 +121,7 @@ Override behavior follows from that split:
 
 Theme lookup order (`loadThemeJson`):
 
-1. built-in embedded themes (`dark.json`, `light.json`, and every palette in `defaults.json`)
+1. built-in embedded themes: the five Nightglide palettes (`nightglide-flight`, `nightglide-cloudlight`, `nightglide-abyss`, `nightglide-daybreak`, `nightglide-aurora`), plus unlisted aliases (`dark` → flight, `light` → cloudlight, and short names such as `abyss`)
 2. custom theme file: `<customThemesDir>/<name>.json`
 
 Custom themes directory comes from `getCustomThemesDir()`:
@@ -195,8 +195,8 @@ Auto theme slot selection uses terminal appearance in this order:
 
 Current defaults (definitions in `packages/coding-agent/src/modes/settings.ts`):
 
-- `theme.dark = "titanium"`
-- `theme.light = "light"`
+- `theme.dark = "nightglide-flight"`
+- `theme.light = "nightglide-cloudlight"`
 - `symbolPreset = "unicode"`
 - `colorBlindMode = false`
 
@@ -209,7 +209,7 @@ Current defaults (definitions in `packages/coding-agent/src/modes/settings.ts`):
 
 On failure:
 
-- falls back to built-in `dark`
+- falls back to built-in `nightglide-flight`
 - returns `{ success: false, error }`
 
 ### Preview switching (`previewTheme`)
@@ -373,5 +373,5 @@ Use this workflow:
 - All `colors` tokens are required for custom themes except optional `thinkingMax` (falls back to `thinkingXhigh`), `assistantMessageText` (unset keeps the terminal default foreground) and `mdExtensionLink` (unset blends `mdLink` with `text`).
 - `export` and `symbols` are optional.
 - `$schema` in theme JSON is informational; custom-theme runtime validation is enforced by `@oh-my-pi/omptype` in `packages/tui/src/theme/schema-validation.ts`.
-- `setTheme` failure falls back to `dark`; `previewTheme` failure does not replace current theme.
+- `setTheme` failure falls back to `nightglide-flight`; `previewTheme` failure does not replace current theme.
 - File watcher reload errors or temporary missing files keep the current loaded theme until a successful reload or explicit theme switch.

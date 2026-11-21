@@ -5,7 +5,7 @@ import * as path from "node:path";
 import { getThemeByName } from "@oh-my-pi/pi-tui/theme";
 import { getAgentDir, getCustomThemesDir, removeWithRetries, setAgentDir } from "@oh-my-pi/pi-utils";
 
-const DARK_THEME_PATH = path.join(import.meta.dir, "..", "src", "theme", "dark.json");
+const DARK_THEME_PATH = path.join(import.meta.dir, "..", "src", "theme", "nightglide-flight.json");
 
 let tempAgentDir: string | undefined;
 let originalAgentDir = "";

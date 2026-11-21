@@ -40,11 +40,11 @@ describe("lazy status color re-resolves on theme switch", () => {
 		vi.restoreAllMocks();
 	});
 
-	it("swaps a presented warning from dark-catppuccin to light-catppuccin color", async () => {
+	it("swaps a presented warning from Flight to Cloudlight color", async () => {
 		// Auto-theme resolves dark before the appearance reply arrives.
 		themeModule.onTerminalAppearanceChange("dark");
-		await themeModule.initTheme(false, undefined, undefined, "dark-catppuccin", "light-catppuccin");
-		expect(themeModule.getCurrentThemeName()).toBe("dark-catppuccin");
+		await themeModule.initTheme(false, undefined, undefined, "nightglide-flight", "nightglide-cloudlight");
+		expect(themeModule.getCurrentThemeName()).toBe("nightglide-flight");
 
 		const darkPrefix = fgPrefix("warning");
 		const warning = new Text("Warning: Failed to load extension", 1, 0).setStyleFn(t =>
@@ -52,13 +52,13 @@ describe("lazy status color re-resolves on theme switch", () => {
 		);
 		expect(warning.render(80).join("")).toContain(darkPrefix);
 
-		// The OSC 11 reply arrives → auto-theme switches to light-catppuccin.
+		// The OSC 11 reply arrives → auto-theme switches to Cloudlight.
 		const switched = Promise.withResolvers<void>();
 		const off = themeModule.onThemeChange(() => switched.resolve());
 		themeModule.onTerminalAppearanceChange("light");
 		await switched.promise;
 		off();
-		expect(themeModule.getCurrentThemeName()).toBe("light-catppuccin");
+		expect(themeModule.getCurrentThemeName()).toBe("nightglide-cloudlight");
 
 		const lightPrefix = fgPrefix("warning");
 		expect(lightPrefix).not.toBe(darkPrefix);
@@ -72,7 +72,7 @@ describe("lazy status color re-resolves on theme switch", () => {
 	});
 	it("recolors the presented update notification when auto-theme resolves light", async () => {
 		themeModule.onTerminalAppearanceChange("dark");
-		await themeModule.initTheme(false, undefined, undefined, "dark-catppuccin", "light-catppuccin");
+		await themeModule.initTheme(false, undefined, undefined, "nightglide-flight", "nightglide-cloudlight");
 
 		let presented: Component | undefined;
 		const context: Pick<InteractiveModeContext, "present"> = {

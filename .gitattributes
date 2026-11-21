@@ -58,7 +58,6 @@ packages/*/CHANGELOG.md merge=union
 # Minified JSON artifacts: regenerate instead of diffing/merging.
 packages/catalog/src/models.json binary
 packages/catalog/src/compat/rules.json binary
-packages/tui/src/theme/defaults.json binary
 
 # 4.7 KB wasm grammar the pi-ast tests load; stays out of LFS so plain
 # checkouts (CI included) get the real bytes.

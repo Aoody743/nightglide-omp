@@ -26,12 +26,12 @@ import type { SetupScene, SetupSceneController, SetupSceneHost } from "./types";
 type ThemeMode = "curated" | "all";
 
 const CURATED_ITEMS: readonly SelectItem[] = [
-	{ value: "auto", label: "Match terminal", description: "Titanium in dark terminals, Light in light terminals" },
-	{ value: "theme:titanium", label: "Titanium", description: "Default dark theme" },
-	{ value: "theme:light", label: "Light", description: "Default light theme" },
+	{ value: "auto", label: "Match terminal", description: "Flight in dark terminals, Cloudlight in light terminals" },
+	{ value: "theme:nightglide-flight", label: "Flight", description: "Night sky — default dark theme" },
+	{ value: "theme:nightglide-cloudlight", label: "Cloudlight", description: "Daytime sky — default light theme" },
 	{ value: "colorblind", label: "Colorblind colors", description: "Adjust red/green contrast" },
-	{ value: "ansi", label: "ANSI-safe", description: "ASCII glyphs with the dark terminal theme" },
-	{ value: "browse", label: "Browse all…", description: "Show every built-in and custom theme" },
+	{ value: "ansi", label: "ANSI-safe", description: "ASCII glyphs with the Flight theme" },
+	{ value: "browse", label: "Browse all…", description: "Show every Nightglide and custom theme" },
 ];
 
 function fillStyledLine(content: string, width: number): string {
@@ -303,8 +303,8 @@ class ThemeSceneController implements SetupSceneController {
 
 	#currentCuratedIndex(): number {
 		const current = getCurrentThemeName();
-		if (current === "titanium") return 1;
-		if (current === "light") return 2;
+		if (current === "nightglide-flight") return 1;
+		if (current === "nightglide-cloudlight") return 2;
 		return 0;
 	}
 
@@ -350,8 +350,8 @@ class ThemeSceneController implements SetupSceneController {
 
 	async #commit(value: string): Promise<void> {
 		if (value === "auto") {
-			this.#host.ctx.saveTheme("dark", "titanium");
-			this.#host.ctx.saveTheme("light", "light");
+			this.#host.ctx.saveTheme("dark", "nightglide-flight");
+			this.#host.ctx.saveTheme("light", "nightglide-cloudlight");
 			await this.#applyPreviewPresentation(this.#originalSymbolPreset, this.#originalColorBlindMode);
 			enableAutoTheme();
 			return;
@@ -363,7 +363,7 @@ class ThemeSceneController implements SetupSceneController {
 		}
 		if (value === "ansi") {
 			this.#host.ctx.saveSymbolPreset("ascii");
-			this.#host.ctx.saveTheme("dark", "dark-terminal");
+			this.#host.ctx.saveTheme("dark", "nightglide-flight");
 			await this.#applyPreviewPresentation("ascii", this.#originalColorBlindMode);
 			enableAutoTheme();
 			return;
@@ -395,7 +395,7 @@ class ThemeSceneController implements SetupSceneController {
 			await this.#applyPreviewPresentation(this.#originalSymbolPreset, true);
 		} else if (value === "ansi") {
 			await this.#applyPreviewPresentation("ascii", this.#originalColorBlindMode);
-			result = await previewTheme("dark-terminal");
+			result = await previewTheme("nightglide-flight");
 		} else {
 			const themeName = this.#themeNameFromValue(value);
 			if (themeName) {

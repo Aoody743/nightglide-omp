@@ -23,8 +23,8 @@ let celestial: Theme;
 
 beforeAll(() => {
 	previous = theme;
-	const json = getBuiltinThemes()["dark-celestial"];
-	if (!json) throw new Error("dark-celestial theme unavailable");
+	const json = getBuiltinThemes()["nightglide-flight"];
+	if (!json) throw new Error("nightglide-flight theme unavailable");
 	celestial = createTheme(json, { mode: "truecolor" });
 	setThemeInstance(celestial);
 });
@@ -84,8 +84,8 @@ describe("colorful Markdown", () => {
 	});
 
 	it("falls back to the terminal's own palette when a theme ships no terminal.ansi", () => {
-		const json = getBuiltinThemes()["dark-celestial"];
-		if (!json) throw new Error("dark-celestial theme unavailable");
+		const json = getBuiltinThemes()["nightglide-flight"];
+		if (!json) throw new Error("nightglide-flight theme unavailable");
 		const bare = createTheme({ ...json, terminal: undefined }, { mode: "truecolor" });
 
 		expect(bare.ansiFg("magenta", "x")).toBe("\x1b[38;5;5mx\x1b[39m");

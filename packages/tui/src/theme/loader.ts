@@ -4,9 +4,6 @@ import { adjustHsv } from "@oh-my-pi/pi-utils/color";
 import { getCustomThemesDir } from "@oh-my-pi/pi-utils/dirs";
 import { isEnoent } from "@oh-my-pi/pi-utils/fs-error";
 import { detectColorMode, isLightSurface, mixThemeColors, resolveThemeColors, resolveVarRefs } from "./color";
-import darkThemeJson from "./dark.json" with { type: "json" };
-import defaultThemes from "./defaults.json" with { type: "json" };
-import lightThemeJson from "./light.json" with { type: "json" };
 import nightglideFlightJson from "./nightglide-flight.json" with { type: "json" };
 import nightglideAbyssJson from "./nightglide-abyss.json" with { type: "json" };
 import nightglideAuroraJson from "./nightglide-aurora.json" with { type: "json" };
@@ -20,26 +17,44 @@ import { Theme } from "./theme-class";
 // Theme Loading
 // ============================================================================
 
-const BUILTIN_THEMES: Record<string, ThemeJson> = {
-	dark: darkThemeJson as ThemeJson,
-	light: lightThemeJson as ThemeJson,
+function isPrintableAscii(text: string): boolean {
+	return /^[\x20-\x7e]*$/.test(text);
+}
+
+/** Nightglide ships only its own themes; these are the names pickers list. */
+const NIGHTGLIDE_THEMES: Record<string, ThemeJson> = {
 	"nightglide-flight": nightglideFlightJson as ThemeJson,
-	"nightglide-abyss": nightglideAbyssJson as ThemeJson,
-	"nightglide-aurora": nightglideAuroraJson as ThemeJson,
 	"nightglide-cloudlight": nightglideCloudlightJson as ThemeJson,
+	"nightglide-abyss": nightglideAbyssJson as ThemeJson,
 	"nightglide-daybreak": nightglideDaybreakJson as ThemeJson,
-	flight: nightglideFlightJson as ThemeJson,
-	abyss: nightglideAbyssJson as ThemeJson,
-	nightglide: nightglideFlightJson as ThemeJson,
-	...(defaultThemes as Record<string, ThemeJson>),
+	"nightglide-aurora": nightglideAuroraJson as ThemeJson,
 };
 
+/**
+ * Names that still load but are never listed. `dark` / `light` were OMP's
+ * stock theme names: settings files, extensions and tests written against
+ * them resolve to the Nightglide equivalent instead of failing to load.
+ */
+const THEME_ALIASES: Record<string, ThemeJson> = {
+	dark: nightglideFlightJson as ThemeJson,
+	light: nightglideCloudlightJson as ThemeJson,
+	nightglide: nightglideFlightJson as ThemeJson,
+	flight: nightglideFlightJson as ThemeJson,
+	cloudlight: nightglideCloudlightJson as ThemeJson,
+	abyss: nightglideAbyssJson as ThemeJson,
+	daybreak: nightglideDaybreakJson as ThemeJson,
+	aurora: nightglideAuroraJson as ThemeJson,
+};
+
+const BUILTIN_THEMES: Record<string, ThemeJson> = { ...NIGHTGLIDE_THEMES, ...THEME_ALIASES };
+
+/** Every built-in name that loads, aliases included. */
 export function getBuiltinThemes(): Record<string, ThemeJson> {
 	return BUILTIN_THEMES;
 }
 
 export async function getAvailableThemes(): Promise<string[]> {
-	const themes = new Set<string>(Object.keys(getBuiltinThemes()));
+	const themes = new Set<string>(Object.keys(NIGHTGLIDE_THEMES));
 	const customThemesDir = getCustomThemesDir();
 	try {
 		const files = await fs.promises.readdir(customThemesDir);
@@ -63,7 +78,7 @@ export async function getAvailableThemesWithPaths(): Promise<ThemeInfo[]> {
 	const result: ThemeInfo[] = [];
 
 	// Built-in themes (embedded, no file path)
-	for (const name of Object.keys(getBuiltinThemes())) {
+	for (const name of Object.keys(NIGHTGLIDE_THEMES)) {
 		result.push({ name, path: undefined });
 	}
 
@@ -110,7 +125,7 @@ function parseThemeJson(name: string, content: string): ThemeJson {
 			fullErrorMessage += `\nMissing required color tokens:\n`;
 			fullErrorMessage += missingColors.map(c => `  - ${c}`).join("\n");
 			fullErrorMessage += `\n\nPlease add these colors to your theme's "colors" object.`;
-			fullErrorMessage += `\nSee the built-in themes (dark.json, light.json) for reference values.`;
+			fullErrorMessage += `\nSee the built-in themes (nightglide-flight.json, nightglide-cloudlight.json) for reference values.`;
 		}
 		fullErrorMessage += `\n\nValidation error:\n  - ${errorMessage}`;
 
@@ -225,6 +240,13 @@ export function createTheme(themeJson: ThemeJson, options: CreateThemeOptions = 
 	const symbolPreset: SymbolPreset = symbolPresetOverride ?? themeJson.symbols?.preset ?? "unicode";
 	const symbolOverrides = themeJson.symbols?.overrides ?? {};
 	const spinnerFramesOverrides = normalizeSpinnerFramesOverride(themeJson.symbols?.spinnerFrames);
+	// A theme's decorative frames must not defeat an ASCII preset chosen for a
+	// limited terminal: drop any kind whose frames are not plain ASCII.
+	if (symbolPreset === "ascii") {
+		for (const kind of Object.keys(spinnerFramesOverrides) as (keyof typeof spinnerFramesOverrides)[]) {
+			if (spinnerFramesOverrides[kind]?.some(frame => !isPrintableAscii(frame))) delete spinnerFramesOverrides[kind];
+		}
+	}
 	return new Theme(fgColors, bgColors, colorMode, symbolPreset, symbolOverrides, spinnerFramesOverrides, ansiPalette);
 }
 

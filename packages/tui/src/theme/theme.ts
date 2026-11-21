@@ -145,7 +145,7 @@ var themeReloadTimer: NodeJS.Timeout | undefined;
 var sigwinchHandler: (() => void) | undefined;
 var autoDetectedTheme: boolean = false;
 var autoDarkTheme: string = "nightglide-flight";
-var autoLightTheme: string = "light";
+var autoLightTheme: string = "nightglide-cloudlight";
 var onThemeChangeCallback: ((event: ThemeChangeEvent) => void) | undefined;
 var themeLoadRequestId: number = 0;
 let themeEpoch = 0;
@@ -164,7 +164,7 @@ function configureTheme(
 ): string {
 	autoDetectedTheme = true;
 	autoDarkTheme = darkTheme ?? "nightglide-flight";
-	autoLightTheme = lightTheme ?? "light";
+	autoLightTheme = lightTheme ?? "nightglide-cloudlight";
 	currentSymbolPresetOverride = symbolPreset;
 	currentColorBlindMode = colorBlindMode ?? false;
 	const name = getDefaultTheme();
@@ -253,9 +253,9 @@ export async function setTheme(
 		if (requestId !== themeLoadRequestId) {
 			return { success: false, error: "Theme change superseded by a newer request" };
 		}
-		// Theme is invalid - fall back to dark theme
-		currentThemeName = "dark";
-		assignTheme(await loadTheme("dark", getCurrentThemeOptions()));
+		// Theme is invalid - fall back to the default dark theme
+		currentThemeName = "nightglide-flight";
+		assignTheme(await loadTheme("nightglide-flight", getCurrentThemeOptions()));
 		// The active theme just changed to the fallback — bump the epoch so memoized
 		// renderers (e.g. ToolExecutionComponent) re-shape with the fallback colors
 		// instead of holding the failed theme's stale styling.
@@ -347,7 +347,7 @@ export async function setSymbolPreset(preset: SymbolPreset): Promise<void> {
 	} catch {
 		if (requestId !== themeLoadRequestId) return;
 		// Fall back to dark theme with new preset
-		assignTheme(await loadTheme("dark", getCurrentThemeOptions()));
+		assignTheme(await loadTheme("nightglide-flight", getCurrentThemeOptions()));
 		if (requestId !== themeLoadRequestId) return;
 	}
 	notifyThemeChange({ ephemeral: true });
@@ -400,7 +400,7 @@ export async function setColorBlindMode(enabled: boolean): Promise<void> {
 	} catch {
 		if (requestId !== themeLoadRequestId) return;
 		// Fall back to dark theme
-		assignTheme(await loadTheme("dark", getCurrentThemeOptions()));
+		assignTheme(await loadTheme("nightglide-flight", getCurrentThemeOptions()));
 		if (requestId !== themeLoadRequestId) return;
 	}
 	notifyThemeChange({ ephemeral: true });
@@ -834,7 +834,7 @@ export async function getResolvedThemeColors(themeName?: string): Promise<Record
  * for callers in synchronous flows (settings migration, setup wizard).
  */
 export function isLightTheme(themeName?: string): boolean {
-	const name = themeName ?? "dark";
+	const name = themeName ?? "nightglide-flight";
 	const builtinThemes = getBuiltinThemes();
 	let themeJson: ThemeJson | undefined;
 	if (name in builtinThemes) {

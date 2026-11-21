@@ -4,10 +4,12 @@ import { type Theme } from "@oh-my-pi/pi-tui/theme";
 import { createTheme, getBuiltinThemes } from "@oh-my-pi/pi-tui/theme/loader";
 import type { ThemeJson } from "@oh-my-pi/pi-tui/theme/schema";
 
+/** The Flight theme without its word slots, plus `colors`. */
 function themeWith(colors: Partial<ThemeJson["colors"]>): Theme {
-	const json = getBuiltinThemes().dark;
-	if (!json) throw new Error("dark theme unavailable");
-	return createTheme({ ...json, colors: { ...json.colors, ...colors } }, { mode: "truecolor" });
+	const json = getBuiltinThemes()["nightglide-flight"];
+	if (!json) throw new Error("nightglide-flight theme unavailable");
+	const { toolDiffWordAdded: _added, toolDiffWordRemoved: _removed, ...base } = json.colors;
+	return createTheme({ ...json, colors: { ...base, ...colors } }, { mode: "truecolor" });
 }
 
 /** A single-line replacement routes through renderIntraLineDiff: one `-` row, one `+` row. */
@@ -17,9 +19,9 @@ function renderReplacement(t: Theme): string {
 
 describe("toolDiffWord* intra-line emphasis", () => {
 	it("falls back to the line-level diff foregrounds when a theme omits the word slots", () => {
-		// The built-in dark theme declares no word slots: `hasColor()` reports them
-		// unset, so changed words keep the row's own foreground — the pre-refinement
-		// palette, minus the old inverse video.
+		// A theme that declares no word slots: `hasColor()` reports them unset, so
+		// changed words keep the row's own foreground — the pre-refinement palette,
+		// minus the old inverse video.
 		const t = themeWith({});
 		expect(t.hasColor("toolDiffWordAdded")).toBe(false);
 		expect(t.hasColor("toolDiffWordRemoved")).toBe(false);

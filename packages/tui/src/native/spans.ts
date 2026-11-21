@@ -14,14 +14,20 @@
  */
 import { sanitizeText } from "@oh-my-pi/pi-utils";
 import type { TspSpan, TspText } from "@oh-my-pi/pi-wire";
-import darkThemeJson from "../theme/dark.json" with { type: "json" };
+import flightThemeJson from "../theme/nightglide-flight.json" with { type: "json" };
 import { isValidThemeColor, type Theme, type ThemeBg, type ThemeColor, theme } from "../theme/theme";
 import { replaceTabs } from "../utils";
 import { span, text } from "./describe";
 import type { NativeNode } from "./node";
 
+/** Word-level diff tokens: derived, so they sort after every other token and never win a tie. */
+const LATE_COLOR_NAMES = new Set<string>(["toolDiffWordAdded", "toolDiffWordRemoved"]);
+
 /** Theme colour names in schema order; basic tokens (`accent`, `success`, …) precede derived ones, so they win ties. */
-const THEME_COLOR_NAMES: readonly ThemeColor[] = Object.keys(darkThemeJson.colors).filter(isValidThemeColor);
+const THEME_COLOR_NAMES: readonly ThemeColor[] = [
+	...Object.keys(flightThemeJson.colors).filter(name => !LATE_COLOR_NAMES.has(name)),
+	...LATE_COLOR_NAMES,
+].filter(isValidThemeColor);
 
 /** Background tokens in tie-breaking priority. */
 const THEME_BG_NAMES: readonly ThemeBg[] = [

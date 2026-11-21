@@ -1,4 +1,8 @@
 import { beforeAll, describe, expect, test } from "bun:test";
+import * as fs from "node:fs/promises";
+import * as os from "node:os";
+import * as path from "node:path";
+import { getConfigRootDir, getCustomThemesDir, removeWithRetries, setAgentDir } from "@oh-my-pi/pi-utils";
 import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
 import type { TspKind, TspPickerProps, TspProps } from "@oh-my-pi/pi-wire";
 import type { SessionMessageEntryLike } from "../src/chat/transcript-entry";
@@ -9,6 +13,7 @@ import { CopySelectorComponent } from "../src/overlays/copy-selector";
 import { type BranchVariantPath, RewindSelectorComponent } from "../src/overlays/rewind-selector";
 import { TreeSelectorComponent, type TreeSelectorNode } from "../src/overlays/tree-selector";
 import { initTheme, setTheme } from "../src/theme";
+import { getBuiltinThemes } from "../src/theme/loader";
 
 const pickerCx: DescribeContext = {
 	cols: 120,
@@ -372,16 +377,29 @@ describe("session tree picker", () => {
 				return typeof label === "string" ? undefined : label?.[0]?.s;
 			});
 		};
+		// A custom theme that paints `success` the same as `accent`.
+		const tmpAgentDir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-tree-labels-"));
+		const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+		setAgentDir(tmpAgentDir);
 		try {
-			await setTheme("dark-github");
+			const flight = getBuiltinThemes()["nightglide-flight"]!;
+			const sameGreen = { ...flight, name: "same-accent", colors: { ...flight.colors, success: "accent" } };
+			await Bun.write(path.join(getCustomThemesDir(), "same-accent.json"), JSON.stringify(sameGreen));
+
+			await setTheme("nightglide-flight");
 			expect(labelStyles()).toEqual(["accent strong", "success"]);
-			// `dark-terminal` paints `accent` and `success` the same green.
-			await setTheme("dark-terminal");
+			await setTheme("same-accent");
 			expect(labelStyles()).toEqual(["accent strong", "statusLinePath"]);
-			await setTheme("dark-github");
+			await setTheme("nightglide-flight");
 			expect(labelStyles()).toEqual(["accent strong", "success"]);
 		} finally {
 			await initTheme(false);
+			if (originalAgentDir) setAgentDir(originalAgentDir);
+			else {
+				setAgentDir(path.join(getConfigRootDir(), "agent"));
+				delete process.env.PI_CODING_AGENT_DIR;
+			}
+			await removeWithRetries(tmpAgentDir);
 		}
 	});
 

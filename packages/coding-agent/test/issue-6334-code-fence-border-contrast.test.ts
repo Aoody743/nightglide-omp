@@ -16,8 +16,14 @@ import { loadTheme, loadThemeJson } from "@oh-my-pi/pi-tui/theme/loader";
  * below the legibility floor.
  */
 
-/** Themes flagged in #6334 as pinning mdCodeBlockBorder to a near-bg surface tone. */
-const AFFECTED_THEMES = ["dark", "dark-catppuccin", "dark-nord", "dark-eclipse", "dark-retro"];
+/** Every theme Nightglide ships; #6334 was a near-bg mdCodeBlockBorder on bundled themes. */
+const AFFECTED_THEMES = [
+	"nightglide-flight",
+	"nightglide-cloudlight",
+	"nightglide-abyss",
+	"nightglide-daybreak",
+	"nightglide-aurora",
+];
 /** Just below Nord's 2.43:1, the lowest contrast available in its muted palette. */
 const MIN_CONTRAST = 2.4;
 
