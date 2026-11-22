@@ -15,7 +15,7 @@
  * the real editor / HUD components, and the information column reads live
  * session state through an injected accessor (no fabricated values).
  */
-import { effortLadderToken } from "../chat/effort-ladder";
+import { effortLadderGlyph, effortLadderToken, effortRung } from "../chat/effort-ladder";
 import type { AnimationFrame, TranscriptContainer } from "../chrome/transcript-container";
 import { motionEffectsEnabled, onMotionEffectsChange } from "../motion-effects";
 import { bgAnsi, fgAnsi } from "../theme/color";
@@ -36,6 +36,18 @@ export interface NightglideShellSubagent {
 /** Live session facts the information column shows; nothing here is invented. */
 export interface NightglideShellState {
 	model: string | undefined;
+	/** Provider of the selected model. */
+	provider?: string;
+	/** The model a retry fallback is actually serving, when it is not the selected one. */
+	fallback?: string;
+	/** False when the selected model has no thinking control. */
+	thinkingSupported?: boolean;
+	/** Fast mode is active for this session. */
+	fast?: boolean;
+	/** Worst advisor status, when advisors are configured. */
+	advisor?: "running" | "quota" | "error" | "paused";
+	/** Provider service notice that must stay visible (e.g. a usage-limit stage). */
+	notice?: string;
 	/** Effective thinking level; undefined when it is not known. */
 	thinkingLevel: string | undefined;
 	/** Auto effort that resolves on the next turn. */
@@ -55,6 +67,8 @@ export interface NightglideShellDeps {
 	status: () => Component | undefined;
 	/** Live session facts for the information column. */
 	state: () => NightglideShellState;
+	/** Told whenever the information column appears or disappears (narrow windows drop it). */
+	sidebarShown?: (shown: boolean) => void;
 	/** Components (the editor) whose hardware cursor this shell owns. */
 	focusTargets: () => readonly Component[];
 	rows: () => number;
@@ -99,6 +113,13 @@ function familyFor(name: string | undefined): Family {
 					accent: "#ffaf00",
 					spark: "#87afd7",
 				},
+				scene256: {
+					page: "#ffffff",
+					ramp: ["#d7d7ff", "#afd7ff", "#87afff", "#5f87d7", "#005fd7"],
+					accent: "#ffaf00",
+					spark: "#87afd7",
+					blends: { glow: ["#ffd7af", "#ffd787", "#ffaf00"] },
+				},
 			};
 		case "nightglide-abyss":
 			return {
@@ -117,6 +138,18 @@ function familyFor(name: string | undefined): Family {
 					spark: "#afffff",
 					plants: ["#00875f", "#00af87", "#5fd787"],
 				},
+				scene256: {
+					page: "#121212",
+					ramp: ["#005f5f", "#008787", "#00afaf", "#5fd7d7"],
+					accent: "#ff875f",
+					spark: "#afffff",
+					plants: ["#00875f", "#00af87", "#5fd787"],
+					blends: {
+						far: ["#005f5f"],
+						shaft: ["#1c1c1c", "#262626", "#303030"],
+						mote: "#5f8787",
+					},
+				},
 			};
 		case "nightglide-daybreak":
 			return {
@@ -134,6 +167,18 @@ function familyFor(name: string | undefined): Family {
 					accent: "#ff5f5f",
 					spark: "#5fafaf",
 					plants: ["#5faf87", "#00875f", "#005f5f"],
+				},
+				scene256: {
+					page: "#ffffff",
+					ramp: ["#d7ffff", "#afd7d7", "#87d7d7", "#5fafaf"],
+					accent: "#ff5f5f",
+					spark: "#5fafaf",
+					plants: ["#5faf87", "#00875f", "#005f5f"],
+					blends: {
+						far: ["#d7ffff"],
+						shaft: ["#eeeeee", "#e4e4e4", "#d7ffff"],
+						mote: "#87d7d7",
+					},
 				},
 			};
 		default:
@@ -154,9 +199,10 @@ function familyFor(name: string | undefined): Family {
 				},
 				scene256: {
 					page: "#121212",
-					ramp: ["#303050", "#005f87", "#5f87af", "#87afd7", "#d7ffff"],
+					ramp: ["#303030", "#005f87", "#5f87af", "#87afd7", "#d7ffff"],
 					accent: "#ffaf5f",
 					spark: "#5f5f87",
+					blends: { far: ["#262626", "#303030"], glow: ["#875f5f", "#af875f", "#ffaf5f"] },
 				},
 			};
 	}
@@ -178,8 +224,21 @@ function onBg(line: string, width: number, bg: string): string {
 }
 
 const EFFORT_FILL: Record<string, number> = { minimal: 2, low: 4, medium: 7, high: 10, xhigh: 12, max: 12 };
+/** Scene intensity per effort rung; levels without a rung (off, unknown, unresolved auto) add nothing. */
+const SCENE_INTENSITY: Record<string, number> = { minimal: 0.15, low: 0.3, medium: 0.5, high: 0.75, xhigh: 1 };
+/** Scene clock advance per animation tick at intensity 0 and 1. */
+const SCENE_SPEED_MIN = 1;
+const SCENE_SPEED_MAX = 1.8;
+
+/** 0–1 scene intensity for an effective thinking level. */
+export function sceneIntensity(level: string | undefined): number {
+	const rung = effortRung(level);
+	return rung ? (SCENE_INTENSITY[rung] ?? 0) : 0;
+}
 const EFFORT_CELLS = 12;
 const SIDE_WIDTH = 30;
+/** Narrowest window that still shows the information column. */
+const SIDE_MIN_WIDTH = 100;
 const WHEEL_LINES = 3;
 /** Consecutive rows that identify the scrolled-back view's position. */
 const ANCHOR_ROWS = 3;
@@ -211,10 +270,14 @@ function captureAnchor(view: readonly string[]): { rows: readonly string[]; offs
 export class NightglideShell implements Component, OverlayFocusOwner {
 	#deps: NightglideShellDeps;
 	#phase = 0;
+	/** Scene clock: advances faster at higher effort, so a level change never jumps the picture. */
+	#sceneTime = 0;
 	#timer: NodeJS.Timeout | undefined;
 	#unsubscribe: () => void;
 	/** Rows scrolled back from the transcript tail (0 = following). */
 	#scroll = 0;
+	/** Last information-column visibility reported to the host. */
+	#sideShown: boolean | undefined;
 	/**
 	 * While scrolled back: rows at the top of the view and their offset in it.
 	 * New output grows the tail below, so `#scroll` alone would slide the view
@@ -259,6 +322,11 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 		this.scrollLines(-this.#scroll);
 	}
 
+	/** Pin the scene clock (still frames for previews and tests); the timer keeps advancing it. */
+	setSceneTime(time: number): void {
+		this.#sceneTime = time;
+	}
+
 	/** True while the conversation is scrolled back from the live tail. */
 	isScrolledBack(): boolean {
 		return this.#scroll > 0;
@@ -280,6 +348,8 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 			if (!this.#timer) {
 				this.#timer = setInterval(() => {
 					this.#phase++;
+					const intensity = sceneIntensity(this.#deps.state().thinkingLevel);
+					this.#sceneTime += SCENE_SPEED_MIN + (SCENE_SPEED_MAX - SCENE_SPEED_MIN) * intensity;
 					this.#deps.requestRender();
 				}, 110);
 				this.#timer.unref();
@@ -308,6 +378,13 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 		const border = enc.fg(fam.border);
 		const W = Math.max(20, width);
 
+		// The information column decides what the status line repeats, so settle it first.
+		const showSide = W >= SIDE_MIN_WIDTH;
+		if (showSide !== this.#sideShown) {
+			this.#sideShown = showSide;
+			this.#deps.sidebarShown?.(showSide);
+		}
+
 		// --- vertical budget ---------------------------------------------------
 		const statusComp = this.#deps.status();
 		const statusRows = statusComp ? statusComp.render(W - 2).slice(0, 2) : [];
@@ -322,15 +399,18 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 		}
 		const bodyRows = Math.max(3, height - fixed - sceneTop - sceneBottom);
 		this.#lastBodyRows = bodyRows;
-		const phase = motionEffectsEnabled() ? this.#phase : 0;
+		// Motion off freezes the clock; effort still shows as density and highlights.
+		const sceneOpts = {
+			time: motionEffectsEnabled() ? this.#sceneTime : 0,
+			intensity: sceneIntensity(this.#deps.state().thinkingLevel),
+		};
 
 		const out: string[] = [];
 		out.push(onBg(this.#header(W, fam, c), W, page));
-		if (sceneTop > 0) out.push(...renderPixelScene(W, sceneTop, phase, fam.dive, "top", scene, enc));
+		if (sceneTop > 0) out.push(...renderPixelScene(W, sceneTop, fam.dive, "top", scene, enc, sceneOpts));
 		this.#bodyTop = out.length;
 
 		// --- body: conversation panel + information column --------------------
-		const showSide = W >= 100;
 		const sideW = showSide ? SIDE_WIDTH : 0;
 		const mainW = W - sideW - (showSide ? 1 : 0);
 		const mainInner = mainW - 4;
@@ -339,7 +419,8 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 		const label = this.#scroll > 0 ? c(fam.warm, ` ↑ 回看中 · End 或点此回到底部 `) : "";
 		for (let r = 0; r < bodyRows; r++) {
 			let line = this.#panelRow(r, bodyRows, mainW, convo, border, page, label);
-			if (showSide) line += onBg(" ", 1, page) + this.#panelRow(r, bodyRows, sideW, side, border, page, "");
+			if (showSide)
+				line += onBg(" ", 1, page) + this.#panelRow(r, bodyRows, sideW, side, border, page, c(fam.title, " 会话 "));
 			out.push(line);
 		}
 
@@ -352,7 +433,12 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 
 		const room = height - out.length;
 		if (sceneBottom > 0 && room > 0) {
-			out.push(...renderPixelScene(W, Math.min(room, sceneBottom), phase + 53, fam.dive, "bottom", scene, enc));
+			out.push(
+				...renderPixelScene(W, Math.min(room, sceneBottom), fam.dive, "bottom", scene, enc, {
+					...sceneOpts,
+					time: sceneOpts.time + 53,
+				}),
+			);
 		}
 		while (out.length < height) out.push(onBg("", W, page));
 		return out.slice(0, height);
@@ -436,46 +522,102 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 
 	#sidebar(width: number, rows: number, c: (hex: string, s: string) => string, fam: Family): string[] {
 		const st = this.#deps.state();
-		const out: string[] = [];
-		const section = (title: string) => {
-			if (out.length > 0) out.push(c(fam.border, "┄".repeat(width)));
-			out.push(theme.bold(c(fam.title, title)));
+		const fit = (line: string) => truncateToWidth(line, width);
+		const sections: string[][] = [];
+		/** Section heading: glyph, title, then a rule to the column edge. */
+		const head = (glyph: string, title: string, hex = fam.accent) => {
+			const lead = `${c(hex, glyph)} ${theme.bold(c(fam.title, title))} `;
+			return fit(lead + c(fam.border, "─".repeat(Math.max(0, width - visibleWidth(lead)))));
 		};
+		const body = (line: string) => fit(`  ${line}`);
 
-		section("Model");
-		out.push(truncateToWidth(`${c(fam.accent, "✦ ")}${c(fam.text, st.model ?? "no-model")}`, width));
+		// Model: name, provider, and anything that changes who is answering.
+		const model: string[] = [head("✦", "模型")];
+		if (st.model) {
+			const badges = `${st.fast ? c(fam.warm, " ⚡") : ""}${
+				st.advisor
+					? c(
+							st.advisor === "error" || st.advisor === "quota"
+								? fam.warm
+								: st.advisor === "running"
+									? fam.accent
+									: fam.soft,
+							" ◉",
+						)
+					: ""
+			}`;
+			model.push(body(`${theme.bold(c(fam.text, st.model))}${badges}`));
+			if (st.provider) model.push(body(c(fam.soft, st.provider)));
+			if (st.fallback) model.push(body(c(fam.warm, `↩ 回退 ${st.fallback}`)));
+			if (st.notice) model.push(body(c(fam.warm, st.notice)));
+		} else {
+			model.push(body(c(fam.warm, "未选择模型")));
+		}
+		sections.push(model);
 
-		section("Effort");
-		const level = st.thinkingLevel ? String(st.thinkingLevel) : undefined;
-		if (level && EFFORT_FILL[level] !== undefined) {
+		// Effort: the level the session actually uses, never a configured wish.
+		const level = st.thinkingLevel;
+		const rung = effortRung(level);
+		const effort: string[] = [head(rung ? effortLadderGlyph(level) : "○", "思考强度")];
+		if (level && rung && EFFORT_FILL[level] !== undefined) {
 			const filled = EFFORT_FILL[level]!;
 			const token = effortLadderToken(level) ?? "accent";
-			const bar = theme.fg(token, "▰".repeat(filled)) + c(fam.border, "▱".repeat(EFFORT_CELLS - filled));
-			out.push(truncateToWidth(`${bar} ${theme.fg(token, level)}`, width));
+			const cells = Math.max(6, Math.min(EFFORT_CELLS, width - 2 - visibleWidth(level) - 1));
+			const on = Math.round((filled / EFFORT_CELLS) * cells);
+			effort.push(
+				body(
+					`${theme.fg(token, "▰".repeat(on))}${c(fam.border, "▱".repeat(cells - on))} ${theme.fg(token, level)}`,
+				),
+			);
 		} else if (st.autoPending) {
-			out.push(c(fam.soft, "auto · 待本轮确定"));
+			effort.push(body(c(fam.soft, "auto · 本轮确定后显示")));
+		} else if (!st.model || st.thinkingSupported === false) {
+			effort.push(body(c(fam.soft, st.model ? "此模型不支持" : "—")));
 		} else {
-			out.push(c(fam.soft, level ?? "未知"));
+			effort.push(body(c(fam.soft, level ?? "未知")));
 		}
+		sections.push(effort);
 
-		section(`Agents (${st.subagents.length})`);
-		if (st.subagents.length === 0) out.push(c(fam.soft, "无活动"));
+		// Subagents: real registry entries only.
+		const running = st.subagents.filter(a => a.status !== "completed" && a.status !== "failed").length;
+		const agents: string[] = [
+			head("◇", st.subagents.length > 0 ? `子智能体 ${running}/${st.subagents.length}` : "子智能体"),
+		];
+		if (st.subagents.length === 0) agents.push(body(c(fam.soft, "暂无")));
 		for (const agent of st.subagents) {
-			const hex = agent.status === "failed" ? fam.warm : agent.status === "completed" ? fam.soft : fam.accent;
-			const name = truncateToWidth(agent.label, Math.max(4, width - 12));
-			const gap = " ".repeat(Math.max(1, width - 2 - visibleWidth(name) - visibleWidth(agent.status)));
-			out.push(`${c(hex, "■")} ${c(fam.text, name)}${gap}${c(hex, agent.status)}`);
-			if (agent.currentTool) out.push(c(fam.soft, `  ↳ ${agent.currentTool}`));
+			const failed = agent.status === "failed";
+			const done = agent.status === "completed";
+			const mark = failed ? c(fam.warm, "✕") : done ? c(fam.soft, "✓") : c(fam.accent, "●");
+			const name = truncateToWidth(agent.label, Math.max(4, width - 6 - visibleWidth(agent.status)));
+			const gap = " ".repeat(Math.max(1, width - 4 - visibleWidth(name) - visibleWidth(agent.status)));
+			agents.push(
+				body(
+					`${mark} ${c(done ? fam.soft : fam.text, name)}${gap}${c(failed ? fam.warm : fam.soft, agent.status)}`,
+				),
+			);
+			if (agent.currentTool) agents.push(body(c(fam.soft, `  ↳ ${agent.currentTool}`)));
 		}
+		sections.push(agents);
 
-		section("Status");
+		// Status of the main session.
+		const status: string[] = [];
 		if (st.activeTools && st.activeTools > 0) {
-			out.push(c(fam.warm, `◌ 工具执行中 · ${st.activeTools}`));
+			status.push(head("◌", "状态", fam.warm), body(c(fam.warm, `工具执行中 · ${st.activeTools}`)));
 		} else if (st.streaming) {
 			const spin = motionEffectsEnabled() ? "◜◝◞◟"[this.#phase % 4]! : "◌";
-			out.push(c(fam.warm, `${spin} Thinking`));
+			status.push(head(spin, "状态", fam.warm), body(c(fam.warm, "思考中")));
 		} else {
-			out.push(`${c(fam.accent, "●")} ${c(fam.soft, "空闲")}`);
+			status.push(head("●", "状态"), body(c(fam.soft, "空闲")));
+		}
+		sections.push(status);
+
+		// A blank row under the frame and between sections when the column has room for them.
+		const needed = sections.reduce((n, sec) => n + sec.length, 0);
+		const gap = needed + sections.length <= rows;
+		const out: string[] = gap ? [""] : [];
+		for (const sec of sections) {
+			if (out.length > 1 && gap) out.push("");
+			out.push(...sec);
 		}
 		return out.slice(0, rows);
 	}

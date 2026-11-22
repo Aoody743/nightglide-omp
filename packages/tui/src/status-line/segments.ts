@@ -314,7 +314,7 @@ export function thinkingLevelWord(
  * (deterministic `now`/`hostname`) must not leak their stand-in state into
  * live components, so they skip the publish.
  */
-function publishAmbientEffort(ctx: SegmentContext): void {
+export function publishAmbientEffort(ctx: SegmentContext): void {
 	if (ctx.now !== undefined || ctx.hostname !== undefined) return;
 	setActiveThinkingEffort(thinkingLevelWord(ctx.session));
 }

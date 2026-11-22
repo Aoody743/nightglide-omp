@@ -53,7 +53,7 @@ const RUNG_TOKENS: Record<EffortRung, ThemeColor> = {
  * `xhigh` rung; `off`, `inherit`, `auto` (until it resolves), and anything
  * unknown return undefined — no rung, no mark, no fabrication.
  */
-function effortRung(level: string | undefined | null): EffortRung | undefined {
+export function effortRung(level: string | undefined | null): EffortRung | undefined {
 	switch (level) {
 		case "minimal":
 			return "minimal";

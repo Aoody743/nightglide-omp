@@ -8929,11 +8929,35 @@ export class InteractiveMode implements InteractiveModeContext {
 			subagents = [];
 		}
 		const model = this.session.state.model;
+		// Same effective level the status line shows: undefined when the model has
+		// no thinking control, so the column and scene never claim an effort.
+		const word = thinkingLevelWord(this.session);
+		const serving = this.session.servingModel;
+		let advisor: NightglideShellState["advisor"];
+		try {
+			const overview = this.session.getAdvisorStatusOverview();
+			if (overview.configured && overview.advisors.length > 0) {
+				const statuses = overview.advisors.map(a => a.status);
+				advisor = statuses.includes("error")
+					? "error"
+					: statuses.includes("quota_exhausted")
+						? "quota"
+						: statuses.includes("running")
+							? "running"
+							: "paused";
+			}
+		} catch {
+			advisor = undefined;
+		}
 		return {
 			model: model?.name || model?.id || undefined,
-			thinkingLevel: this.session.isAutoThinking
-				? this.session.autoResolvedThinkingLevel()
-				: this.session.thinkingLevel,
+			provider: model?.provider,
+			fallback: serving?.isFallback ? (serving.modelIdentity ?? serving.selector) : undefined,
+			thinkingSupported: model ? Boolean(model.thinking) : undefined,
+			fast: this.session.isFastModeActive(),
+			advisor,
+			notice: this.session.getAnthropicSlowModeLabel?.(),
+			thinkingLevel: word === "auto" ? undefined : word,
 			autoPending: this.session.isAutoThinking && !this.session.autoResolvedThinkingLevel(),
 			subagents,
 			activeTools: this.pendingTools.size,
@@ -8973,6 +8997,8 @@ export class InteractiveMode implements InteractiveModeContext {
 				dock: () => this.#glideDock(),
 				status: () => this.statusLine,
 				state: () => this.#nightglideState(),
+				// The column shows the model, so the status line drops its model chip while it is visible.
+				sidebarShown: shown => this.statusLine.setHostedElsewhere(shown ? ["model"] : []),
 				focusTargets: () => [this.editor],
 				rows: () => this.ui.terminal.rows,
 				requestRender: () => this.ui.requestRender(),
@@ -8981,6 +9007,7 @@ export class InteractiveMode implements InteractiveModeContext {
 		} else {
 			const shell = this.#glideShell;
 			this.#glideShell = undefined;
+			this.statusLine.setHostedElsewhere([]);
 			this.ui.setScreenProvider(undefined);
 			shell?.dispose();
 		}

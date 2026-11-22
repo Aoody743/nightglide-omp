@@ -122,3 +122,45 @@ describe("NightglideShell live blocks", () => {
 		expect(second).toBeGreaterThan(first);
 	});
 });
+
+describe("NightglideShell information column", () => {
+	it("reports the column appearing and disappearing as the window crosses the narrow threshold", () => {
+		const seen: boolean[] = [];
+		const shell = new NightglideShell({
+			transcript: new TranscriptContainer(),
+			dock: () => [],
+			status: () => undefined,
+			state: () => ({ model: "m", thinkingLevel: undefined, subagents: [], streaming: false }),
+			focusTargets: () => [],
+			rows: () => 30,
+			requestRender: () => {},
+			sidebarShown: shown => seen.push(shown),
+		});
+		shells.push(shell);
+		shell.render(140);
+		shell.render(140);
+		shell.render(80);
+		shell.render(120);
+		expect(seen).toEqual([true, false, true]);
+	});
+
+	it("shows the selected model in the column and says when no model is selected", () => {
+		const transcript = new TranscriptContainer();
+		let model: string | undefined = "Test Model";
+		const shell = new NightglideShell({
+			transcript,
+			dock: () => [],
+			status: () => undefined,
+			state: () => ({ model, provider: "acme", thinkingLevel: undefined, subagents: [], streaming: false }),
+			focusTargets: () => [],
+			rows: () => 30,
+			requestRender: () => {},
+		});
+		shells.push(shell);
+		const text = () => plain(shell.render(140)).join("\n");
+		expect(text()).toContain("Test Model");
+		expect(text()).toContain("acme");
+		model = undefined;
+		expect(text()).toContain("未选择模型");
+	});
+});

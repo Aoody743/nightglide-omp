@@ -42,7 +42,7 @@ import {
 import { canReuseCachedPr, createPrCacheContext, isSamePrCacheContext, type PrCacheContext } from "./git-utils";
 import { summarizeUsageResetCredits } from "../overlays/usage-display";
 import { getPreset } from "./presets";
-import { describeSegment, renderSegment, type SegmentContext } from "./segments";
+import { describeSegment, publishAmbientEffort, renderSegment, type SegmentContext } from "./segments";
 import { promptCacheBrief } from "./prompt-cache";
 import type { TspMeterMark, TspProps } from "@oh-my-pi/pi-wire";
 import type { NativeNode, NativeUiEvent } from "../native/node";
@@ -707,6 +707,8 @@ export class StatusLineComponent<TSession extends StatusLineSession = StatusLine
 		| undefined;
 	#settings: StatusLineSettings = {};
 	#effectiveSettings: EffectiveStatusLineSettings | undefined;
+	/** Segments another surface already shows (Glide's information column); skipped in the bar. */
+	#hostedElsewhere: ReadonlySet<StatusLineSegmentId> = new Set();
 	#cachedBranch: string | null | undefined = undefined;
 	#cachedBranchRepoId: string | null | undefined = undefined;
 	#cachedBranchCwd: string | undefined = undefined;
@@ -1007,6 +1009,17 @@ export class StatusLineComponent<TSession extends StatusLineSession = StatusLine
 		if (meter.activeStartedAt === null) return;
 		if (this.session.isStreaming) return;
 		meter.activeStartedAt = null;
+	}
+
+	/**
+	 * Skip segments another surface already shows. A hidden model segment still
+	 * runs its effort publish, so the bar behaves exactly as when it is drawn.
+	 */
+	setHostedElsewhere(segments: readonly StatusLineSegmentId[]): void {
+		const next = new Set(segments);
+		if (next.size === this.#hostedElsewhere.size && [...next].every(id => this.#hostedElsewhere.has(id))) return;
+		this.#hostedElsewhere = next;
+		this.#invalidateStatusLineRenderCache();
 	}
 
 	updateSettings(settings: StatusLineSettings): void {
@@ -3150,6 +3163,10 @@ export class StatusLineComponent<TSession extends StatusLineSession = StatusLine
 			if (subagentBadge && segId === "subagents") continue;
 			// The band composer relocates the title to the working row's trailer.
 			if (layout === "band" && segId === "session_name") continue;
+			if (this.#hostedElsewhere.has(segId)) {
+				if (segId === "model") publishAmbientEffort(ctx);
+				continue;
+			}
 			const rendered = renderSegment(segId, ctx);
 			if (rendered.visible && rendered.content) {
 				leftParts.push(rendered.content);
@@ -3163,6 +3180,10 @@ export class StatusLineComponent<TSession extends StatusLineSession = StatusLine
 		for (const segId of rightSegmentIds) {
 			if (subagentBadge && segId === "subagents") continue;
 			if (layout === "band" && segId === "session_name") continue;
+			if (this.#hostedElsewhere.has(segId)) {
+				if (segId === "model") publishAmbientEffort(ctx);
+				continue;
+			}
 			const rendered = renderSegment(segId, ctx);
 			if (rendered.visible && rendered.content) {
 				rightParts.push(rendered.content);
