@@ -8958,7 +8958,9 @@ export class InteractiveMode implements InteractiveModeContext {
 			advisor,
 			notice: this.session.getAnthropicSlowModeLabel?.(),
 			thinkingLevel: word === "auto" ? undefined : word,
-			autoPending: this.session.isAutoThinking && !this.session.autoResolvedThinkingLevel(),
+			// Auto only resolves for models with thinking control; others show "not supported".
+			autoPending:
+				Boolean(model?.thinking) && this.session.isAutoThinking && !this.session.autoResolvedThinkingLevel(),
 			subagents,
 			activeTools: this.pendingTools.size,
 			streaming: this.session.isStreaming,
