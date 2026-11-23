@@ -146,7 +146,7 @@ export async function waitForRelayExtension(cdpUrl: string, signal?: AbortSignal
 }
 
 /** The steps that replace an out-of-date relay extension. */
-export const UPDATE_RELAY_EXTENSION = "Run `omp browser-relay install` and reload the extension in Chrome.";
+export const UPDATE_RELAY_EXTENSION = "Run `nightglide browser-relay install` and reload the extension in Chrome.";
 
 /**
  * Notice for an open through a ready relay where a connected extension was

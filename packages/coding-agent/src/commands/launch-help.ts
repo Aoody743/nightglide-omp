@@ -1,5 +1,5 @@
 import { Args, type CommandMetadata, Flags } from "@oh-my-pi/pi-utils/cli";
-import { APP_NAME } from "@oh-my-pi/pi-utils/dirs";
+import { CLI_NAME } from "@oh-my-pi/pi-utils/dirs";
 import { formatKeyHint } from "@oh-my-pi/pi-tui/key-hint-format";
 import { CLI_THINKING_LEVELS } from "@oh-my-pi/pi-tui/thinking";
 import { SERVICE_TIER_OPENAI_VALUES } from "../config/service-tier";
@@ -130,14 +130,6 @@ export const launchHelp = {
 			description:
 				"Repaint ceiling in frames per second (default 30; 1-120); keystroke echo keeps 30 fps. Overrides tui.maxFps and PI_MAX_FPS for this run",
 		}),
-		classic: Flags.boolean({
-			description:
-				"Start in the classic inline layout. Overrides nightglide.layout and NIGHTGLIDE_LAYOUT for this run",
-		}),
-		glide: Flags.boolean({
-			description:
-				"Start in the fullscreen Glide layout. Overrides nightglide.layout and NIGHTGLIDE_LAYOUT for this run",
-		}),
 		motion: Flags.string({
 			description:
 				"Animation preset: full (default), reduced (250 ms spinners, no shimmer or blink), or none (static). Overrides tui.motion and PI_MOTION for this run",
@@ -164,16 +156,16 @@ export const launchHelp = {
 		}),
 	},
 	examples: [
-		`# Interactive mode\n  ${APP_NAME}`,
-		`# Interactive mode with initial prompt\n  ${APP_NAME} "List all .ts files in src/"`,
-		`# Start working on a goal immediately\n  ${APP_NAME} --goal "Investigate the importer"`,
-		`# Include files in initial message\n  ${APP_NAME} @prompt.md @image.png "What color is the sky?"`,
-		`# Non-interactive mode (process and exit)\n  ${APP_NAME} -p "List all .ts files in src/"`,
-		`# Continue previous session\n  ${APP_NAME} --continue "What did we discuss?"`,
-		`# Pick a session back up after a crash, subagents included\n  ${APP_NAME} --restore ~/.omp/agent/sessions/--path--/session.jsonl`,
-		`# Create a shell shortcut for a work profile\n  ${APP_NAME} --profile work --alias omp-work`,
-		`# Use different model (fuzzy matching)\n  ${APP_NAME} --model opus "Help me refactor this code"`,
-		`# Limit model cycling to specific models\n  ${APP_NAME} --models claude-sonnet,claude-haiku,gpt-4o`,
-		`# Export a session file to HTML\n  ${APP_NAME} --export ~/.omp/agent/sessions/--path--/session.jsonl`,
+		`# Interactive mode\n  ${CLI_NAME}`,
+		`# Interactive mode with initial prompt\n  ${CLI_NAME} "List all .ts files in src/"`,
+		`# Start working on a goal immediately\n  ${CLI_NAME} --goal "Investigate the importer"`,
+		`# Include files in initial message\n  ${CLI_NAME} @prompt.md @image.png "What color is the sky?"`,
+		`# Non-interactive mode (process and exit)\n  ${CLI_NAME} -p "List all .ts files in src/"`,
+		`# Continue previous session\n  ${CLI_NAME} --continue "What did we discuss?"`,
+		`# Pick a session back up after a crash, subagents included\n  ${CLI_NAME} --restore ~/.omp/agent/sessions/--path--/session.jsonl`,
+		`# Create a shell shortcut for a work profile\n  ${CLI_NAME} --profile work --alias nightglide-work`,
+		`# Use different model (fuzzy matching)\n  ${CLI_NAME} --model opus "Help me refactor this code"`,
+		`# Limit model cycling to specific models\n  ${CLI_NAME} --models claude-sonnet,claude-haiku,gpt-4o`,
+		`# Export a session file to HTML\n  ${CLI_NAME} --export ~/.omp/agent/sessions/--path--/session.jsonl`,
 	],
 } satisfies CommandMetadata;

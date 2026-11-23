@@ -422,7 +422,6 @@ import {
 	cfgComposerPredictions,
 	cfgComposerShape,
 	cfgComposerTokenRate,
-	cfgNightglideLayout,
 	cfgDisplayAdvisorCollapsedLines,
 	cfgDisplayCacheMissMarker,
 	cfgDisplayCollapseCompacted,
@@ -2322,9 +2321,10 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.editorContainer.addChild(this.editor);
 		this.statusLine = new StatusLineComponent(session, statusLineHost);
 		this.#wireGlideInput();
-		// `nightglide.layout` (or --glide / --classic / NIGHTGLIDE_LAYOUT) picks the
-		// starting layout; F2 switches for this session only.
-		if (cfgNightglideLayout.get(settings) === "glide") {
+		// Glide is the only interactive layout. NIGHTGLIDE_TEST_CLASSIC is a test-only
+		// switch (set by the repo's test preload) for upstream suites that assert the
+		// inline renderer's native scrollback; it is not documented for users.
+		if (process.env.NIGHTGLIDE_TEST_CLASSIC !== "1") {
 			queueMicrotask(() => this.#setGlide(true));
 		}
 		// Native segment clicks open what their slash commands and keys open.
@@ -9015,14 +9015,10 @@ export class InteractiveMode implements InteractiveModeContext {
 		}
 	}
 
-	/** Glide owns F2 always, and the pointer and scroll keys while it is up. */
+	/** Glide owns the pointer and scroll keys while it is up. */
 	#wireGlideInput(): void {
 		this.ui.addInputListener?.(data => {
 			if (this.ui.hasOverlay()) return undefined;
-			if (this.keybindings.matches(data, "app.nightglide.glide")) {
-				this.#setGlide(this.#glideShell === undefined);
-				return { consume: true };
-			}
 			const shell = this.#glideShell;
 			if (shell) {
 				const mouse = parseSgrMouse(data);
@@ -9702,7 +9698,7 @@ export class InteractiveMode implements InteractiveModeContext {
 			await active.stop();
 			this.statusLine.setRecording(false);
 			this.showStatus(
-				`Saved ${formatDuration(elapsed)} recording to ${active.path} · replay: omp play · share: omp clip`,
+				`Saved ${formatDuration(elapsed)} recording to ${active.path} · replay: nightglide play · share: nightglide clip`,
 			);
 			return;
 		}

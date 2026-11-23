@@ -20,12 +20,21 @@ export default class Update extends Command {
 		stable: Flags.boolean({ description: "Switch back to the stable channel", default: false }),
 	};
 
-	static examples = ["omp update", "omp update --check", "omp update --canary"];
+	static examples = ["nightglide update", "nightglide update --check", "nightglide update --canary"];
 
 	async run(): Promise<void> {
 		const { flags } = await this.parse(Update);
 		await initTheme();
 		if (flags.canary && flags.stable) throw new CliUsageError("--canary and --stable are mutually exclusive");
+		// Launched by the Nightglide launcher from its git checkout: the release channels behind
+		// `runUpdateCommand` are upstream OMP's, so checking or installing from them
+		// would report or install the wrong product. Plugin upgrades are unaffected.
+		if (!flags.plugins && process.env.OMP_APP_NAME === "nightglide" && updateCli.isSourceCheckout()) {
+			console.log(
+				"Nightglide updates through git. In the Nightglide repository run:\n  git pull && git submodule update --init --recursive && bun install",
+			);
+			return;
+		}
 		if (flags.plugins) {
 			await pluginCli.runPluginCommand({ action: "upgrade", args: [], flags: flags.check ? { dryRun: true } : {} });
 		} else {

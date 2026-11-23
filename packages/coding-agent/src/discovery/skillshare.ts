@@ -104,7 +104,7 @@ export async function loadSkillshareSkills(ctx: LoadContext): Promise<LoadResult
 registerProvider<Skill>(skillCapability.id, {
 	id: SKILLSHARE_PROVIDER_ID,
 	displayName: "Skillshare",
-	description: "Registry skills installed with `omp skill install` (skills.lock.json)",
+	description: "Registry skills installed with `nightglide skill install` (skills.lock.json)",
 	priority: PRIORITY,
 	load: loadSkillshareSkills,
 });

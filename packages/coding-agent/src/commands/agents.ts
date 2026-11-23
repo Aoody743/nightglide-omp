@@ -1,3 +1,4 @@
+import { CLI_NAME } from "@oh-my-pi/pi-utils";
 /**
  * Manage bundled task agents.
  */
@@ -28,16 +29,16 @@ export default class Agents extends Command {
 	};
 
 	static examples = [
-		"# Export bundled agents into user config (default)\n  omp agents unpack",
-		"# Export bundled agents into project config\n  omp agents unpack --project",
-		"# Overwrite existing local agent files\n  omp agents unpack --project --force",
-		"# Export into a custom directory\n  omp agents unpack --dir ./tmp/agents --json",
+		"# Export bundled agents into user config (default)\n  nightglide agents unpack",
+		"# Export bundled agents into project config\n  nightglide agents unpack --project",
+		"# Overwrite existing local agent files\n  nightglide agents unpack --project --force",
+		"# Export into a custom directory\n  nightglide agents unpack --dir ./tmp/agents --json",
 	];
 
 	async run(): Promise<void> {
 		const { args, flags } = await this.parse(Agents);
 		if (!args.action) {
-			renderCommandHelp("omp", "agents", Agents);
+			renderCommandHelp(CLI_NAME, "agents", Agents);
 			return;
 		}
 

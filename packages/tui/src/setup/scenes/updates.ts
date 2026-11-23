@@ -20,7 +20,7 @@ const UPDATE_ITEMS: readonly SelectItem[] = [
 	{
 		value: "notify",
 		label: "2  Notify me",
-		description: "Show a notice on startup; run omp update yourself",
+		description: "Show a notice on startup; run nightglide update yourself",
 	},
 ];
 

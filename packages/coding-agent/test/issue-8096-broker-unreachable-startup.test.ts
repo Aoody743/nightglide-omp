@@ -38,8 +38,8 @@ describe("describeAuthBrokerStartupError", () => {
 		expect(message).not.toBeNull();
 		expect(message).toContain("Auth broker request failed after 2 attempt(s)");
 		// Both recovery routes the reporter asked for: start it, or disable it.
-		expect(message).toContain("omp auth-broker serve");
-		expect(message).toContain("omp config reset auth.broker.url");
+		expect(message).toContain("nightglide auth-broker serve");
+		expect(message).toContain("nightglide config reset auth.broker.url");
 		expect(message).toContain("OMP_AUTH_BROKER_URL");
 	});
 
@@ -108,6 +108,6 @@ describe("runRootCommand — unreachable auth broker at startup", () => {
 		expect(thrown).toBeInstanceOf(ProcessExitSignal);
 		expect(exitCodes).toEqual([1]);
 		expect(stderr).toContain("Auth broker request failed after 2 attempt(s)");
-		expect(stderr).toContain("omp auth-broker serve");
+		expect(stderr).toContain("nightglide auth-broker serve");
 	}, 15_000);
 });

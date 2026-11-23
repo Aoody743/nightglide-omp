@@ -225,7 +225,7 @@ const TRANSPORTS: readonly TransportType[] = ["stdio", "http", "sse"];
 
 /** How each transport reads as a choice and in the review. */
 const TRANSPORT_CHOICES: Readonly<Record<TransportType, { icon: string; label: string; description: string }>> = {
-	stdio: { icon: "terminal", label: "Local command", description: "omp starts it on this machine" },
+	stdio: { icon: "terminal", label: "Local command", description: "Nightglide starts it on this machine" },
 	http: { icon: "globe", label: "Remote server", description: "Streamable HTTP endpoint" },
 	sse: { icon: "broadcast", label: "Server-sent events", description: "Older HTTP servers" },
 };
@@ -815,7 +815,7 @@ export class MCPAddWizard extends OverlayPanel {
 	#renderCommandStep(): void {
 		this.#inputStep({
 			title: "Command",
-			lead: "The program omp starts for this server.",
+			lead: "The program Nightglide starts for this server.",
 			initial: this.#state.command,
 			placeholder: "npx",
 			escape: "go back",
@@ -1327,7 +1327,7 @@ export class MCPAddWizard extends OverlayPanel {
 	#renderAuthMethodStep(): void {
 		this.#choiceStep({
 			title: "How does it authenticate?",
-			lead: `${this.#state.name} needs credentials before omp can use it.`,
+			lead: `${this.#state.name} needs credentials before Nightglide can use it.`,
 			choices: [
 				{ icon: "log-in", label: "Sign in with OAuth", description: "Opens your browser" },
 				{ icon: "key", label: "API key or token", description: "Paste it, or run a command that prints it" },

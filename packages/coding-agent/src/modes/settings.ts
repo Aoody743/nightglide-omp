@@ -707,23 +707,15 @@ export const cfgTuiMotion = register({
 	},
 });
 
+/**
+ * Retired: Glide is the only interactive layout. Still registered, hidden and
+ * unread, so configs written while the classic layout existed keep loading.
+ */
 export const cfgNightglideLayout = register({
 	id: "nightglide.layout",
 	type: "enum",
 	values: ["classic", "glide"] as const,
 	default: "glide",
-	env: "NIGHTGLIDE_LAYOUT",
-	ui: {
-		tab: "appearance",
-		group: "Display",
-		label: "Nightglide Layout",
-		description:
-			"Classic keeps the inline transcript in your terminal's own scrollback. Glide paints a fullscreen window with scene bands, an information column and in-app scrolling. F2 switches for the current session",
-		options: [
-			{ value: "glide", label: "Glide", description: "Fullscreen layout with in-app scrolling (default)" },
-			{ value: "classic", label: "Classic", description: "Inline transcript in native scrollback" },
-		],
-	},
 });
 
 /** Effective animation settings: `tui.motion`'s preset under the user's own spinner interval and shimmer. */
@@ -1320,7 +1312,7 @@ export const cfgUpdateChannel = register({
 		tab: "interaction",
 		group: "Startup & Updates",
 		label: "Update Channel",
-		description: "Update channel used by omp update and the startup update check",
+		description: "Update channel used by nightglide update and the startup update check",
 		options: [
 			{ value: "stable", label: "Stable" },
 			{ value: "canary", label: "Canary" },

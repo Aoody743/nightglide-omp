@@ -21,6 +21,11 @@ import { isBunTestRuntime } from "./test-runtime";
 
 /** App name (e.g. "omp") */
 export const APP_NAME: string = "omp";
+/**
+ * Command name shown to users in help, hints and examples. `APP_NAME` keeps
+ * naming directories, logs and process titles; this is display only.
+ */
+export const CLI_NAME: string = process.env.PI_RAW_BIN || "nightglide";
 
 /** Public homepage that inference gateways (OpenRouter, Vercel AI Gateway) credit omp traffic to. */
 export const APP_URL: string = "https://omp.sh/";
@@ -33,6 +38,13 @@ export const MAIN_CONFIG_FILENAMES = ["config.yml", "config.yaml"] as const;
 
 /** Version (e.g. "1.0.0") */
 export const VERSION: string = version;
+
+/**
+ * Nightglide product version shown to users (`--version`, help header, welcome
+ * banner). `VERSION` stays the upstream OMP version: relay, plugin and
+ * changelog compatibility checks compare against it.
+ */
+export const PRODUCT_VERSION: string = "1.0.0-beta.1";
 
 /** Default User-Agent header string (e.g. "omp/17.2.12") */
 export const USER_AGENT = `omp/${VERSION}`;

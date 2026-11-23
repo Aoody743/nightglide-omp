@@ -13,7 +13,7 @@ saveTextLockfile = true
 ".lark" = "text"
 
 [test]
-# Upstream suites run against the classic layout; see the preload for why.
+# Upstream suites keep the inline renderer through a test-only switch; see the preload.
 preload = ["./scripts/nightglide-test-preload.ts"]
 # bun test does NOT honor .gitignore; prune robomp's repo clones and
 # scratch dirs so a root-level `bun test` doesn't walk into them.

@@ -71,7 +71,6 @@ interface AppKeybindings {
 	"app.stt.pushToTalk": true;
 	"app.stt.toggle": true;
 	"app.live.toggle": true;
-	"app.nightglide.glide": true;
 }
 
 /** Application action identifier registered alongside the base TUI keybindings. */
@@ -118,10 +117,6 @@ export const KEYBINDINGS = {
 	"app.thinking.cycle": {
 		defaultKeys: "shift+tab",
 		description: "Cycle thinking level",
-	},
-	"app.nightglide.glide": {
-		defaultKeys: "f2",
-		description: "Toggle the fullscreen Glide layout",
 	},
 	"app.thinking.toggle": {
 		defaultKeys: "ctrl+t",

@@ -2,7 +2,7 @@
  * CLI argument parsing and help display
  */
 import * as path from "node:path";
-import { $env, APP_NAME } from "@oh-my-pi/pi-utils";
+import { CLI_NAME, $env } from "@oh-my-pi/pi-utils";
 import chalk from "@oh-my-pi/pi-utils/chalk";
 import type { MotionMode } from "../config/motion-presets";
 import type { ServiceTierOpenAISettingValue } from "../config/service-tier";
@@ -102,8 +102,6 @@ export interface Args {
 	spinnerInterval?: number;
 	/** `--max-fps <n>`: ephemeral `tui.maxFps` override — the ceiling on how often the TUI repaints. */
 	maxFps?: number;
-	/** `--classic` / `--glide`: ephemeral `nightglide.layout` override for this run. */
-	layout?: "classic" | "glide";
 	/** `--motion <full|reduced|none>`: ephemeral `tui.motion` override — one switch over every animation. */
 	motion?: MotionMode;
 	/** RPC modes only: run extensions without a UI; `rpc-ui` tool UI remains enabled. */
@@ -385,10 +383,6 @@ export function parseArgs(inputArgs: string[], extensionFlags?: Map<string, { ty
 			result.advisor = true;
 		} else if (arg === "--wait-async") {
 			result.waitAsync = true;
-		} else if (arg === "--classic") {
-			result.layout = "classic";
-		} else if (arg === "--glide") {
-			result.layout = "glide";
 		} else if (arg === "--external-thinking") {
 			result.externalThinking = true;
 		} else if (arg === "--prewalk") {
@@ -520,7 +514,7 @@ export function reportUnrecognizedFlags(
 	const flags = args.unrecognizedFlags;
 	const plural = flags.length === 1 ? "" : "s";
 	write(`${chalk.red(`Error: unknown flag${plural}: ${flags.join(", ")}`)}\n`);
-	write(`Run \`${APP_NAME} --help\` for available flags.\n`);
+	write(`Run \`${CLI_NAME} --help\` for available flags.\n`);
 	return true;
 }
 
@@ -545,15 +539,15 @@ export function reportCliUsageError(
 ): boolean {
 	if (!(error instanceof CliUsageError)) return false;
 	write(`${chalk.red(`Error: ${error.message}`)}\n`);
-	write(`Run \`${APP_NAME} --help\` for available flags.\n`);
+	write(`Run \`${CLI_NAME} --help\` for available flags.\n`);
 	return true;
 }
 
 export function printHelp(): void {
 	process.stdout.write(
-		`${chalk.bold(APP_NAME)} - AI coding assistant\n\n` +
-			`Run ${APP_NAME} --help for full command and option details.\n` +
-			`Run ${APP_NAME} <command> --help for command-specific help.\n\n` +
+		`${chalk.bold(CLI_NAME)} - AI coding assistant\n\n` +
+			`Run ${CLI_NAME} --help for full command and option details.\n` +
+			`Run ${CLI_NAME} <command> --help for command-specific help.\n\n` +
 			`${getExtraHelpText()}\n`,
 	);
 }

@@ -3,7 +3,7 @@ import * as path from "node:path";
 import { buildSessionTraceFromSnapshots } from "@oh-my-pi/omp-stats/trace";
 import type { SessionTrace } from "@oh-my-pi/omp-stats/types";
 import type { AgentState } from "@oh-my-pi/pi-agent-core";
-import { APP_NAME, isCompiledBinary, isEnoent, VERSION } from "@oh-my-pi/pi-utils";
+import { CLI_NAME, isCompiledBinary, isEnoent, VERSION } from "@oh-my-pi/pi-utils";
 import { getResolvedThemeColors, getThemeExportColors } from "@oh-my-pi/pi-tui/theme";
 import type { SessionEntry, SessionHeader } from "../../session/session-entries";
 import { SessionManager } from "../../session/session-manager";
@@ -246,7 +246,7 @@ async function exportSessionData(sessionData: SessionData, sessionFile: string, 
 
 	// Resolve once: Bun on Windows fails to mkdir relative paths that normalize to cwd (oven-sh/bun#45059).
 	const outputPath = path.resolve(
-		opts.outputPath || `${APP_NAME}-session-${path.basename(sessionFile, ".jsonl")}.html`,
+		opts.outputPath || `${CLI_NAME}-session-${path.basename(sessionFile, ".jsonl")}.html`,
 	);
 	await writeExportHtml(sessionData, outputPath, opts);
 	return outputPath;

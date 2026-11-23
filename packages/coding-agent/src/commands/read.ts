@@ -18,14 +18,14 @@ export default class Read extends Command {
 	};
 
 	static examples = [
-		"omp read src/foo.ts",
-		"omp read src/foo.ts:50-100",
-		"omp read src/foo.ts:raw",
-		"omp read https://example.com",
-		"omp read omp://",
-		"omp read issue://123",
-		"omp read path/to/archive.zip:dir/file.ts",
-		"omp read path/to/db.sqlite:users:42",
+		"nightglide read src/foo.ts",
+		"nightglide read src/foo.ts:50-100",
+		"nightglide read src/foo.ts:raw",
+		"nightglide read https://example.com",
+		"nightglide read omp://",
+		"nightglide read issue://123",
+		"nightglide read path/to/archive.zip:dir/file.ts",
+		"nightglide read path/to/db.sqlite:users:42",
 	];
 
 	async run(): Promise<void> {

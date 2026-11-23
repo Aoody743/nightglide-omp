@@ -28,7 +28,7 @@ export const BUILTIN_COMPOSER_SHAPES = [
 	},
 	{
 		value: "pi",
-		label: "Pi",
+		label: "Framed Rules",
 		description: "Framed horizontal rules with status line at bottom",
 	},
 	{

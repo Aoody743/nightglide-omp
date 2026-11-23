@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { APP_NAME, removeWithRetries } from "@oh-my-pi/pi-utils";
+import { CLI_NAME, removeWithRetries } from "@oh-my-pi/pi-utils";
 import { $ } from "bun";
 import { exportFromFile, exportSessionToHtml, type SessionData } from "../src/export/html";
 import type { SessionHeader } from "../src/session/session-entries";
@@ -359,7 +359,7 @@ describe("HTML export relative output paths", () => {
 	});
 
 	test.each([
-		["the default filename", undefined, `${APP_NAME}-session-main.html`],
+		["the default filename", undefined, `${CLI_NAME}-session-main.html`],
 		["a path that normalizes to cwd", "sub/../export.html", "export.html"],
 	])("writes %s into cwd and returns its absolute path", async (_description, outputPath, written) => {
 		const probe = path.join(import.meta.dir, "fixtures", "html-export-path-probe.ts");

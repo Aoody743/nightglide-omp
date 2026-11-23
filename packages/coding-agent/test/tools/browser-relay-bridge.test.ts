@@ -3253,7 +3253,7 @@ describe("RelayBridge download paths", () => {
 		const { cdp, id } = await askPath(bridge, ext);
 		expect(ext.rpcs("findDownload")).toEqual([]);
 		expect(cdp.messages.find(m => m.id === id)).toMatchObject({
-			error: { message: expect.stringContaining("run `omp browser-relay install`") },
+			error: { message: expect.stringContaining("run `nightglide browser-relay install`") },
 		});
 	});
 });

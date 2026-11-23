@@ -68,14 +68,14 @@ export default class Worktree extends Command {
 	};
 
 	static examples = [
-		"omp worktree",
-		"omp worktree list --json",
-		"omp worktree add ../feature",
-		"omp worktree add -b feature ../feature origin/main",
-		"omp worktree add --detach ../review HEAD~2",
-		"omp worktree clear",
-		"omp worktree clear --dry-run",
-		"omp worktree clear --all",
+		"nightglide worktree",
+		"nightglide worktree list --json",
+		"nightglide worktree add ../feature",
+		"nightglide worktree add -b feature ../feature origin/main",
+		"nightglide worktree add --detach ../review HEAD~2",
+		"nightglide worktree clear",
+		"nightglide worktree clear --dry-run",
+		"nightglide worktree clear --all",
 	];
 
 	async run(): Promise<void> {

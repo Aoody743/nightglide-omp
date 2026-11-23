@@ -9,14 +9,14 @@ import * as os from "node:os";
 import type { ThinkingLevel } from "@oh-my-pi/pi-agent-core/thinking";
 import type { ImageContent, Model } from "@oh-my-pi/pi-ai";
 import { getModelPricingStatus } from "@oh-my-pi/pi-catalog/models";
-import { ensureSqliteLockShim, isEnoent, isEnotdir } from "@oh-my-pi/pi-utils";
+import { CLI_NAME, ensureSqliteLockShim, isEnoent, isEnotdir } from "@oh-my-pi/pi-utils";
 import {
-	APP_NAME,
 	directoryIsMissing,
 	getAgentDir,
 	getLogPath,
 	getProjectDir,
 	normalizePathForComparison,
+	PRODUCT_VERSION,
 	setProjectDir,
 	VERSION,
 } from "@oh-my-pi/pi-utils/dirs";
@@ -187,7 +187,6 @@ import {
 	cfgTuiSpinnerInterval,
 	cfgTuiMaxFps,
 	cfgTuiMotion,
-	cfgNightglideLayout,
 	cfgUpdateAuto,
 	cfgUpdateChannel,
 } from "./modes/settings";
@@ -319,7 +318,7 @@ function rejectNoUiWithoutRpc(args: Pick<Args, "noUi" | "mode">): void {
 function exitWithoutTerminal(): never {
 	process.stderr.write(
 		`${chalk.red("Error: interactive mode requires a terminal, but stdin is not a TTY.")}\n` +
-			`Pass a prompt (\`${APP_NAME} -p "…"\`), pipe one on stdin, or use \`--mode rpc\`.\n`,
+			`Pass a prompt (\`${CLI_NAME} -p "…"\`), pipe one on stdin, or use \`--mode rpc\`.\n`,
 	);
 	process.exit(2);
 }
@@ -991,7 +990,7 @@ async function openRelocatedSession(
 		// Its directory is gone, so it cannot be resumed in place either.
 		throw new SessionResolutionError(
 			err.message,
-			"Close the session in the other omp process, then resume it again.",
+			"Close the session in the other Nightglide process, then resume it again.",
 		);
 	}
 }
@@ -1252,7 +1251,7 @@ export function normalizeContinueSessionArgs(parsed: Args, rawArgs?: readonly st
 	parsed.messages.splice(messageIndex, 1);
 }
 const SESSION_NOT_FOUND_HINT =
-	"Run `omp --resume` without an argument to pick from recent sessions, or `omp` to start a new one.";
+	"Run `nightglide --resume` without an argument to pick from recent sessions, or `nightglide` to start a new one.";
 
 function validateSessionPersistenceArgs(parsed: Pick<Args, "continue" | "noSession" | "resume">): void {
 	if (!parsed.noSession) return;
@@ -1862,7 +1861,7 @@ export async function runRootCommand(
 		const notifs: (InteractiveModeNotify | null)[] = [];
 
 		if (parsedArgs.version) {
-			writeStartupNotice(parsedArgs, `${VERSION}\n`);
+			writeStartupNotice(parsedArgs, `${PRODUCT_VERSION}\n`);
 			process.exit(0);
 		}
 
@@ -2106,9 +2105,6 @@ export async function runRootCommand(
 		}
 		if (parsedArgs.motion !== undefined) {
 			cfgTuiMotion.override(settingsInstance, parsedArgs.motion);
-		}
-		if (parsedArgs.layout !== undefined) {
-			cfgNightglideLayout.override(settingsInstance, parsedArgs.layout);
 		}
 
 		await logger.time(
@@ -2652,9 +2648,9 @@ export async function runRootCommand(
 					signal: pythonEvalProbeAbort.signal,
 				}).finally(unregisterPythonEvalProbe);
 			}
-			// Resumed and imported sessions neither show nor advance the startup changelog.
-			const showsStartupChangelog =
-				isInteractive && !(parsedArgs.continue || parsedArgs.resume || isForeignSessionImport(parsedArgs));
+			// Nightglide: the bundled changelog is upstream OMP's release history, not
+			// Nightglide's, so it never pops up at startup (`/changelog` still shows it).
+			const showsStartupChangelog = false as boolean;
 
 			const preloadProviderRegistrations =
 				isInteractive && autoResumed ? extensionsResult.runtime.pendingProviderRegistrations.slice() : [];
@@ -2848,7 +2844,7 @@ export async function runRootCommand(
 						for (const selector of suggestions) process.stderr.write(`  ${selector}\n`);
 					}
 					process.stderr.write(
-						`\nRun \`${APP_NAME} models find <pattern>\` to search, or \`${APP_NAME} models\` to list all.\n`,
+						`\nRun \`${CLI_NAME} models find <pattern>\` to search, or \`${CLI_NAME} models\` to list all.\n`,
 					);
 					process.exit(1);
 				}
@@ -2909,7 +2905,7 @@ export async function runRootCommand(
 					logger.endTiming();
 					await runInteractiveMode(
 						session,
-						VERSION,
+						PRODUCT_VERSION,
 						notifs,
 						versionCheckPromise,
 						initialArgs.messages,

@@ -2234,7 +2234,7 @@ export class RelayBridge {
 			this.#replyError(
 				conn,
 				msg,
-				"the omp relay extension in this browser predates download tracking; run `omp browser-relay install` and reload the extension in chrome://extensions",
+				"the omp relay extension in this browser predates download tracking; run `nightglide browser-relay install` and reload the extension in chrome://extensions",
 			);
 			return false;
 		}

@@ -345,22 +345,22 @@ export function isSubcommand(first: string | undefined): boolean {
 // fires vs. when the argv still falls through to `launch`.
 const RESERVED_TOP_LEVEL_WORDS: Record<string, string> = {
 	extensions:
-		'`omp extensions` is not a management command. Use `omp plugin list` / `omp plugin install`, or run `omp launch extensions` if you meant to send "extensions" as a prompt.',
-	list: '`omp list` is not a top-level command. Use `omp plugin list` to list installed plugins, or run `omp launch list` if you meant to send "list" as a prompt.',
+		'`nightglide extensions` is not a management command. Use `nightglide plugin list` / `nightglide plugin install`, or run `nightglide launch extensions` if you meant to send "extensions" as a prompt.',
+	list: '`nightglide list` is not a top-level command. Use `nightglide plugin list` to list installed plugins, or run `nightglide launch list` if you meant to send "list" as a prompt.',
 	remove:
-		'`omp remove` is not a top-level command. Use `omp plugin uninstall <name>` to remove a plugin, or run `omp launch remove` if you meant to send "remove" as a prompt.',
+		'`nightglide remove` is not a top-level command. Use `nightglide plugin uninstall <name>` to remove a plugin, or run `nightglide launch remove` if you meant to send "remove" as a prompt.',
 	uninstall:
-		'`omp uninstall` is not a top-level command. Use `omp plugin uninstall <name@marketplace>` to remove a plugin, or run `omp launch uninstall` if you meant to send "uninstall" as a prompt.',
+		'`nightglide uninstall` is not a top-level command. Use `nightglide plugin uninstall <name@marketplace>` to remove a plugin, or run `nightglide launch uninstall` if you meant to send "uninstall" as a prompt.',
 	marketplace:
-		'`omp marketplace` is not a top-level command. Use `omp plugin marketplace <add|remove|update|list>` to manage marketplaces, or run `omp launch marketplace` if you meant to send "marketplace" as a prompt.',
+		'`nightglide marketplace` is not a top-level command. Use `nightglide plugin marketplace <add|remove|update|list>` to manage marketplaces, or run `nightglide launch marketplace` if you meant to send "marketplace" as a prompt.',
 	discover:
-		'`omp discover` is not a top-level command. Use `omp plugin discover [marketplace]` to browse available plugins, or run `omp launch discover` if you meant to send "discover" as a prompt.',
+		'`nightglide discover` is not a top-level command. Use `nightglide plugin discover [marketplace]` to browse available plugins, or run `nightglide launch discover` if you meant to send "discover" as a prompt.',
 	upgrade:
-		'`omp upgrade` is not a top-level command. Use `omp plugin upgrade [name]` to upgrade plugins, or run `omp launch upgrade` if you meant to send "upgrade" as a prompt.',
+		'`nightglide upgrade` is not a top-level command. Use `nightglide plugin upgrade [name]` to upgrade plugins, or run `nightglide launch upgrade` if you meant to send "upgrade" as a prompt.',
 	enable:
-		'`omp enable` is not a top-level command. Use `omp plugin enable <name@marketplace>` to enable a plugin, or run `omp launch enable` if you meant to send "enable" as a prompt.',
+		'`nightglide enable` is not a top-level command. Use `nightglide plugin enable <name@marketplace>` to enable a plugin, or run `nightglide launch enable` if you meant to send "enable" as a prompt.',
 	disable:
-		'`omp disable` is not a top-level command. Use `omp plugin disable <name@marketplace>` to disable a plugin, or run `omp launch disable` if you meant to send "disable" as a prompt.',
+		'`nightglide disable` is not a top-level command. Use `nightglide plugin disable <name@marketplace>` to disable a plugin, or run `nightglide launch disable` if you meant to send "disable" as a prompt.',
 };
 
 // Sub-actions that make `omp marketplace <sub>` unambiguously a management
@@ -372,7 +372,7 @@ const MARKETPLACE_SUBCOMMANDS: Record<string, true> = { add: true, remove: true,
  * Hint for a reserved plugin/marketplace verb used as a top-level command, or
  * `undefined` when the argv should fall through to `launch`.
  *
- * A bare verb (`omp marketplace`) always hints. A multi-word invocation only
+ * A bare verb (`nightglide marketplace`) always hints. A multi-word invocation only
  * hints when the arguments follow the documented plugin grammar — a marketplace
  * sub-action (`omp marketplace add …`) or a `name@marketplace` plugin id
  * (`omp uninstall foo@bar`) — so genuine prompts that merely begin with one of

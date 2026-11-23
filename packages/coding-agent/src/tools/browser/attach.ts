@@ -700,7 +700,7 @@ export async function pickElectronTarget(browser: Browser, options: PickTargetOp
 						throwIfAborted(options.signal);
 						if (isPuppeteerTimeout(error)) {
 							throw new ToolError(
-								"Selected tab did not become available before omp could attach; retry, or reopen it if it closed",
+								"Selected tab did not become available before Nightglide could attach; retry, or reopen it if it closed",
 							);
 						}
 						throw error;

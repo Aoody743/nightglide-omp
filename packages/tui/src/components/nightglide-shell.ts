@@ -508,7 +508,7 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 		const lines = [
 			theme.bold(c(fam.text, "向未知滑行")),
 			c(fam.soft, "在下方输入任务，按 Enter 发送"),
-			c(fam.soft, "滚轮 / PgUp 回看 · /copy 复制 · F2 切回经典模式"),
+			c(fam.soft, "滚轮 / PgUp 回看 · /copy 复制 · /theme 换主题"),
 		];
 		const out: string[] = [];
 		const top = Math.max(0, Math.floor((rows - lines.length) / 2));

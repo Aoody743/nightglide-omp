@@ -602,7 +602,7 @@ describe("relay tabs Chrome detaches omp from", () => {
 			const result = await next;
 			expect(result.value).toBe("kept");
 			expect(result.text).toContain(
-				"omp reattached to the same tab on a new worker, without reloading it, and then ran this call",
+				"Nightglide reattached to the same tab on a new worker, without reloading it, and then ran this call",
 			);
 		},
 		60_000,

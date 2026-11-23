@@ -204,7 +204,7 @@ async function requireDirectory(dir: string): Promise<void> {
 async function requireSessionId(file: string): Promise<string> {
 	await requireFile(file, "Session file");
 	const id = await readSessionHeaderId(file);
-	if (id === undefined) throw new SessionTransferError(`Not an omp session file (no session header): ${file}`);
+	if (id === undefined) throw new SessionTransferError(`Not a Nightglide session file (no session header): ${file}`);
 	return id;
 }
 
@@ -217,7 +217,7 @@ function claimSessionOrRefuse(id: string, file: string, action: string): () => v
 	const release = new FileSessionStorage().claimSession(id, file);
 	if (!release) {
 		throw new SessionTransferError(
-			`Cannot ${action} ${file}: another live omp process writes this session. Exit it first. Nothing was changed.`,
+			`Cannot ${action} ${file}: another live Nightglide process writes this session. Exit it first. Nothing was changed.`,
 		);
 	}
 	return release;
@@ -287,7 +287,7 @@ export async function packSession(sessionFile: string, outPath: string): Promise
 		const journalText = journal.toString("utf8");
 		const header = parseSessionContent(journalText).entries[0];
 		if (header?.type !== "session") {
-			throw new SessionTransferError(`Not an omp session file (no session header): ${source}`);
+			throw new SessionTransferError(`Not a Nightglide session file (no session header): ${source}`);
 		}
 		const manifest: SessionArchiveManifest = {
 			version: SESSION_ARCHIVE_VERSION,
