@@ -12,7 +12,10 @@
  * (parallax), one thin light band with soft edges, and twinkling sparks in
  * the gaps. Dive: slanted light shafts from the surface, tapering plants
  * swaying on the seabed, bubbles that wobble as they rise at their own speed,
- * and faint drifting particles.
+ * and faint drifting particles. Aurora: curtains of light that glow green at
+ * their lower edge and fade to violet as their rays climb, drifting over a
+ * starfield, above a dark mountain ridge; on launch the curtains sweep in
+ * from the left and brighten (`intro`).
  *
  * Pure function of its inputs: `time` is a scene clock the caller advances
  * (constant when motion is off), and `intensity` (0–1) comes from the
@@ -31,6 +34,10 @@ export interface PixelPalette {
 	spark: string;
 	/** Dive only: plant silhouettes, dark → light. */
 	plants?: readonly string[];
+	/** Aurora only: the upper, violet part of the curtains, faint → bright. */
+	upper?: readonly string[];
+	/** Aurora only: mountain ridge, body → lit crest. */
+	ground?: readonly string[];
 	/**
 	 * Hand-picked replacements for the colors normally blended from the page
 	 * (light band, light shafts, far clouds, particles). On 256-color terminals
@@ -46,11 +53,19 @@ export interface PixelEncoder {
 
 export type SceneEdge = "top" | "bottom";
 
+/** Which scene a theme family draws. */
+export type SceneKind = "flight" | "dive" | "aurora";
+
 export interface SceneOptions {
 	/** Scene clock; the caller advances it, faster at higher effort. */
 	time: number;
 	/** 0–1 from the effective thinking effort; 0 when unknown or off. */
 	intensity: number;
+	/**
+	 * 0–1 progress of the launch animation (Aurora's curtains sweeping in); 1 = finished.
+	 * Omitted means finished, so a still frame (motion off) shows the whole scene.
+	 */
+	intro?: number;
 }
 
 function hash(x: number, y: number, salt: number): number {
@@ -244,20 +259,76 @@ const divePixel: PixelFn = (x, py, pixelRows, edge, pal, der, { time, intensity 
 	return pal.page;
 };
 
+/** Columns the launch sweep covers; wider windows finish the sweep at their right edge. */
+const AURORA_SWEEP_COLUMNS = 200;
+
+const auroraPixel: PixelFn = (x, py, pixelRows, edge, pal, der, { time, intensity, intro = 1 }) => {
+	const salt = edge === "top" ? 61 : 67;
+	const upper = pal.upper ?? pal.ramp;
+
+	// Launch: the curtains sweep in from the left with a bright leading edge, then settle.
+	const front = intro * AURORA_SWEEP_COLUMNS * 1.15;
+	const reveal = intro >= 1 ? 1 : smooth(Math.min(1, Math.max(0, (front - x) / 28)));
+	const flare = intro >= 1 ? 0 : Math.max(0, 1 - Math.abs(front - x) / 10) * (1 - intro);
+
+	if (edge === "bottom") {
+		// Mountain ridge rooted at the window edge, with a lit crest.
+		const ground = pal.ground ?? [pal.page];
+		const ridge = pixelRows * (0.25 + 0.55 * fbm(x / 16, 0, salt));
+		const fromBase = pixelRows - 1 - py;
+		if (fromBase < ridge - 1) return ground[0]!;
+		if (fromBase < ridge) return ground[Math.min(ground.length - 1, 1)]!;
+		// A thin glow along the crest, as if lit by the curtains above.
+		if (fromBase - ridge < 1 && reveal * fbm((x + time * 0.05) / 20, 0, salt + 3) > 0.5) return der.far[0]!;
+	} else {
+		// Curtains: a wavy lower edge that drifts; brightest at the edge, rays climbing above it.
+		const drift = time * 0.045;
+		const edgeRow = pixelRows * (0.8 + 0.1 * Math.sin((x + drift * 3) / 17 + salt)) + Math.sin(x / 5.3) * 0.6;
+		const above = edgeRow - py;
+		const height = pixelRows * 0.85;
+		if (above >= 0 && above < height) {
+			// Separate curtains with dark gaps between them.
+			const presence = fbm((x + drift) / 22, 0, salt);
+			// Thin vertical rays: strong contrast across columns, slow shimmer along them.
+			const ray = valueNoise(x / 1.15 + time * 0.035, py / 14, salt + 5);
+			const rays = 0.1 + 0.9 * ray * ray;
+			// Brightest in a thin lower edge, then fading quickly as the rays climb.
+			const falloff = above < 1 ? 1.15 : Math.exp(-(above - 1) / (height * 0.5));
+			const light = ((presence - 0.36) * 2.8 + intensity * 0.12) * rays * falloff * reveal;
+			const ramp = above / height > 0.4 ? upper : pal.ramp;
+			// Below a floor the sky stays dark, so faint light never becomes a dithered haze.
+			const color = rampColor(ramp, light - 0.14 + flare * 0.6, x, py);
+			if (color) return color;
+		}
+		if (flare > 0.5 && above >= 0 && above < height * 0.6) return pal.spark;
+	}
+
+	// Starfield behind everything; some stars twinkle.
+	const twinkle = Math.floor(time / 11);
+	if (hash(x, py, salt + 99 + (hash(x, py, salt) > 0.6 ? twinkle : 0)) > 0.993 - intensity * 0.01) return pal.spark;
+	return pal.page;
+};
+
+const SCENE_PIXELS: Record<SceneKind, PixelFn> = { flight: flightPixel, dive: divePixel, aurora: auroraPixel };
+
 /** Render `rows` terminal rows of the scene band. */
 export function renderPixelScene(
 	width: number,
 	rows: number,
-	dive: boolean,
+	kind: SceneKind,
 	edge: SceneEdge,
 	pal: PixelPalette,
 	enc: PixelEncoder,
 	opts: SceneOptions,
 ): string[] {
 	const pixelRows = rows * 2;
-	const pixel = dive ? divePixel : flightPixel;
+	const pixel = SCENE_PIXELS[kind];
 	const der = derive(pal);
-	const options: SceneOptions = { time: opts.time, intensity: Math.min(1, Math.max(0, opts.intensity)) };
+	const options: SceneOptions = {
+		time: opts.time,
+		intensity: Math.min(1, Math.max(0, opts.intensity)),
+		intro: Math.min(1, Math.max(0, opts.intro ?? 1)),
+	};
 	const fgCache = new Map<string, string>();
 	const bgCache = new Map<string, string>();
 	const fg = (hex: string) => {

@@ -22,7 +22,7 @@ import { bgAnsi, fgAnsi } from "../theme/color";
 import { getCurrentThemeName, theme } from "../theme/theme";
 import type { Component, OverlayFocusOwner } from "../tui";
 import { truncateToWidth, visibleWidth } from "../utils";
-import { type PixelEncoder, type PixelPalette, renderPixelScene } from "./nightglide-pixel-scene";
+import { type PixelEncoder, type PixelPalette, renderPixelScene, type SceneKind } from "./nightglide-pixel-scene";
 
 /** A subagent row in the information column, read from the live registry. */
 export interface NightglideShellSubagent {
@@ -77,7 +77,8 @@ export interface NightglideShellDeps {
 
 interface Family {
 	label: string;
-	dive: boolean;
+	/** Scene the bands draw. */
+	kind: SceneKind;
 	/** Frame lines around panels. */
 	border: string;
 	/** Panel titles and the header rule. */
@@ -100,7 +101,7 @@ function familyFor(name: string | undefined): Family {
 		case "nightglide-cloudlight":
 			return {
 				label: "FLIGHT LIGHT",
-				dive: false,
+				kind: "flight",
 				border: "#7d9fe0",
 				title: "#1d4fbf",
 				text: "#14213d",
@@ -124,7 +125,7 @@ function familyFor(name: string | undefined): Family {
 		case "nightglide-abyss":
 			return {
 				label: "DIVE DARK",
-				dive: true,
+				kind: "dive",
 				border: "#1e7a78",
 				title: "#5fe0c8",
 				text: "#e3f6f2",
@@ -154,7 +155,7 @@ function familyFor(name: string | undefined): Family {
 		case "nightglide-daybreak":
 			return {
 				label: "DIVE LIGHT",
-				dive: true,
+				kind: "dive",
 				border: "#5fb8a8",
 				title: "#0b7a6c",
 				text: "#0f2e2a",
@@ -181,10 +182,39 @@ function familyFor(name: string | undefined): Family {
 					},
 				},
 			};
+		case "nightglide-aurora":
+			return {
+				label: "AURORA",
+				kind: "aurora",
+				border: "#35276b",
+				title: "#d5a6ff",
+				text: "#ece6ff",
+				soft: "#b8aad6",
+				accent: "#78e5d8",
+				warm: "#f2c98a",
+				scene: {
+					page: "#0b0819",
+					ramp: ["#123a3a", "#16685a", "#22a37a", "#34d399", "#b6f5d8"],
+					upper: ["#2a1f55", "#4a3590", "#7a5cc8", "#b48cf2"],
+					ground: ["#05040c", "#2b2350"],
+					accent: "#f2c98a",
+					spark: "#cfc4f2",
+				},
+				scene256: {
+					page: "#080808",
+					ramp: ["#005f5f", "#00875f", "#00af87", "#5fd7af", "#afffd7"],
+					// Grid violets: off-grid ones round to grays on 256-color terminals.
+					upper: ["#00005f", "#5f0087", "#5f5faf", "#af87ff"],
+					ground: ["#000000", "#303030"],
+					accent: "#ffd787",
+					spark: "#d7d7ff",
+					blends: { far: ["#005f5f", "#00875f"] },
+				},
+			};
 		default:
 			return {
 				label: "FLIGHT DARK",
-				dive: false,
+				kind: "flight",
 				border: "#2f5f95",
 				title: "#6fd6ea",
 				text: "#e8ecfa",
@@ -229,6 +259,8 @@ const SCENE_INTENSITY: Record<string, number> = { minimal: 0.15, low: 0.3, mediu
 /** Scene clock advance per animation tick at intensity 0 and 1. */
 const SCENE_SPEED_MIN = 1;
 const SCENE_SPEED_MAX = 1.8;
+/** Scene-clock span of a launch animation: about 3.5 s at the base speed. */
+const SCENE_INTRO_TICKS = 32;
 
 /** 0–1 scene intensity for an effective thinking level. */
 export function sceneIntensity(level: string | undefined): number {
@@ -272,6 +304,9 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 	#phase = 0;
 	/** Scene clock: advances faster at higher effort, so a level change never jumps the picture. */
 	#sceneTime = 0;
+	/** Scene clock when the current scene appeared; its launch animation runs from here. */
+	#sceneStart = 0;
+	#lastSceneKind: SceneKind | undefined;
 	#timer: NodeJS.Timeout | undefined;
 	#unsubscribe: () => void;
 	/** Rows scrolled back from the transcript tail (0 = following). */
@@ -400,14 +435,22 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 		const bodyRows = Math.max(3, height - fixed - sceneTop - sceneBottom);
 		this.#lastBodyRows = bodyRows;
 		// Motion off freezes the clock; effort still shows as density and highlights.
+		// A scene that just appeared (launch or theme switch) plays its intro from here.
+		if (fam.kind !== this.#lastSceneKind) {
+			this.#lastSceneKind = fam.kind;
+			this.#sceneStart = this.#sceneTime;
+		}
+		const motion = motionEffectsEnabled();
 		const sceneOpts = {
-			time: motionEffectsEnabled() ? this.#sceneTime : 0,
+			time: motion ? this.#sceneTime : 0,
 			intensity: sceneIntensity(this.#deps.state().thinkingLevel),
+			// Motion off shows the finished scene at once.
+			intro: motion ? Math.min(1, (this.#sceneTime - this.#sceneStart) / SCENE_INTRO_TICKS) : 1,
 		};
 
 		const out: string[] = [];
 		out.push(onBg(this.#header(W, fam, c), W, page));
-		if (sceneTop > 0) out.push(...renderPixelScene(W, sceneTop, fam.dive, "top", scene, enc, sceneOpts));
+		if (sceneTop > 0) out.push(...renderPixelScene(W, sceneTop, fam.kind, "top", scene, enc, sceneOpts));
 		this.#bodyTop = out.length;
 
 		// --- body: conversation panel + information column --------------------
@@ -434,7 +477,7 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 		const room = height - out.length;
 		if (sceneBottom > 0 && room > 0) {
 			out.push(
-				...renderPixelScene(W, Math.min(room, sceneBottom), fam.dive, "bottom", scene, enc, {
+				...renderPixelScene(W, Math.min(room, sceneBottom), fam.kind, "bottom", scene, enc, {
 					...sceneOpts,
 					time: sceneOpts.time + 53,
 				}),

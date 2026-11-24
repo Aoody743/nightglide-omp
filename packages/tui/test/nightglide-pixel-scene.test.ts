@@ -3,6 +3,7 @@ import {
 	type PixelPalette,
 	renderPixelScene,
 	type SceneEdge,
+	type SceneKind,
 } from "@oh-my-pi/pi-tui/components/nightglide-pixel-scene";
 import { NightglideShell, sceneIntensity } from "@oh-my-pi/pi-tui/components/nightglide-shell";
 import { TranscriptContainer } from "@oh-my-pi/pi-tui/chrome/transcript-container";
@@ -44,14 +45,16 @@ function pixels(rows: readonly string[]): string[] {
 
 const lit = (rows: readonly string[]) => pixels(rows).filter(p => p !== PALETTE.page).length;
 
-const render = (dive: boolean, edge: SceneEdge, time: number, intensity: number) =>
-	renderPixelScene(120, 4, dive, edge, PALETTE, TAGS, { time, intensity });
+const render = (kind: SceneKind, edge: SceneEdge, time: number, intensity: number, intro?: number) =>
+	renderPixelScene(120, 4, kind, edge, PALETTE, TAGS, { time, intensity, intro });
 
-const CASES: [string, boolean, SceneEdge][] = [
-	["flight top", false, "top"],
-	["flight bottom", false, "bottom"],
-	["dive top", true, "top"],
-	["dive bottom", true, "bottom"],
+const CASES: [string, SceneKind, SceneEdge][] = [
+	["flight top", "flight", "top"],
+	["flight bottom", "flight", "bottom"],
+	["dive top", "dive", "top"],
+	["dive bottom", "dive", "bottom"],
+	["aurora top", "aurora", "top"],
+	["aurora bottom", "aurora", "bottom"],
 ];
 
 describe("renderPixelScene", () => {
@@ -71,8 +74,30 @@ describe("renderPixelScene", () => {
 		expect(high).toBeGreaterThan(low);
 	});
 
-	it("emits exactly width cells per row", () => {
-		for (const row of render(true, "bottom", 10, 1)) expect(pixels([row]).length).toBe(240);
+	it.each(CASES)("%s: emits exactly width cells per row", (_n, kind, edge) => {
+		for (const row of render(kind, edge, 10, 1)) expect(pixels([row]).length).toBe(240);
+	});
+
+	it("aurora: the launch sweep reveals the curtains from the left", () => {
+		const leftLit = (rows: readonly string[]) =>
+			pixels(rows.map(row => row)).filter((p, i) => i % 240 < 60 && p !== PALETTE.page).length;
+		const rightLit = (rows: readonly string[]) =>
+			pixels(rows).filter((p, i) => i % 240 >= 180 && p !== PALETTE.page).length;
+		let earlyRight = 0;
+		let doneRight = 0;
+		let midLeft = 0;
+		for (let t = 0; t < 400; t += 23) {
+			earlyRight += rightLit(render("aurora", "top", t, 0.5, 0.2));
+			doneRight += rightLit(render("aurora", "top", t, 0.5, 1));
+			midLeft += leftLit(render("aurora", "top", t, 0.5, 0.6));
+		}
+		// Early in the sweep the right side shows at most stars; once done, curtains fill it.
+		expect(doneRight).toBeGreaterThan(earlyRight * 3);
+		expect(midLeft).toBeGreaterThan(0);
+	});
+
+	it("aurora: an omitted intro (motion off) is the finished scene", () => {
+		expect(render("aurora", "top", 0, 0.5)).toEqual(render("aurora", "top", 0, 0.5, 1));
 	});
 });
 
