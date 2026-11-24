@@ -43,7 +43,12 @@ function pixels(rows: readonly string[]): string[] {
 	return out;
 }
 
-const lit = (rows: readonly string[]) => pixels(rows).filter(p => p !== PALETTE.page).length;
+/** Summed channel brightness of every pixel. */
+const brightness = (rows: readonly string[]) =>
+	pixels(rows).reduce((sum, hex) => {
+		const n = Number.parseInt(hex.slice(1), 16);
+		return sum + (n >> 16) + ((n >> 8) & 0xff) + (n & 0xff);
+	}, 0);
 
 const render = (kind: SceneKind, edge: SceneEdge, time: number, intensity: number, intro?: number) =>
 	renderPixelScene(120, 4, kind, edge, PALETTE, TAGS, { time, intensity, intro });
@@ -66,10 +71,11 @@ describe("renderPixelScene", () => {
 	it.each(CASES)("%s: higher effort lights more of the scene", (_n, dive, edge) => {
 		let low = 0;
 		let high = 0;
-		// Sum over several frames so one lucky frame cannot decide the comparison.
+		// Sum over several frames so one lucky frame cannot decide the comparison. Brightness,
+		// not lit-pixel count: Aurora keeps a faint glow everywhere and brightens with effort.
 		for (let t = 0; t < 200; t += 20) {
-			low += lit(render(dive, edge, t, 0));
-			high += lit(render(dive, edge, t, 1));
+			low += brightness(render(dive, edge, t, 0));
+			high += brightness(render(dive, edge, t, 1));
 		}
 		expect(high).toBeGreaterThan(low);
 	});
@@ -94,6 +100,16 @@ describe("renderPixelScene", () => {
 		// Early in the sweep the right side shows at most stars; once done, curtains fill it.
 		expect(doneRight).toBeGreaterThan(earlyRight * 3);
 		expect(midLeft).toBeGreaterThan(0);
+	});
+
+	it.each(CASES)("%s: whole-cell mode paints backgrounds only, one pixel per cell", (_n, kind, edge) => {
+		const rows = renderPixelScene(120, 4, kind, edge, PALETTE, TAGS, { time: 30, intensity: 0.5, cellPixels: 1 });
+		for (const row of rows) {
+			expect(row).not.toContain("▀");
+			expect(row).not.toContain("<f");
+			// A space decodes to two equal pixels: 120 cells.
+			expect(pixels([row]).length).toBe(240);
+		}
 	});
 
 	it("aurora: an omitted intro (motion off) is the finished scene", () => {

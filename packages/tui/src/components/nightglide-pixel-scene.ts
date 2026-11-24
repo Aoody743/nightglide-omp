@@ -36,8 +36,13 @@ export interface PixelPalette {
 	plants?: readonly string[];
 	/** Aurora only: the upper, violet part of the curtains, faint → bright. */
 	upper?: readonly string[];
-	/** Aurora only: mountain ridge, body → lit crest. */
+	/** Aurora only: mountains — near range, far range, lit far crest. */
 	ground?: readonly string[];
+	/**
+	 * The palette holds only colors of a limited grid (256-color terminals): scenes that blend
+	 * colors smoothly (Aurora) pick from the listed stops instead, so nothing rounds to a gray.
+	 */
+	quantized?: boolean;
 	/**
 	 * Hand-picked replacements for the colors normally blended from the page
 	 * (light band, light shafts, far clouds, particles). On 256-color terminals
@@ -66,6 +71,12 @@ export interface SceneOptions {
 	 * Omitted means finished, so a still frame (motion off) shows the whole scene.
 	 */
 	intro?: number;
+	/**
+	 * Pixels per cell, stacked vertically: 2 draws `▀` half blocks (finer, but needs a font whose
+	 * block glyph fills its half exactly); 1 paints each cell's background only, crisp in any font.
+	 * Default 2.
+	 */
+	cellPixels?: 1 | 2;
 }
 
 function hash(x: number, y: number, salt: number): number {
@@ -161,7 +172,7 @@ type PixelFn = (
 	opts: SceneOptions,
 ) => string;
 
-const flightPixel: PixelFn = (x, py, pixelRows, edge, pal, der, { time, intensity }) => {
+const flightPixel: PixelFn = (x, py, pixelRows, edge, pal, der, { time, intensity, cellPixels = 2 }) => {
 	const d = depth(py, pixelRows, edge);
 	const salt = edge === "top" ? 11 : 29;
 
@@ -178,10 +189,12 @@ const flightPixel: PixelFn = (x, py, pixelRows, edge, pal, der, { time, intensit
 	const center = pixelRows * 0.55 + Math.sin((x + time * 0.15) / 23 + salt) * 1.2;
 	if (Math.abs(py - center) < 0.5) {
 		const n = valueNoise((x + time * 0.3) / 9, 0, salt + 3);
-		const threshold = 0.5 - intensity * 0.2;
+		// A whole-cell pixel is twice as tall: keep the thread sparser and dimmer, without glints.
+		const whole = cellPixels === 1;
+		const threshold = 0.5 - intensity * 0.2 + (whole ? 0.18 : 0);
 		if (n > threshold) {
-			const glint = n > 0.86 - intensity * 0.1;
-			return der.glow[glint ? 2 : n > threshold + 0.15 ? 1 : 0]!;
+			const glint = !whole && n > 0.86 - intensity * 0.1;
+			return der.glow[glint ? 2 : !whole && n > threshold + 0.15 ? 1 : 0]!;
 		}
 	}
 
@@ -260,53 +273,130 @@ const divePixel: PixelFn = (x, py, pixelRows, edge, pal, der, { time, intensity 
 };
 
 /** Columns the launch sweep covers; wider windows finish the sweep at their right edge. */
-const AURORA_SWEEP_COLUMNS = 200;
+const AURORA_SWEEP_COLUMNS = 180;
+/** On a 256-color grid, light below this stays sky. */
+const AURORA_GRID_FLOOR = 0.34;
 
-const auroraPixel: PixelFn = (x, py, pixelRows, edge, pal, der, { time, intensity, intro = 1 }) => {
+function smoothstep(lo: number, hi: number, v: number): number {
+	const t = Math.min(1, Math.max(0, (v - lo) / (hi - lo)));
+	return t * t * (3 - 2 * t);
+}
+
+/** A color `t` (0–1) along `stops`: blended for truecolor, the nearest listed stop when quantized. */
+function along(stops: readonly string[], t: number, quantized: boolean): string {
+	const clamped = Math.min(1, Math.max(0, t));
+	if (quantized || stops.length === 1) return stops[Math.min(stops.length - 1, Math.floor(clamped * stops.length))]!;
+	const at = clamped * (stops.length - 1);
+	const i = Math.min(stops.length - 2, Math.floor(at));
+	return mix(stops[i]!, stops[i + 1]!, at - i);
+}
+
+/**
+ * `light` (0–1) of `color` over the page: blended when truecolor; when quantized, the page below
+ * a floor and the listed stops of `ramp` above it.
+ */
+function glowOver(page: string, ramp: readonly string[], color: string, light: number, quantized: boolean): string {
+	if (quantized) return light < 0.12 ? page : along(ramp, (light - 0.12) / 0.88, true);
+	return light <= 0.01 ? page : mix(page, color, Math.min(1, light));
+}
+
+/**
+ * Height of a mountain range at column `x`: peaks every ~`spacing` columns with seeded heights
+ * between `low` and `high`, sides falling `slope` pixels per column; the range is their maximum.
+ */
+function ridgeHeight(x: number, spacing: number, low: number, high: number, slope: number, salt: number): number {
+	const cell = Math.floor(x / spacing);
+	let top = 0;
+	for (let k = -2; k <= 2; k++) {
+		const slot = cell + k;
+		const peakX = slot * spacing + hash(slot, 1, salt) * spacing;
+		const peak = low + (high - low) * hash(slot, 2, salt);
+		top = Math.max(top, peak - Math.abs(x - peakX) * slope);
+	}
+	return top;
+}
+
+const auroraPixel: PixelFn = (x, py, pixelRows, edge, pal, _der, { time, intensity, intro = 1, cellPixels = 2 }) => {
 	const salt = edge === "top" ? 61 : 67;
+	const q = pal.quantized === true;
 	const upper = pal.upper ?? pal.ramp;
 
-	// Launch: the curtains sweep in from the left with a bright leading edge, then settle.
-	const front = intro * AURORA_SWEEP_COLUMNS * 1.15;
+	// Launch: the curtains sweep in from the left behind a bright leading edge, then settle.
+	const front = intro * AURORA_SWEEP_COLUMNS;
 	const reveal = intro >= 1 ? 1 : smooth(Math.min(1, Math.max(0, (front - x) / 28)));
-	const flare = intro >= 1 ? 0 : Math.max(0, 1 - Math.abs(front - x) / 10) * (1 - intro);
+	const flare = intro >= 1 ? 0 : Math.max(0, 1 - Math.abs(front - x) / 8) * (1 - intro);
+
+	// Stars: sparse, two brightnesses, a few twinkling; hidden behind bright light.
+	const twinkle = Math.floor(time / 13);
+	const starSeed = hash(x, py, salt + 99 + (hash(x, py, salt) > 0.7 ? twinkle : 0));
+	const star = starSeed > 0.996 ? pal.spark : starSeed > 0.991 ? mix(pal.page, pal.spark, 0.45) : undefined;
 
 	if (edge === "bottom") {
-		// Mountain ridge rooted at the window edge, with a lit crest.
 		const ground = pal.ground ?? [pal.page];
-		const ridge = pixelRows * (0.25 + 0.55 * fbm(x / 16, 0, salt));
+		const near = ground[0]!;
+		const far = ground[Math.min(1, ground.length - 1)]!;
+		const crest = ground[Math.min(2, ground.length - 1)]!;
 		const fromBase = pixelRows - 1 - py;
-		if (fromBase < ridge - 1) return ground[0]!;
-		if (fromBase < ridge) return ground[Math.min(ground.length - 1, 1)]!;
-		// A thin glow along the crest, as if lit by the curtains above.
-		if (fromBase - ridge < 1 && reveal * fbm((x + time * 0.05) / 20, 0, salt + 3) > 0.5) return der.far[0]!;
-	} else {
-		// Curtains: a wavy lower edge that drifts; brightest at the edge, rays climbing above it.
-		const drift = time * 0.045;
-		const edgeRow = pixelRows * (0.8 + 0.1 * Math.sin((x + drift * 3) / 17 + salt)) + Math.sin(x / 5.3) * 0.6;
-		const above = edgeRow - py;
-		const height = pixelRows * 0.85;
-		if (above >= 0 && above < height) {
-			// Separate curtains with dark gaps between them.
-			const presence = fbm((x + drift) / 22, 0, salt);
-			// Thin vertical rays: strong contrast across columns, slow shimmer along them.
-			const ray = valueNoise(x / 1.15 + time * 0.035, py / 14, salt + 5);
-			const rays = 0.1 + 0.9 * ray * ray;
-			// Brightest in a thin lower edge, then fading quickly as the rays climb.
-			const falloff = above < 1 ? 1.15 : Math.exp(-(above - 1) / (height * 0.5));
-			const light = ((presence - 0.36) * 2.8 + intensity * 0.12) * rays * falloff * reveal;
-			const ramp = above / height > 0.4 ? upper : pal.ramp;
-			// Below a floor the sky stays dark, so faint light never becomes a dithered haze.
-			const color = rampColor(ramp, light - 0.14 + flare * 0.6, x, py);
-			if (color) return color;
-		}
-		if (flare > 0.5 && above >= 0 && above < height * 0.6) return pal.spark;
+		// Far range: tall peaks with a lit crest; near range: lower, darker peaks in front.
+		// Slopes are in pixels per column; a whole-cell pixel is twice as tall, so halve them there.
+		const slope = cellPixels === 1 ? 0.5 : 1;
+		const farTop = ridgeHeight(x, 23, pixelRows * 0.45, pixelRows * 0.95, 0.42 * slope, salt);
+		const nearTop = ridgeHeight(x, 13, pixelRows * 0.15, pixelRows * 0.55, 0.6 * slope, salt + 9);
+		if (fromBase < nearTop) return near;
+		if (fromBase < farTop - 1) return far;
+		if (fromBase < farTop) return crest;
+		// Horizon glow just above the far range, lit by the curtains.
+		const glow =
+			Math.exp(-(fromBase - farTop) / 2.6) *
+			(0.36 + intensity * 0.2) *
+			reveal *
+			(0.6 + 0.4 * fbm((x + time * 0.04) / 18, 1, salt));
+		// On a 256-color grid the glow would only add stray blocks: keep the plain sky there.
+		const sky = q ? pal.page : glowOver(pal.page, pal.ramp, pal.ramp[1] ?? pal.ramp[0]!, glow, false);
+		return sky === pal.page && star ? star : sky;
 	}
 
-	// Starfield behind everything; some stars twinkle.
-	const twinkle = Math.floor(time / 11);
-	if (hash(x, py, salt + 99 + (hash(x, py, salt) > 0.6 ? twinkle : 0)) > 0.993 - intensity * 0.01) return pal.spark;
-	return pal.page;
+	// Curtains hang from above; their lower edge is a slow, folded curve near the content edge.
+	const drift = time * 0.04;
+	const edgeRow =
+		pixelRows * (0.78 + 0.14 * Math.sin((x + drift * 2) / 23 + salt) + 0.05 * Math.sin((x - drift * 3) / 7.3));
+	const above = edgeRow - py;
+	// Curtains brighten and dim across the sky; gaps keep a faint glow instead of cutting off.
+	const presence = (0.18 + 0.82 * smoothstep(0.2, 0.78, fbm((x + drift) / 30, 0, salt))) * reveal;
+	// Rays: vertical striations that shimmer slowly along the curtain.
+	const ray = valueNoise(x / 1.35 + time * 0.025, 0, salt + 5);
+	// Gentler on a 256-color grid, where small steps would flip neighboring pixels between colors.
+	const rays = q ? 0.7 + 0.3 * ray : 0.45 + 0.55 * ray;
+	const strength = (0.8 + intensity * 0.35) * presence;
+	let light: number;
+	let color: string;
+	if (above >= 0) {
+		const height = pixelRows * 0.95;
+		const h = above / height;
+		// Brightest along the lower edge (soft across its pixel, so the edge never steps),
+		// fading as the rays climb; green low, violet high. Rays reach different heights,
+		// and strong curtains climb higher.
+		const reach = height * (0.18 + 0.5 * ray * ray + 0.2 * presence);
+		const profile = smoothstep(0, 1.2, above + 0.4) * Math.exp(-Math.max(0, above - 1) / reach);
+		light = strength * rays * profile;
+		color = h < 0.35 ? along(pal.ramp, 1 - h, q) : along(upper, 1 - (h - 0.35) / 0.65, q);
+		if (q) {
+			const stops = h < 0.35 ? pal.ramp : upper;
+			// Only clear light draws: below the floor stays sky, so the grid shows calm shapes.
+			const level = (light + flare * 0.6 - AURORA_GRID_FLOOR) / (1 - AURORA_GRID_FLOOR);
+			if (level >= 0) return along(stops, level, true);
+		} else if (light > 0.01) {
+			return mix(pal.page, color, Math.min(1, light + flare * 0.6));
+		}
+	} else {
+		// A soft glow just under the lower edge.
+		light = strength * Math.exp(above / 1.6) * 0.35;
+		if (!q) {
+			const glow = glowOver(pal.page, pal.ramp, pal.ramp[1] ?? pal.ramp[0]!, light, false);
+			if (glow !== pal.page) return glow;
+		}
+	}
+	return star ?? pal.page;
 };
 
 const SCENE_PIXELS: Record<SceneKind, PixelFn> = { flight: flightPixel, dive: divePixel, aurora: auroraPixel };
@@ -321,13 +411,15 @@ export function renderPixelScene(
 	enc: PixelEncoder,
 	opts: SceneOptions,
 ): string[] {
-	const pixelRows = rows * 2;
+	const half = opts.cellPixels !== 1;
+	const pixelRows = half ? rows * 2 : rows;
 	const pixel = SCENE_PIXELS[kind];
 	const der = derive(pal);
 	const options: SceneOptions = {
 		time: opts.time,
 		intensity: Math.min(1, Math.max(0, opts.intensity)),
 		intro: Math.min(1, Math.max(0, opts.intro ?? 1)),
+		cellPixels: half ? 2 : 1,
 	};
 	const fgCache = new Map<string, string>();
 	const bgCache = new Map<string, string>();
@@ -347,6 +439,15 @@ export function renderPixelScene(
 		let lastFg = "";
 		let lastBg = "";
 		for (let x = 0; x < width; x++) {
+			if (!half) {
+				const b = bg(pixel(x, row, pixelRows, edge, pal, der, options));
+				if (b !== lastBg) {
+					line += b;
+					lastBg = b;
+				}
+				line += " ";
+				continue;
+			}
 			const top = pixel(x, row * 2, pixelRows, edge, pal, der, options);
 			const bottom = pixel(x, row * 2 + 1, pixelRows, edge, pal, der, options);
 			const b = bg(bottom);

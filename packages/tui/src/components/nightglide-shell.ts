@@ -2,7 +2,7 @@
  * Nightglide Glide shell — fullscreen window layout (spike).
  *
  * Installed through `TUI.setScreenProvider`, it paints the whole alternate
- * screen: brand header, top scene band, a framed conversation panel next to
+ * screen: top scene band (from the window edge; no header row), a framed conversation panel next to
  * an information column, a framed composer card, the status line and a bottom
  * scene band. Every cell carries the theme family's page background so the
  * look no longer depends on the user's terminal colors.
@@ -81,7 +81,7 @@ interface Family {
 	kind: SceneKind;
 	/** Frame lines around panels. */
 	border: string;
-	/** Panel titles and the header rule. */
+	/** Panel titles. */
 	title: string;
 	/** Primary readable text on the page. */
 	text: string;
@@ -194,21 +194,25 @@ function familyFor(name: string | undefined): Family {
 				warm: "#f2c98a",
 				scene: {
 					page: "#0b0819",
-					ramp: ["#123a3a", "#16685a", "#22a37a", "#34d399", "#b6f5d8"],
-					upper: ["#2a1f55", "#4a3590", "#7a5cc8", "#b48cf2"],
-					ground: ["#05040c", "#2b2350"],
+					// Curtain light, faint → the bright lower edge.
+					ramp: ["#123f3a", "#1c8a6c", "#34d399", "#c4ffe6"],
+					// Upper rays, faint → bright.
+					upper: ["#24194f", "#4b3596", "#8c6ee0"],
+					// Near range, far range, lit far crest.
+					ground: ["#050409", "#17122f", "#3a2f6e"],
 					accent: "#f2c98a",
-					spark: "#cfc4f2",
+					spark: "#d9d0ff",
 				},
 				scene256: {
 					page: "#080808",
-					ramp: ["#005f5f", "#00875f", "#00af87", "#5fd7af", "#afffd7"],
+					// Few, dark-leaning grid steps: the 256-color version stays calm rather than busy.
+					ramp: ["#005f5f", "#00875f", "#5fd7af"],
 					// Grid violets: off-grid ones round to grays on 256-color terminals.
-					upper: ["#00005f", "#5f0087", "#5f5faf", "#af87ff"],
-					ground: ["#000000", "#303030"],
+					upper: ["#00005f", "#5f5faf"],
+					ground: ["#000000", "#1c1c1c", "#5f5f87"],
 					accent: "#ffd787",
 					spark: "#d7d7ff",
-					blends: { far: ["#005f5f", "#00875f"] },
+					quantized: true,
 				},
 			};
 		default:
@@ -259,6 +263,17 @@ const SCENE_INTENSITY: Record<string, number> = { minimal: 0.15, low: 0.3, mediu
 /** Scene clock advance per animation tick at intensity 0 and 1. */
 const SCENE_SPEED_MIN = 1;
 const SCENE_SPEED_MAX = 1.8;
+/**
+ * Scene pixels per cell. Terminal.app draws `▀` with the font's own glyph, which in many fonts
+ * (NeoX Mono among them) does not fill its half cell, leaving gaps between pixel rows; there each
+ * cell paints its background only. `NIGHTGLIDE_SCENE_PIXELS=1|2` overrides the choice.
+ */
+function sceneCellPixels(env: NodeJS.ProcessEnv = process.env): 1 | 2 {
+	const forced = env.NIGHTGLIDE_SCENE_PIXELS;
+	if (forced === "1" || forced === "2") return Number(forced) as 1 | 2;
+	return env.TERM_PROGRAM === "Apple_Terminal" ? 1 : 2;
+}
+
 /** Scene-clock span of a launch animation: about 3.5 s at the base speed. */
 const SCENE_INTRO_TICKS = 32;
 
@@ -425,9 +440,10 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 		const statusRows = statusComp ? statusComp.render(W - 2).slice(0, 2) : [];
 		const dockRows = this.#renderDock(W - 4);
 		const cardRows = dockRows.length + 2;
-		let sceneTop = height >= 40 ? 5 : height >= 32 ? 4 : height >= 28 ? 3 : 0;
+		// No header row: the top scene starts at the window edge and takes that row.
+		let sceneTop = height >= 40 ? 6 : height >= 32 ? 5 : height >= 28 ? 4 : 0;
 		let sceneBottom = height >= 36 ? 4 : height >= 30 ? 3 : 0;
-		const fixed = 1 + cardRows + statusRows.length;
+		const fixed = cardRows + statusRows.length;
 		while (height - fixed - sceneTop - sceneBottom < 10 && (sceneTop > 0 || sceneBottom > 0)) {
 			if (sceneTop >= sceneBottom && sceneTop > 0) sceneTop--;
 			else sceneBottom--;
@@ -446,10 +462,10 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 			intensity: sceneIntensity(this.#deps.state().thinkingLevel),
 			// Motion off shows the finished scene at once.
 			intro: motion ? Math.min(1, (this.#sceneTime - this.#sceneStart) / SCENE_INTRO_TICKS) : 1,
+			cellPixels: sceneCellPixels(),
 		};
 
 		const out: string[] = [];
-		out.push(onBg(this.#header(W, fam, c), W, page));
 		if (sceneTop > 0) out.push(...renderPixelScene(W, sceneTop, fam.kind, "top", scene, enc, sceneOpts));
 		this.#bodyTop = out.length;
 
@@ -502,14 +518,6 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 		}
 		if (r === rows - 1) return onBg(`${border}╰${"─".repeat(width - 2)}╯`, width, page);
 		return onBg(`${border}│\x1b[39m ${onBg(content[r - 1] ?? "", width - 4, page)}${page}${border} │`, width, page);
-	}
-
-	#header(width: number, fam: Family, c: (hex: string, s: string) => string): string {
-		const title = `${c(fam.accent, " ✦ ")}${theme.bold(c(fam.text, "Nightglide"))} `;
-		const tag = `${c(fam.title, `[ ${fam.label} ]`)} `;
-		const ruleW = Math.max(0, width - visibleWidth(title) - visibleWidth(tag) - 6);
-		const rule = `${c(fam.soft, "··")}${c(fam.border, `${"─".repeat(ruleW)}`)}${c(fam.accent, "·")}  `;
-		return title + rule + tag;
 	}
 
 	#renderDock(width: number): string[] {
