@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { Container, Spacer, Text } from "../index";
 import { WidthAwareText } from "../render/index";
 import { theme } from "../theme/theme";
@@ -55,7 +56,7 @@ export class ErrorBannerComponent extends Container {
 		// ANSI 快捷键交互与恢复动作：支持 Esc 关闭 (dismiss) 与 Ctrl+O 展开/折叠
 		// (toggleDetails) 详细错误信息；由 interactive-mode 在 showPinnedError 挂载时
 		// 通过 addInputListener 分发按键并更新渲染。
-		this.addChild(new Text(theme.bold(theme.fg("error", `${theme.status.error} 错误`)), 1, 0));
+		this.addChild(new Text(theme.bold(theme.fg("error", `${theme.status.error} ${t("error.title")}`)), 1, 0));
 		this.#bodyText = new WidthAwareText(
 			contentWidth =>
 				formatErrorBlock(message, contentWidth, this.#expanded ? Infinity : MAX_BANNER_ROWS, line =>
@@ -66,7 +67,7 @@ export class ErrorBannerComponent extends Container {
 		);
 		this.addChild(this.#bodyText);
 		// Meta layer: dim dismissal hint, localized like the composer hints.
-		this.addChild(new Text(theme.fg("dim", "发送下一条消息后自动消失 [Esc 关闭 · Ctrl+O 详情]"), 1, 0));
+		this.addChild(new Text(theme.fg("dim", t("error.hint")), 1, 0));
 		this.addChild(new DynamicBorder(str => theme.fg("error", str)));
 	}
 

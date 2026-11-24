@@ -1,3 +1,4 @@
+import { t } from "@oh-my-pi/pi-tui/i18n";
 import { type AgentMessage, type AgentToolResult, ThinkingLevel } from "@oh-my-pi/pi-agent-core";
 import { addCustomProvider } from "../../slash-commands/builtin-nightglide";
 import type { CompactionOutcome } from "@oh-my-pi/pi-agent-core/compaction";
@@ -2464,9 +2465,7 @@ export class SelectorController {
 						this.ctx.ui.requestRender();
 					},
 					// Nightglide: API-key providers left this list; any compatible endpoint is added here.
-					leadingItems: [
-						{ id: ADD_CUSTOM_PROVIDER_ID, name: "＋ 添加自定义提供商（Base URL + Key）", available: true },
-					],
+					leadingItems: [{ id: ADD_CUSTOM_PROVIDER_ID, name: t("provider.addRow"), available: true }],
 				},
 			);
 			return { component: selector, focus: selector };

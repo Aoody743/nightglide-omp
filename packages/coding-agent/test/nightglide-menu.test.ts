@@ -1,18 +1,39 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
+import { setLanguage, TEXT } from "@oh-my-pi/pi-tui/i18n";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import {
 	cfgNightglideCommonCommands,
+	cfgNightglideLanguage,
 	markCommonCommands,
 	NIGHTGLIDE_COMMON_COMMANDS,
 } from "@oh-my-pi/pi-coding-agent/config/nightglide-menu";
 import { BUILTIN_SLASH_COMMAND_DEFS } from "@oh-my-pi/pi-coding-agent/slash-commands/builtin-registry";
 
 describe("Nightglide common commands", () => {
+	afterEach(() => setLanguage("zh"));
+
 	it("defaults to the documented list, every entry a real builtin command", () => {
 		const builtin = new Set(BUILTIN_SLASH_COMMAND_DEFS.map(def => def.name));
 		const defaults = cfgNightglideCommonCommands.get(Settings.isolated());
-		expect(defaults).toEqual(NIGHTGLIDE_COMMON_COMMANDS.map(entry => entry.name));
+		expect(defaults).toEqual([...NIGHTGLIDE_COMMON_COMMANDS]);
 		for (const name of defaults) expect(builtin.has(name)).toBe(true);
+	});
+
+	it("has a menu description in both languages for every default command", () => {
+		for (const name of NIGHTGLIDE_COMMON_COMMANDS) expect(Object.hasOwn(TEXT, `cmd.${name}`), name).toBe(true);
+	});
+
+	it("defaults the interface language to Chinese", () => {
+		expect(cfgNightglideLanguage.get(Settings.isolated())).toBe("zh");
+	});
+
+	it("describes common commands in English when the language is English", () => {
+		setLanguage("en");
+		const [model] = markCommonCommands(
+			[{ name: "model", getAutocompleteDescription: () => "Model: omlx/endless" }],
+			["model"],
+		);
+		expect(model?.getAutocompleteDescription?.()).toBe("Model · Switch model (omlx/endless)");
 	});
 
 	it("registers /more", () => {

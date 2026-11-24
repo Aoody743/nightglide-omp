@@ -1,6 +1,7 @@
 /** Schema-independent display definitions for the settings overlay. */
 import type { SymbolKey } from "../theme/symbols";
-import { COMMON_SETTING_GROUPS, commonSettingDefs } from "./settings-common";
+import { t, type TextKey } from "../i18n";
+import { commonSettingDefs, commonSettingGroups } from "./settings-common";
 
 export type SettingTab =
 	| "common"
@@ -34,23 +35,24 @@ export const SETTING_TABS: SettingTab[] = [
 ];
 
 /** Tab display metadata - icon is a symbol key from theme.ts (tab.*) */
-export const TAB_METADATA: Record<SettingTab, TabMetadata> = {
-	common: { label: "常用", icon: "tab.common" },
-	appearance: { label: "Appearance", icon: "tab.appearance" },
-	model: { label: "Model", icon: "tab.model" },
-	interaction: { label: "Interaction", icon: "tab.interaction" },
-	context: { label: "Context", icon: "tab.context" },
-	memory: { label: "Memory", icon: "tab.memory" },
-	files: { label: "Files", icon: "tab.files" },
-	shell: { label: "Shell", icon: "tab.shell" },
-	tools: { label: "Tools", icon: "tab.tools" },
-	tasks: { label: "Tasks", icon: "tab.tasks" },
-	providers: { label: "Providers", icon: "tab.providers" },
-};
+export const TAB_METADATA: Record<SettingTab, TabMetadata> = Object.fromEntries(
+	SETTING_TABS.map(tab => [
+		tab,
+		{
+			// Nightglide: tab names follow the interface language.
+			get label() {
+				return t(`tab.${tab}` as TextKey);
+			},
+			icon: `tab.${tab}` as TabMetadata["icon"],
+		},
+	]),
+) as Record<SettingTab, TabMetadata>;
 
 /** One-sentence lead per tab, under the page title of the native settings page. */
 export const TAB_LEADS: Record<SettingTab, string> = {
-	common: "最常改的设置。其余设置在后面的标签页里。",
+	get common() {
+		return t("lead.common");
+	},
 	appearance: "Theme, composer, status line and how the transcript renders.",
 	model: "Thinking, sampling, the system prompt, retries and the helper models.",
 	interaction: "Input, approvals, notifications, speech and what happens at startup.",
@@ -69,7 +71,9 @@ export const TAB_LEADS: Record<SettingTab, string> = {
  * Ungrouped settings render first, before any section heading.
  */
 export const TAB_GROUPS: Record<SettingTab, readonly string[]> = {
-	common: COMMON_SETTING_GROUPS,
+	get common() {
+		return commonSettingGroups();
+	},
 	appearance: ["Theme", "Composer", "Status Line", "Display", "Images"],
 	model: ["Thinking", "Sampling", "Prompt", "Retry & Fallback", "Advisor", "Prewalk", "Vision", "Nightglide Routing"],
 	interaction: [

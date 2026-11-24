@@ -13,14 +13,14 @@ import {
 	removeCustomProvider,
 	saveCustomProvider,
 } from "../config/nightglide-custom-providers";
+import { t } from "@oh-my-pi/pi-tui/i18n";
 import type { InteractiveModeContext } from "../modes/types";
 import { clearSubmittedText } from "./helpers/draft";
 import type { SlashCommandSpec } from "./types";
 
-const ADD_PROVIDER = "＋ 添加自定义提供商";
-const API_CHOICES: ReadonlyArray<{ label: string; api: CustomProviderApi }> = [
-	{ label: "OpenAI 兼容（/v1/chat/completions）", api: "openai-completions" },
-	{ label: "Anthropic 兼容（/v1/messages）", api: "anthropic-messages" },
+const apiChoices = (): ReadonlyArray<{ label: string; api: CustomProviderApi }> => [
+	{ label: t("provider.apiOpenAI"), api: "openai-completions" },
+	{ label: t("provider.apiAnthropic"), api: "anthropic-messages" },
 ];
 
 /** Ask until the answer passes `valid`; undefined when the user cancels. */
@@ -37,7 +37,7 @@ async function ask(
 		if (value === undefined) return undefined;
 		const problem = valid(value.trim());
 		if (!problem) return value.trim();
-		prompt = `${title}（${problem}）`;
+		prompt = t("provider.retry", { title, problem });
 	}
 }
 
@@ -49,49 +49,51 @@ async function editCustomProvider(
 	const taken = new Set((await listCustomProviders()).map(provider => provider.id));
 	const id =
 		existing?.id ??
-		(await ask(ctx, "名称（小写字母、数字和 -，例如 my-relay）", "my-relay", value =>
-			!isValidProviderId(value) ? "格式不对" : taken.has(value) ? "已存在，请到列表里编辑" : undefined,
+		(await ask(ctx, t("provider.name"), "my-relay", value =>
+			!isValidProviderId(value) ? t("provider.nameBad") : taken.has(value) ? t("provider.nameTaken") : undefined,
 		));
 	if (!id) return;
-	const baseUrl = await ask(ctx, `${id} · Base URL`, existing?.baseUrl ?? "http://127.0.0.1:8000/v1", value =>
-		isValidBaseUrl(value) ? undefined : "需要 http:// 或 https:// 开头的地址",
+	const baseUrl = await ask(
+		ctx,
+		t("provider.baseUrl", { id }),
+		existing?.baseUrl ?? "http://127.0.0.1:8000/v1",
+		value => (isValidBaseUrl(value) ? undefined : t("provider.baseUrlBad")),
 	);
 	if (!baseUrl) return;
+	const choices = apiChoices();
 	const apiLabel = await ctx.showHookSelector(
-		`${id} · 接口类型`,
-		API_CHOICES.map(choice => choice.label),
+		t("provider.api", { id }),
+		choices.map(choice => choice.label),
 	);
-	const api = API_CHOICES.find(choice => choice.label === apiLabel)?.api;
+	const api = choices.find(choice => choice.label === apiLabel)?.api;
 	if (!api) return;
-	const key = await ctx.showHookInput(
-		existing ? `${id} · API Key（留空保持不变）` : `${id} · API Key（本地服务不需要可留空）`,
-		"",
-		{ secret: true },
-	);
+	const key = await ctx.showHookInput(existing ? t("provider.keyEdit", { id }) : t("provider.keyNew", { id }), "", {
+		secret: true,
+	});
 	if (key === undefined) return;
 
 	const saved = await saveCustomProvider({ id, baseUrl, api, apiKey: key });
 	const registry = ctx.session.modelRegistry;
 	if (saved.storeKey) await registry.authStorage.credentials.set(id, { type: "api_key", key: saved.storeKey });
-	ctx.showStatus(`${id}：正在获取模型列表…`);
+	ctx.showStatus(t("provider.fetching", { id }));
 	await registry.refresh("online");
 	const found = registry.getAll("all").filter(model => model.provider === id).length;
 	if (found > 0) {
-		ctx.showStatus(`${id}：已保存，发现 ${found} 个模型。用 /model 选择。`);
+		ctx.showStatus(t("provider.found", { id, count: found }));
 	} else {
-		ctx.showWarning(`${id}：已保存，但没有拿到模型列表。请检查 Base URL、接口类型和 Key（可用 /provider 修改）。`);
+		ctx.showWarning(t("provider.noneFound", { id }));
 	}
 }
 
 /** Remove a custom provider and its stored key. */
 async function deleteCustomProvider(ctx: InteractiveModeContext, id: string): Promise<void> {
-	const ok = await ctx.showHookConfirm(`删除 ${id}？`, "会从 models.yml 删除这项配置，并删除保存的 Key。");
+	const ok = await ctx.showHookConfirm(t("provider.deleteTitle", { id }), t("provider.deleteBody"));
 	if (!ok) return;
 	await removeCustomProvider(id);
 	const registry = ctx.session.modelRegistry;
 	await registry.authStorage.credentials.remove(id);
 	await registry.refresh("online-if-uncached");
-	ctx.showStatus(`已删除 ${id}。`);
+	ctx.showStatus(t("provider.deleted", { id }));
 }
 
 /** The add form, straight away (the `/login` list's "add a custom provider" row). */
@@ -104,14 +106,17 @@ export async function manageCustomProviders(ctx: InteractiveModeContext): Promis
 	const providers = await listCustomProviders();
 	if (providers.length === 0) return editCustomProvider(ctx);
 	const rows = providers.map(provider => ({ label: provider.id, description: provider.baseUrl }));
-	const choice = await ctx.showHookSelector("自定义提供商（Base URL + Key）", [{ label: ADD_PROVIDER }, ...rows]);
+	const add = t("provider.add");
+	const choice = await ctx.showHookSelector(t("provider.listTitle"), [{ label: add }, ...rows]);
 	if (!choice) return;
-	if (choice === ADD_PROVIDER) return editCustomProvider(ctx);
+	if (choice === add) return editCustomProvider(ctx);
 	const provider = providers.find(entry => entry.id === choice);
 	if (!provider) return;
-	const action = await ctx.showHookSelector(`${provider.id} · ${provider.baseUrl}`, ["编辑", "删除"]);
-	if (action === "编辑") return editCustomProvider(ctx, provider);
-	if (action === "删除") return deleteCustomProvider(ctx, provider.id);
+	const edit = t("provider.edit");
+	const remove = t("provider.delete");
+	const action = await ctx.showHookSelector(`${provider.id} · ${provider.baseUrl}`, [edit, remove]);
+	if (action === edit) return editCustomProvider(ctx, provider);
+	if (action === remove) return deleteCustomProvider(ctx, provider.id);
 }
 
 export const BUILTIN_NIGHTGLIDE_SLASH_COMMANDS: ReadonlyArray<SlashCommandSpec> = [
@@ -124,7 +129,7 @@ export const BUILTIN_NIGHTGLIDE_SLASH_COMMANDS: ReadonlyArray<SlashCommandSpec> 
 			try {
 				await manageCustomProviders(runtime.ctx);
 			} catch (err) {
-				runtime.ctx.showError(`自定义提供商：${err instanceof Error ? err.message : String(err)}`);
+				runtime.ctx.showError(t("provider.error", { message: err instanceof Error ? err.message : String(err) }));
 			}
 		},
 	},
@@ -144,7 +149,7 @@ export const BUILTIN_NIGHTGLIDE_SLASH_COMMANDS: ReadonlyArray<SlashCommandSpec> 
 					.trim();
 				return description ? `/${command.name}  ${description}` : `/${command.name}`;
 			});
-			const choice = await ctx.showHookSelector(`全部命令（${items.length}）`, items);
+			const choice = await ctx.showHookSelector(t("more.title", { count: items.length }), items);
 			const name = choice?.split(" ")[0];
 			if (name) ctx.editor.setText(`${name} `);
 		},

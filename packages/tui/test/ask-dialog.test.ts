@@ -1,5 +1,10 @@
 import type { ImageContent } from "@oh-my-pi/pi-ai";
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "bun:test";
+import { setLanguage } from "@oh-my-pi/pi-tui/i18n";
+
+// Upstream assertions read English interface text (Nightglide defaults to Chinese).
+beforeAll(() => setLanguage("en"));
+afterAll(() => setLanguage("zh"));
 import { stripVTControlCharacters } from "node:util";
 import { KeybindingsManager } from "@oh-my-pi/pi-tui/app-keybindings";
 import type { ExtensionAskDialogQuestion } from "@oh-my-pi/pi-tui/overlays/ask-dialog";

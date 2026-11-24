@@ -16,6 +16,7 @@
  * session state through an injected accessor (no fabricated values).
  */
 import { effortLadderGlyph, effortLadderToken, effortRung } from "../chat/effort-ladder";
+import { t } from "../i18n";
 import type { AnimationFrame, TranscriptContainer } from "../chrome/transcript-container";
 import { motionEffectsEnabled, onMotionEffectsChange } from "../motion-effects";
 import { bgAnsi, fgAnsi } from "../theme/color";
@@ -501,11 +502,13 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 		const mainInner = mainW - 4;
 		const convo = this.#conversation(mainInner, bodyRows - 2, c, fam);
 		const side = showSide ? this.#sidebar(sideW - 4, bodyRows - 2, c, fam) : [];
-		const label = this.#scroll > 0 ? c(fam.warm, ` ↑ 回看中 · End 或点此回到底部 `) : "";
+		const label = this.#scroll > 0 ? c(fam.warm, t("shell.scrollback")) : "";
 		for (let r = 0; r < bodyRows; r++) {
 			let line = this.#panelRow(r, bodyRows, mainW, convo, border, page, label);
 			if (showSide)
-				line += onBg(" ", 1, page) + this.#panelRow(r, bodyRows, sideW, side, border, page, c(fam.title, " 会话 "));
+				line +=
+					onBg(" ", 1, page) +
+					this.#panelRow(r, bodyRows, sideW, side, border, page, c(fam.title, t("shell.panelTitle")));
 			out.push(line);
 		}
 
@@ -583,9 +586,9 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 
 	#emptyState(width: number, rows: number, c: (hex: string, s: string) => string, fam: Family): string[] {
 		const lines = [
-			theme.bold(c(fam.text, "向未知滑行")),
-			c(fam.soft, "在下方输入任务，按 Enter 发送"),
-			c(fam.soft, "滚轮 / PgUp 回看 · /copy 复制 · /theme 换主题"),
+			theme.bold(c(fam.text, t("shell.welcomeTitle"))),
+			c(fam.soft, t("shell.welcomeInput")),
+			c(fam.soft, t("shell.welcomeKeys")),
 		];
 		const out: string[] = [];
 		const top = Math.max(0, Math.floor((rows - lines.length) / 2));
@@ -609,7 +612,7 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 		const body = (line: string) => fit(`  ${line}`);
 
 		// Model: name, provider, and anything that changes who is answering.
-		const model: string[] = [head("✦", "模型")];
+		const model: string[] = [head("✦", t("shell.model"))];
 		if (st.model) {
 			const badges = `${st.fast ? c(fam.warm, " ⚡") : ""}${
 				st.advisor
@@ -625,17 +628,17 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 			}`;
 			model.push(body(`${theme.bold(c(fam.text, st.model))}${badges}`));
 			if (st.provider) model.push(body(c(fam.soft, st.provider)));
-			if (st.fallback) model.push(body(c(fam.warm, `↩ 回退 ${st.fallback}`)));
+			if (st.fallback) model.push(body(c(fam.warm, t("shell.fallback", { model: st.fallback }))));
 			if (st.notice) model.push(body(c(fam.warm, st.notice)));
 		} else {
-			model.push(body(c(fam.warm, "未选择模型")));
+			model.push(body(c(fam.warm, t("shell.noModel"))));
 		}
 		sections.push(model);
 
 		// Effort: the level the session actually uses, never a configured wish.
 		const level = st.thinkingLevel;
 		const rung = effortRung(level);
-		const effort: string[] = [head(rung ? effortLadderGlyph(level) : "○", "思考强度")];
+		const effort: string[] = [head(rung ? effortLadderGlyph(level) : "○", t("shell.effort"))];
 		if (level && rung && EFFORT_FILL[level] !== undefined) {
 			const filled = EFFORT_FILL[level]!;
 			const token = effortLadderToken(level) ?? "accent";
@@ -647,20 +650,25 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 				),
 			);
 		} else if (st.autoPending) {
-			effort.push(body(c(fam.soft, "auto · 本轮确定后显示")));
+			effort.push(body(c(fam.soft, t("shell.effortAutoPending"))));
 		} else if (!st.model || st.thinkingSupported === false) {
-			effort.push(body(c(fam.soft, st.model ? "此模型不支持" : "—")));
+			effort.push(body(c(fam.soft, st.model ? t("shell.effortUnsupported") : "—")));
 		} else {
-			effort.push(body(c(fam.soft, level ?? "未知")));
+			effort.push(body(c(fam.soft, level ?? t("shell.unknown"))));
 		}
 		sections.push(effort);
 
 		// Subagents: real registry entries only.
 		const running = st.subagents.filter(a => a.status !== "completed" && a.status !== "failed").length;
 		const agents: string[] = [
-			head("◇", st.subagents.length > 0 ? `子智能体 ${running}/${st.subagents.length}` : "子智能体"),
+			head(
+				"◇",
+				st.subagents.length > 0
+					? t("shell.subagentsCount", { running, total: st.subagents.length })
+					: t("shell.subagents"),
+			),
 		];
-		if (st.subagents.length === 0) agents.push(body(c(fam.soft, "暂无")));
+		if (st.subagents.length === 0) agents.push(body(c(fam.soft, t("shell.none"))));
 		for (const agent of st.subagents) {
 			const failed = agent.status === "failed";
 			const done = agent.status === "completed";
@@ -679,12 +687,15 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 		// Status of the main session.
 		const status: string[] = [];
 		if (st.activeTools && st.activeTools > 0) {
-			status.push(head("◌", "状态", fam.warm), body(c(fam.warm, `工具执行中 · ${st.activeTools}`)));
+			status.push(
+				head("◌", t("shell.status"), fam.warm),
+				body(c(fam.warm, t("shell.toolsRunning", { count: st.activeTools }))),
+			);
 		} else if (st.streaming) {
 			const spin = motionEffectsEnabled() ? "◜◝◞◟"[this.#phase % 4]! : "◌";
-			status.push(head(spin, "状态", fam.warm), body(c(fam.warm, "思考中")));
+			status.push(head(spin, t("shell.status"), fam.warm), body(c(fam.warm, t("shell.thinking"))));
 		} else {
-			status.push(head("●", "状态"), body(c(fam.soft, "空闲")));
+			status.push(head("●", t("shell.status")), body(c(fam.soft, t("shell.idle"))));
 		}
 		sections.push(status);
 

@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import type { ImageContent } from "@oh-my-pi/pi-ai";
 import {
 	type Component,
@@ -490,9 +491,9 @@ function renderOptionLabel(rawLabel: string, mdTheme: MarkdownTheme, baseColor: 
 	if (!match) {
 		return renderInlineMarkdown(rawLabel, mdTheme, baseColor);
 	}
-	const [, prefix, badge, suffix] = match;
+	const [, prefix, , suffix] = match;
 	const renderedPrefix = prefix ? renderInlineMarkdown(prefix, mdTheme, baseColor) : "";
-	const badgeText = badge.includes("推荐") ? "[推荐]" : "[Recommended]";
+	const badgeText = t("ask.recommended");
 	const renderedBadge = theme.bold(theme.fg("warning", badgeText));
 	const renderedSuffix = suffix ? renderInlineMarkdown(suffix, mdTheme, baseColor) : "";
 	return `${renderedPrefix}${renderedPrefix ? " " : ""}${renderedBadge}${renderedSuffix}`;

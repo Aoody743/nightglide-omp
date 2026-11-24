@@ -1,4 +1,5 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "bun:test";
+import { setLanguage } from "@oh-my-pi/pi-tui/i18n";
 import { resetSettingsForTest, Settings, settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import { loadHindsightConfig } from "@oh-my-pi/pi-coding-agent/hindsight/config";
 import { SettingsSelectorComponent } from "@oh-my-pi/pi-tui/overlays/settings-selector";
@@ -8,6 +9,10 @@ import { initTheme } from "@oh-my-pi/pi-tui/theme";
 
 import { cfgHindsightApiToken } from "@oh-my-pi/pi-coding-agent/hindsight/settings";
 import { cfgMemoryBackend } from "@oh-my-pi/pi-coding-agent/memory-backend/settings";
+
+// Upstream assertions read English tab names (Nightglide defaults to Chinese).
+beforeAll(() => setLanguage("en"));
+afterAll(() => setLanguage("zh"));
 
 beforeAll(async () => {
 	await initTheme();

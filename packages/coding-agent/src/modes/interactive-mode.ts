@@ -2,6 +2,7 @@
  * Interactive mode for the coding agent.
  * Handles TUI rendering and user interaction, delegating business logic to AgentSession.
  */
+import { setLanguage, t } from "@oh-my-pi/pi-tui/i18n";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { type Agent, AgentBusyError, type AgentMessage, agentPauseGate, ThinkingLevel } from "@oh-my-pi/pi-agent-core";
@@ -95,7 +96,7 @@ import {
 	resolveModelRoleValue,
 } from "../config/model-resolver";
 import { isSettingsInitialized, Settings, settings } from "../config/settings";
-import { cfgNightglideCommonCommands, markCommonCommands } from "../config/nightglide-menu";
+import { cfgNightglideCommonCommands, cfgNightglideLanguage, markCommonCommands } from "../config/nightglide-menu";
 import { clearClaudePluginRootsCache } from "../discovery/helpers";
 import type {
 	AssistantTextRenderer,
@@ -2144,6 +2145,8 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.session = session;
 		this.sessionManager = session.sessionManager;
 		this.settings = session.settings;
+		// Nightglide: interface language before anything renders.
+		setLanguage(cfgNightglideLanguage.get(this.settings));
 		const preferences = {
 			quiet: cfgStartupQuiet.get(settings),
 			composerShape: cfgComposerShape.get(settings),
@@ -2999,6 +3002,14 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.#eventBusUnsubscribers.push(
 			cfgModelRoles.listen(this.settings, () => this.#reapplyPlanModeModelOnRoleChange()),
 		);
+		// Nightglide: a language change re-renders every Nightglide label at once.
+		this.#eventBusUnsubscribers.push(
+			cfgNightglideLanguage.listen(this.settings, () => {
+				setLanguage(cfgNightglideLanguage.get(this.settings));
+				this.#rebuildSlashCommandAutocomplete(this.sessionManager.getCwd());
+				this.ui.requestRender();
+			}),
+		);
 		// Nightglide: an edited common-command list takes effect in the `/` menu at once.
 		this.#eventBusUnsubscribers.push(
 			cfgNightglideCommonCommands.listen(this.settings, () => {
@@ -3029,7 +3040,7 @@ export class InteractiveMode implements InteractiveModeContext {
 				// notification with `ephemeral` set (settings-selector browsing, symbol
 				// presets, color-blind mode, live theme-file reloads), so previewing a
 				// palette never claims the user picked it.
-				if (!event.ephemeral) this.showToast(`主题:${getCurrentThemeName()}`);
+				if (!event.ephemeral) this.showToast(t("toast.theme", { name: getCurrentThemeName() ?? "" }));
 				if (event.ephemeral || isInsideTerminalMultiplexer()) {
 					// Theme previews and multiplexer panes use a non-destructive viewport
 					// repaint rather than replacing already emitted history.
@@ -10222,7 +10233,11 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.#extensionUiController.hideHookSelector();
 	}
 
-	showHookInput(title: string, placeholder?: string, dialogOptions?: ExtensionUIDialogOptions): Promise<string | undefined> {
+	showHookInput(
+		title: string,
+		placeholder?: string,
+		dialogOptions?: ExtensionUIDialogOptions,
+	): Promise<string | undefined> {
 		return this.#extensionUiController.showHookInput(title, placeholder, dialogOptions);
 	}
 

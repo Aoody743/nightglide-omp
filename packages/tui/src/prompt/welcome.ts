@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { APP_NAME } from "@oh-my-pi/pi-utils/dirs";
 import { isBunTestRuntime } from "@oh-my-pi/pi-utils/env";
 import type { TspSpan } from "@oh-my-pi/pi-wire";
@@ -471,7 +472,7 @@ export class WelcomeComponent implements Component {
 		const version = theme.fg("dim", `v${this.version}`);
 		const currentTheme = getCurrentThemeName();
 		const isAbyss = Boolean(currentTheme?.includes("abyss") || theme?.getSpinnerFrames?.()?.[0] === "·");
-		const subtitle = theme.fg("muted", isAbyss ? "向未知滑行 · 深潜工作台" : "向未知滑行 · 夜航工作台");
+		const subtitle = theme.fg("muted", isAbyss ? t("welcome.subtitleAbyss") : t("welcome.subtitleFlight"));
 
 		const fullLockupWidth = NIGHTGLIDE_LOGO_WIDTH + LOCKUP_GAP + NIGHTGLIDE_WORDMARK_WIDTH;
 		const compactLockupWidth = NIGHTGLIDE_LOGO_WIDTH + LOCKUP_GAP + NIGHTGLIDE_COMPACT_WORDMARK_WIDTH;

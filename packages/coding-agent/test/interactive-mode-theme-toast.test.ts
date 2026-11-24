@@ -13,7 +13,7 @@ import { InteractiveMode } from "../src/modes/interactive-mode";
 /**
  * The theme-commit toast is wired where the committed palette lands: the mode's
  * `onThemeChange` subscription in `init()`. Only a non-ephemeral notification —
- * `setTheme` resolving (or falling back) — toasts `主题:<name>`; `previewTheme`
+ * `setTheme` resolving (or falling back) — toasts `主题：<name>`; `previewTheme`
  * rides the same notification with `ephemeral` set and must stay silent, so
  * browsing palettes in the settings selector never claims a pick was made.
  */
@@ -68,12 +68,12 @@ describe("InteractiveMode theme commit toast", () => {
 		resetSettingsForTest();
 	});
 
-	it("toasts 主题:<name> when a committed setTheme lands", async () => {
+	it("toasts 主题：<name> when a committed setTheme lands", async () => {
 		const showToast = vi.spyOn(mode!, "showToast");
 		const result = await setTheme("dark", false);
 		expect(result.success).toBe(true);
 		expect(showToast).toHaveBeenCalledTimes(1);
-		expect(showToast).toHaveBeenCalledWith("主题:dark");
+		expect(showToast).toHaveBeenCalledWith("主题：dark");
 	});
 
 	it("does not toast for a previewTheme browsing pick", async () => {

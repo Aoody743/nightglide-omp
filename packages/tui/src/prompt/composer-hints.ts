@@ -10,6 +10,7 @@
  * Add a hint by appending to {@link COMPOSER_HINTS}, extending
  * {@link ComposerHintId}, and recording the gesture where it is handled.
  */
+import { t } from "../i18n";
 import { formatDoubleTap, formatKeyHint, type KeybindingsManager } from "../app-keybindings";
 import { theme } from "../theme/theme";
 
@@ -49,7 +50,10 @@ export const COMPOSER_HINTS: readonly ComposerHint[] = [
 			if (ctx.runningAgents === 0 || ctx.focusedOnAgent) return undefined;
 			return {
 				key: formatDoubleTap("left"),
-				label: `to see ${ctx.runningAgents} running ${ctx.runningAgents === 1 ? "agent" : "agents"}`,
+				label:
+					ctx.runningAgents === 1
+						? t("composer.hintAgent")
+						: t("composer.hintAgents", { count: ctx.runningAgents }),
 			};
 		},
 	},
@@ -59,7 +63,7 @@ export const COMPOSER_HINTS: readonly ComposerHint[] = [
 		resolve: ctx => {
 			if (ctx.conversationStarted) return undefined;
 			const key = ctx.keybindings.getKeys("app.thinking.cycle")[0];
-			return key ? { key: formatKeyHint(key), label: "to change thinking effort" } : undefined;
+			return key ? { key: formatKeyHint(key), label: t("composer.hintEffort") } : undefined;
 		},
 	},
 ];
@@ -71,5 +75,5 @@ export function resolveComposerHint(ctx: ComposerHintContext): string | undefine
 		const resolved = hint.resolve(ctx);
 		if (resolved) return `${theme.fg("accent", resolved.key)} ${theme.fg("dim", theme.italic(resolved.label))}`;
 	}
-	return `${theme.fg("dim", "↵ 发送")}  ${theme.fg("dim", "esc 取消")}`;
+	return `${theme.fg("dim", t("composer.send"))}  ${theme.fg("dim", t("composer.cancel"))}`;
 }

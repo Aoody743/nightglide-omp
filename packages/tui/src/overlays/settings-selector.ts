@@ -46,6 +46,7 @@ import { getCurrentThemeName, getSelectListTheme, getSettingsListTheme, theme } 
 import { AUTO_THINKING, type ConfiguredThinkingLevel } from "../thinking";
 import type { TabBarTheme } from "../components/tab-bar";
 import { type ComposerPreviewStatusSource, ComposerShapePreview } from "./composer-shape-preview";
+import { setLanguage } from "../i18n";
 import { commonValueLabel, isCommonSettingRow } from "./settings-common";
 import { getComposerShapeOptions } from "./composer-shape-registry";
 import { bottomBorder, divider, row, topBorder } from "../chrome/overlay-box";
@@ -677,7 +678,18 @@ export class SettingsSelectorComponent implements Component {
 
 	constructor(context: SettingsRuntimeContext, callbacks: SettingsCallbacks) {
 		this.#context = context;
-		this.#callbacks = callbacks;
+		// Nightglide: once the host has applied a new interface language, relabel the open page.
+		this.#callbacks = {
+			...callbacks,
+			onChange: (path, newValue) => {
+				callbacks.onChange(path, newValue);
+				if (path === "nightglide.language") {
+					setLanguage(String(newValue));
+					// After the list re-applies its own (old-language) rows for this change.
+					queueMicrotask(() => this.#relabel());
+				}
+			},
+		};
 		this.#sidebarWidth = settingsSidebarWidth(context.settings.entries);
 		// No label prefix (the frame title already says Settings) and no
 		// "(tab to cycle)" hint (folded into the footer hint line).
@@ -713,6 +725,14 @@ export class SettingsSelectorComponent implements Component {
 		this.#searchList = null;
 		this.#pluginComponent = null;
 		build();
+	}
+
+	/** Rebuild tab names and the current page in the interface language. */
+	#relabel(): void {
+		this.#tabs = getSettingsTabs();
+		this.#tabBar.setTabs(this.#tabs, this.#currentTabId);
+		this.#searchCorpora = null;
+		if (!this.#searchList) this.#switchToTab(this.#currentTabId);
 	}
 
 	#switchToTab(tabId: SettingTab | "plugins"): void {

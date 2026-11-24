@@ -5,38 +5,39 @@
  * `/more` browses the full list. Nothing here removes or renames a command.
  */
 import type { SlashCommand } from "@oh-my-pi/pi-tui/autocomplete";
+import { getLanguage, t, type TextKey } from "@oh-my-pi/pi-tui/i18n";
 import { register } from "./registry";
 
-/** Default common commands, in menu order, with the Chinese description the menu shows. */
-export const NIGHTGLIDE_COMMON_COMMANDS: ReadonlyArray<{ name: string; description: string }> = [
-	{ name: "new", description: "会话 · 开始新会话" },
-	{ name: "resume", description: "会话 · 打开以前的会话" },
-	{ name: "clear", description: "会话 · 清空当前对话" },
-	{ name: "compact", description: "会话 · 压缩上下文" },
-	{ name: "export", description: "会话 · 导出对话" },
-	{ name: "copy", description: "会话 · 复制回复内容" },
-	{ name: "model", description: "模型 · 切换模型" },
-	{ name: "effort", description: "模型 · 调整思考强度" },
-	{ name: "setup", description: "模型 · 设置向导（提供商与模型）" },
-	{ name: "login", description: "模型 · 登录提供商" },
-	{ name: "provider", description: "模型 · 自定义提供商（Base URL + Key）" },
-	{ name: "theme", description: "外观 · 切换主题" },
-	{ name: "settings", description: "外观 · 打开设置" },
-	{ name: "plan", description: "工作 · 计划模式" },
-	{ name: "tools", description: "工作 · 查看可用工具" },
-	{ name: "mcp", description: "工作 · 管理 MCP 服务器" },
-	{ name: "context", description: "工作 · 查看上下文用量" },
-	{ name: "hotkeys", description: "其他 · 快捷键" },
-	{ name: "more", description: "其他 · 浏览全部命令" },
-	{ name: "exit", description: "其他 · 退出" },
+/** Default common commands, in menu order; each one's menu description is the text-table entry `cmd.<name>`. */
+export const NIGHTGLIDE_COMMON_COMMANDS: readonly string[] = [
+	"new",
+	"resume",
+	"clear",
+	"compact",
+	"export",
+	"copy",
+	"model",
+	"effort",
+	"setup",
+	"login",
+	"provider",
+	"theme",
+	"settings",
+	"plan",
+	"tools",
+	"mcp",
+	"context",
+	"hotkeys",
+	"more",
+	"exit",
 ];
 
-const COMMON_DESCRIPTIONS = new Map(NIGHTGLIDE_COMMON_COMMANDS.map(entry => [entry.name, entry.description]));
+const DEFAULT_COMMON = new Set(NIGHTGLIDE_COMMON_COMMANDS);
 
 export const cfgNightglideCommonCommands = register({
 	id: "nightglide.commonCommands",
 	type: "array",
-	default: NIGHTGLIDE_COMMON_COMMANDS.map(entry => entry.name),
+	default: [...NIGHTGLIDE_COMMON_COMMANDS],
 	ui: {
 		tab: "interaction",
 		group: "Input",
@@ -63,7 +64,7 @@ function liveDetail(live: string | undefined): string | undefined {
 
 /**
  * Mark the common commands in an autocomplete list: each listed name gets its menu rank and, for
- * the default commands, a Chinese description — followed by the command's live state, when it
+ * the default commands, a description in the interface language — followed by the command's live state, when it
  * has one, in parentheses. Names may be given with or without the leading slash; unknown names
  * are skipped, and user-added commands keep their own descriptions.
  */
@@ -76,16 +77,37 @@ export function markCommonCommands(commands: readonly SlashCommand[], names: rea
 	return commands.map(command => {
 		const featuredRank = rank.get(command.name);
 		if (featuredRank === undefined) return command;
-		const description = COMMON_DESCRIPTIONS.get(command.name);
-		if (!description) return { ...command, featuredRank };
+		if (!DEFAULT_COMMON.has(command.name)) return { ...command, featuredRank };
 		return {
 			...command,
 			featuredRank,
 			getAutocompleteDescription: () => {
 				// Called on the original command: a live description may read its own `this`.
+				const description = t(`cmd.${command.name}` as TextKey);
 				const detail = liveDetail(command.getAutocompleteDescription?.());
-				return detail ? `${description}（${detail}）` : description;
+				if (!detail) return description;
+				return getLanguage() === "zh" ? `${description}（${detail}）` : `${description} (${detail})`;
 			},
 		};
 	});
 }
+
+/** Language of Nightglide's own interface text; `auto` follows LC_ALL / LC_MESSAGES / LANG. */
+export const cfgNightglideLanguage = register({
+	id: "nightglide.language",
+	type: "enum",
+	values: ["zh", "en", "auto"] as const,
+	default: "zh",
+	ui: {
+		tab: "appearance",
+		group: "Theme",
+		label: "Language / 语言",
+		description:
+			"Language of Nightglide's interface text: 中文, English, or auto (Chinese when the system locale is zh*). Upstream setting descriptions stay in English.",
+		options: [
+			{ value: "zh", label: "中文", description: "Chinese (default)" },
+			{ value: "en", label: "English", description: "English" },
+			{ value: "auto", label: "Auto", description: "Follow the system locale" },
+		],
+	},
+});

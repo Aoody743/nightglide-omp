@@ -1,3 +1,4 @@
+import { t } from "@oh-my-pi/pi-tui/i18n";
 import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
 import type { AssistantMessage, ImageContent } from "@oh-my-pi/pi-ai";
 import * as AIError from "@oh-my-pi/pi-ai/error";
@@ -2963,7 +2964,7 @@ export class EventController {
 		// the lifetime.) Deliberately NOT wired on `model_changed`: that event
 		// fires for manual model picks too, and a toast claiming "已回退到 …"
 		// after the user chose a model themselves would be a lie.
-		this.ctx.showToast(`已回退到 ${event.model}`);
+		this.ctx.showToast(t("toast.fallback", { model: event.model }));
 		this.ctx.updateWelcomeContext?.();
 	}
 
