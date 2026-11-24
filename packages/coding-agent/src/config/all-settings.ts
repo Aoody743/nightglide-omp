@@ -9,6 +9,7 @@ import * as sessionSettings from "../session/settings";
 import * as advisorSettings from "../advisor/settings";
 import * as configModelSettings from "./model-settings";
 import * as nightglideRoutingSettings from "./nightglide-routing";
+import * as nightglideMenuSettings from "./nightglide-menu";
 import * as sessionContextSettings from "../session/context-settings";
 import * as memoryBackendSettings from "../memory-backend/settings";
 import * as memoriesSettings from "../memories/settings";
@@ -48,6 +49,7 @@ import * as auxiliaryModelPolicy from "./auxiliary-model-policy";
 const DOMAINS: readonly Readonly<Record<string, unknown>>[] = [
 	configModelSettings,
 	nightglideRoutingSettings,
+	nightglideMenuSettings,
 	modesSettings,
 	sessionSettings,
 	telemetrySettings,

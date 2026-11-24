@@ -259,6 +259,11 @@ export interface SlashCommand {
 	allowArgs?: boolean;
 	/** Dynamic display-only description for slash-command autocomplete. Must be synchronous and side-effect free. */
 	getAutocompleteDescription?: () => string | undefined;
+	/**
+	 * Nightglide: position in the common-command list. When any command has one, a bare `/`
+	 * lists only those commands, in this order; typing a name still searches every command.
+	 */
+	featuredRank?: number;
 	// Function to get argument completions for this command
 	// Returns null if no argument completion is available
 	getArgumentCompletions?(argumentPrefix: string): Awaitable<AutocompleteItem[] | null>;
@@ -397,7 +402,29 @@ export function scoreCommandTextMatch(lowerPrefix: string, lowerTarget: string):
 	return subsequenceMatch(lowerPrefix, lowerTarget) ? subsequenceScore(lowerPrefix, lowerTarget) : 0;
 }
 
+/** Nightglide: a bare `/` shows only the common commands, in list order, when any are marked. */
+function featuredForEmptyPrefix(commands: CommandEntry[], lowerPrefix: string): CommandEntry[] | undefined {
+	if (lowerPrefix.length > 0) return undefined;
+	const rankOf = (cmd: CommandEntry): number | undefined =>
+		"featuredRank" in cmd && typeof cmd.featuredRank === "number" ? cmd.featuredRank : undefined;
+	const featured = commands.filter(cmd => rankOf(cmd) !== undefined);
+	if (featured.length === 0) return undefined;
+	return featured.sort((a, b) => (rankOf(a) ?? 0) - (rankOf(b) ?? 0));
+}
+
 function buildSlashCommandCompletions(
+	commands: CommandEntry[],
+	lowerPrefix: string,
+	commandUsage?: (name: string) => number,
+): AutocompleteItem[] {
+	const featured = featuredForEmptyPrefix(commands, lowerPrefix);
+	// Every candidate scores the same for an empty prefix, so without usage counts the stable
+	// sort keeps the common list's own order.
+	if (featured) return rankSlashCommandCompletions(featured, lowerPrefix);
+	return rankSlashCommandCompletions(commands, lowerPrefix, commandUsage);
+}
+
+function rankSlashCommandCompletions(
 	commands: CommandEntry[],
 	lowerPrefix: string,
 	commandUsage?: (name: string) => number,

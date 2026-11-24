@@ -95,6 +95,7 @@ import {
 	resolveModelRoleValue,
 } from "../config/model-resolver";
 import { isSettingsInitialized, Settings, settings } from "../config/settings";
+import { cfgNightglideCommonCommands, markCommonCommands } from "../config/nightglide-menu";
 import { clearClaudePluginRootsCache } from "../discovery/helpers";
 import type {
 	AssistantTextRenderer,
@@ -1810,6 +1811,7 @@ export class InteractiveMode implements InteractiveModeContext {
 	/** Commands (not components) queued while streaming, for the deferral hint. */
 	#pendingCommandOutputCommands = 0;
 	#pendingSlashCommands: SlashCommand[] = [];
+	slashCommandList: readonly SlashCommand[] = [];
 	/** Symbol preset the slash-command picker icons were resolved under. */
 	#slashIconPreset: string | undefined;
 	/** Built-in editor autocomplete provider, before extension wrapping. */
@@ -2997,6 +2999,13 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.#eventBusUnsubscribers.push(
 			cfgModelRoles.listen(this.settings, () => this.#reapplyPlanModeModelOnRoleChange()),
 		);
+		// Nightglide: an edited common-command list takes effect in the `/` menu at once.
+		this.#eventBusUnsubscribers.push(
+			cfgNightglideCommonCommands.listen(this.settings, () => {
+				this.#rebuildSlashCommandAutocomplete(this.sessionManager.getCwd());
+				this.ui.requestRender();
+			}),
+		);
 		this.#eventBusUnsubscribers.push(
 			this.session.subscribeCommandMetadataChanged(() => {
 				// Skills/commands rediscovery (live `skills.*`/`commands.*`/extension edits,
@@ -3252,10 +3261,13 @@ export class InteractiveMode implements InteractiveModeContext {
 				icon: promptIcon,
 				iconName: "prompt",
 			}));
-		this.#baseAutocompleteProvider = this.#inputController.createAutocompleteProvider(
+		// Nightglide: a bare `/` lists the common commands; `/more` browses this full list.
+		const slashCommands = markCommonCommands(
 			[...this.#pendingSlashCommands, ...fileSlashCommands, ...promptTemplateCommands],
-			basePath,
+			cfgNightglideCommonCommands.get(this.settings),
 		);
+		this.slashCommandList = slashCommands;
+		this.#baseAutocompleteProvider = this.#inputController.createAutocompleteProvider(slashCommands, basePath);
 		this.#applyAutocompleteProvider();
 	}
 

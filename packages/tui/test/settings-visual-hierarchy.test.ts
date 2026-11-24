@@ -89,7 +89,7 @@ function harness(initial: Record<string, unknown> = {}): SettingsSelectorCompone
 		}),
 		parsePluginId: () => null,
 	};
-	return new SettingsSelectorComponent(
+	const selector = new SettingsSelectorComponent(
 		{
 			settings,
 			plugins,
@@ -100,6 +100,9 @@ function harness(initial: Record<string, unknown> = {}): SettingsSelectorCompone
 		},
 		{ onChange: () => {}, onCancel: () => {} },
 	);
+	// Nightglide opens on the common page; these fixtures live on Appearance, one tab to the right.
+	selector.handleInput("\x1b[C");
+	return selector;
 }
 
 function sectionedItems() {
