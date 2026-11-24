@@ -96,7 +96,12 @@ import {
 	resolveModelRoleValue,
 } from "../config/model-resolver";
 import { isSettingsInitialized, Settings, settings } from "../config/settings";
-import { cfgNightglideCommonCommands, cfgNightglideLanguage, markCommonCommands } from "../config/nightglide-menu";
+import {
+	applyCommandTiers,
+	cfgNightglideCommonCommands,
+	cfgNightglideHiddenCommands,
+	cfgNightglideLanguage,
+} from "../config/nightglide-menu";
 import { clearClaudePluginRootsCache } from "../discovery/helpers";
 import type {
 	AssistantTextRenderer,
@@ -3010,13 +3015,15 @@ export class InteractiveMode implements InteractiveModeContext {
 				this.ui.requestRender();
 			}),
 		);
-		// Nightglide: an edited common-command list takes effect in the `/` menu at once.
-		this.#eventBusUnsubscribers.push(
-			cfgNightglideCommonCommands.listen(this.settings, () => {
-				this.#rebuildSlashCommandAutocomplete(this.sessionManager.getCwd());
-				this.ui.requestRender();
-			}),
-		);
+		// Nightglide: edited common or hidden command lists take effect in the `/` menu at once.
+		for (const cfg of [cfgNightglideCommonCommands, cfgNightglideHiddenCommands]) {
+			this.#eventBusUnsubscribers.push(
+				cfg.listen(this.settings, () => {
+					this.#rebuildSlashCommandAutocomplete(this.sessionManager.getCwd());
+					this.ui.requestRender();
+				}),
+			);
+		}
 		this.#eventBusUnsubscribers.push(
 			this.session.subscribeCommandMetadataChanged(() => {
 				// Skills/commands rediscovery (live `skills.*`/`commands.*`/extension edits,
@@ -3272,10 +3279,14 @@ export class InteractiveMode implements InteractiveModeContext {
 				icon: promptIcon,
 				iconName: "prompt",
 			}));
-		// Nightglide: a bare `/` lists the common commands; `/more` browses this full list.
-		const slashCommands = markCommonCommands(
+		// Nightglide: a bare `/` lists the common commands; advanced ones wait for their full name;
+		// `/more` browses this full list.
+		const slashCommands = applyCommandTiers(
 			[...this.#pendingSlashCommands, ...fileSlashCommands, ...promptTemplateCommands],
-			cfgNightglideCommonCommands.get(this.settings),
+			{
+				common: cfgNightglideCommonCommands.get(this.settings),
+				hidden: cfgNightglideHiddenCommands.get(this.settings),
+			},
 		);
 		this.slashCommandList = slashCommands;
 		this.#baseAutocompleteProvider = this.#inputController.createAutocompleteProvider(slashCommands, basePath);

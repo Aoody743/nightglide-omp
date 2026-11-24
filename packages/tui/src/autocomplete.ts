@@ -264,6 +264,11 @@ export interface SlashCommand {
 	 * lists only those commands, in this order; typing a name still searches every command.
 	 */
 	featuredRank?: number;
+	/**
+	 * Nightglide: an advanced command. Search leaves it out until its full name or an alias is
+	 * typed; running it by name is unaffected.
+	 */
+	advanced?: boolean;
 	// Function to get argument completions for this command
 	// Returns null if no argument completion is available
 	getArgumentCompletions?(argumentPrefix: string): Awaitable<AutocompleteItem[] | null>;
@@ -412,11 +417,19 @@ function featuredForEmptyPrefix(commands: CommandEntry[], lowerPrefix: string): 
 	return featured.sort((a, b) => (rankOf(a) ?? 0) - (rankOf(b) ?? 0));
 }
 
+/** Nightglide: an advanced command stays out of the list until its full name or an alias is typed. */
+function isHiddenAdvanced(cmd: CommandEntry, lowerPrefix: string): boolean {
+	if (!("advanced" in cmd) || cmd.advanced !== true) return false;
+	const names = [getCommandName(cmd), ...getCommandAliases(cmd)];
+	return !names.some(name => name?.toLowerCase() === lowerPrefix);
+}
+
 function buildSlashCommandCompletions(
 	commands: CommandEntry[],
 	lowerPrefix: string,
 	commandUsage?: (name: string) => number,
 ): AutocompleteItem[] {
+	commands = commands.filter(cmd => !isHiddenAdvanced(cmd, lowerPrefix));
 	const featured = featuredForEmptyPrefix(commands, lowerPrefix);
 	// Every candidate scores the same for an empty prefix, so without usage counts the stable
 	// sort keeps the common list's own order.

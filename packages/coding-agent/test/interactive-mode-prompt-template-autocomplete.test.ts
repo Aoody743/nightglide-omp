@@ -175,11 +175,12 @@ describe("InteractiveMode prompt-template autocomplete (#2462)", () => {
 
 		await created.mode.refreshSlashCommandState(tempDir.path());
 		const offFast = (await fetchSlashItems(providerSlot.current!, "/fast")).find(item => item.value === "fast");
-		expect(offFast?.description).toBe("Fast: off");
+		// Nightglide: the builtin's group and description, then its live state.
+		expect(offFast?.description).toBe("模型 · 切换快速服务档（off）");
 
 		created.session.setFastMode(true);
 		const onFast = (await fetchSlashItems(providerSlot.current!, "/fast")).find(item => item.value === "fast");
-		expect(onFast?.description).toBe("Fast: on");
+		expect(onFast?.description).toBe("模型 · 切换快速服务档（on）");
 	});
 
 	it("normalizes file-command hints before autocomplete renders them", async () => {
