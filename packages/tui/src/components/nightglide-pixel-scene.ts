@@ -36,8 +36,20 @@ export interface PixelPalette {
 	plants?: readonly string[];
 	/** Aurora only: the upper, violet part of the curtains, faint → bright. */
 	upper?: readonly string[];
-	/** Aurora only: mountains — near range, far range, lit far crest. */
+	/** Aurora: mountains — near range, far range, lit far crest. Dive: rock, lit rock edge, sand. */
 	ground?: readonly string[];
+	/** Flight: cloud layers, far → near. */
+	clouds?: readonly string[];
+	/** Flight: cloud undersides. */
+	shade?: string;
+	/** Flight: the lit top edge of a cloud. */
+	rim?: string;
+	/** Flight: high wisps in the sky. */
+	wisp?: string;
+	/** Dive: light from the surface, strongest at the top of the window. */
+	surface?: string;
+	/** Dive: rippling caustic lines near the surface. */
+	caustic?: string;
 	/**
 	 * The palette holds only colors of a limited grid (256-color terminals): scenes that blend
 	 * colors smoothly (Aurora) pick from the listed stops instead, so nothing rounds to a gray.
@@ -77,6 +89,8 @@ export interface SceneOptions {
 	 * Default 2.
 	 */
 	cellPixels?: 1 | 2;
+	/** Band width in columns; set by {@link renderPixelScene}. */
+	width?: number;
 }
 
 function hash(x: number, y: number, salt: number): number {
@@ -108,17 +122,6 @@ function fbm(x: number, y: number, salt: number): number {
 		valueNoise(x * 2.1, y * 2.1, salt + 7) * 0.28 +
 		valueNoise(x * 4.3, y * 4.3, salt + 13) * 0.1
 	);
-}
-
-/** 4x4 Bayer matrix for soft ramp edges. */
-const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
-
-function rampColor(ramp: readonly string[], value: number, x: number, y: number): string | undefined {
-	if (value <= 0 || ramp.length === 0) return undefined;
-	const scaled = value * ramp.length + (BAYER[(y & 3) * 4 + (x & 3)]! / 16 - 0.5) * 0.45;
-	const index = Math.floor(scaled);
-	if (index < 0) return undefined;
-	return ramp[Math.min(ramp.length - 1, index)];
 }
 
 /** Linear mix of two `#rrggbb` colors. */
@@ -171,106 +174,6 @@ type PixelFn = (
 	der: Derived,
 	opts: SceneOptions,
 ) => string;
-
-const flightPixel: PixelFn = (x, py, pixelRows, edge, pal, der, { time, intensity, cellPixels = 2 }) => {
-	const d = depth(py, pixelRows, edge);
-	const salt = edge === "top" ? 11 : 29;
-
-	// Near layer: faster, larger shapes, full ramp. Thins out toward the content
-	// so the band dissolves instead of ending.
-	const near = fbm((x + time * 0.22) / 10, py / 4, salt + 5);
-	const nearDensity = (near - 0.4 - d * 0.5 + intensity * 0.1) * 2.6;
-	const nearColor = rampColor(pal.ramp, nearDensity, x, py);
-	if (nearColor) return nearColor;
-
-	// Light band: a one-pixel wavy thread behind the near clouds, mostly a
-	// soft blend into the page with only short bright glints. Higher effort
-	// makes it more continuous and lets the glints run longer.
-	const center = pixelRows * 0.55 + Math.sin((x + time * 0.15) / 23 + salt) * 1.2;
-	if (Math.abs(py - center) < 0.5) {
-		const n = valueNoise((x + time * 0.3) / 9, 0, salt + 3);
-		// A whole-cell pixel is twice as tall: keep the thread sparser and dimmer, without glints.
-		const whole = cellPixels === 1;
-		const threshold = 0.5 - intensity * 0.2 + (whole ? 0.18 : 0);
-		if (n > threshold) {
-			const glint = !whole && n > 0.86 - intensity * 0.1;
-			return der.glow[glint ? 2 : !whole && n > threshold + 0.15 ? 1 : 0]!;
-		}
-	}
-
-	// Far layer: slow and faint, showing through the gaps.
-	const far = fbm((x + time * 0.07) / 19, py / 6, salt);
-	const farColor = rampColor(der.far, (far - 0.45 - d * 0.32) * 2.2, x, py);
-	if (farColor) return farColor;
-
-	// Twinkling sparks in open sky; more of them at higher effort.
-	const twinkle = Math.floor(time / 9);
-	if (d > 0.4 && hash(x, py, salt + 99 + (hash(x, py, salt) > 0.5 ? twinkle : 0)) > 0.995 - intensity * 0.014) {
-		return pal.spark;
-	}
-	return pal.page;
-};
-
-const divePixel: PixelFn = (x, py, pixelRows, edge, pal, der, { time, intensity }) => {
-	const d = depth(py, pixelRows, edge);
-	const salt = edge === "top" ? 41 : 53;
-
-	if (edge === "bottom") {
-		// Seabed plants rooted at the window edge: tapering stalks whose tips
-		// sway more than their bases.
-		const plants = pal.plants ?? pal.ramp;
-		const fromBed = pixelRows - 1 - py;
-		const cell = Math.floor(x / 7);
-		for (let k = -1; k <= 1; k++) {
-			// One possible stalk per 7-column cell, at a seeded offset, so spacing is irregular.
-			const slot = cell + k;
-			const seed = hash(slot, 0, salt);
-			if (seed < 0.25) continue;
-			const root = slot * 7 + 1 + Math.floor(hash(slot, 1, salt) * 5);
-			const height = 3 + Math.floor(hash(slot, 2, salt) * (pixelRows * 0.85 - 3));
-			if (fromBed > height) continue;
-			const bend = fromBed / height;
-			const sway = Math.sin(time * 0.09 + slot * 1.7 + fromBed * 0.42) * bend * bend * 1.8;
-			const center = root + sway;
-			const half = 0.75 - bend * 0.4;
-			if (Math.abs(x - center) < half) {
-				if (seed > 0.9 && fromBed >= height - 1) return pal.accent;
-				return plants[Math.min(plants.length - 1, Math.floor(bend * plants.length))]!;
-			}
-		}
-	}
-
-	// Rising bubbles: each column has its own speed and a gentle side-to-side
-	// wobble. More columns carry bubbles at higher effort.
-	const column = Math.floor(x / 4);
-	const bubbleSeed = hash(column, 7, salt);
-	if (bubbleSeed > 0.8 - intensity * 0.4) {
-		const speed = 0.16 + hash(column, 9, salt) * 0.22;
-		const span = pixelRows + 8;
-		const travel = (time * speed + bubbleSeed * 97) % span;
-		const by = pixelRows - 1 - Math.floor(travel);
-		const wobble = Math.round(Math.sin(travel * 0.55 + bubbleSeed * 6) * 0.9);
-		if (py === by && x === column * 4 + 1 + wobble) return pal.spark;
-	}
-
-	// Water body, thinning toward the content.
-	const drift = time * 0.07;
-	const n = fbm((x + drift) / 18, py / 2.6, salt);
-	const water = rampColor(pal.ramp, (n * 0.85 - 0.32 - d * 0.55) * 2.2, x, py);
-	if (water) return water;
-
-	// Light shafts slanting down from the surface: strongest at the top edge,
-	// fading with depth; brighter at higher effort.
-	const shaftStrength = edge === "top" ? 1 - d * 0.75 : 0.35 * (1 - d);
-	const wave = Math.sin((x * 0.85 + py * 0.7 + Math.sin(time * 0.03) * 6) / 6.5 + salt);
-	const shaft = (wave - 0.55) * 2.6 * shaftStrength * (0.75 + intensity * 0.5);
-	if (shaft > 0) return der.shaft[Math.min(der.shaft.length - 1, Math.floor(shaft * der.shaft.length))]!;
-
-	// Faint particles drifting slowly down.
-	const moteRow = Math.floor(py + time * 0.05) % pixelRows;
-	if (hash(x, moteRow < 0 ? moteRow + pixelRows : moteRow, salt + 17) > 0.992 - intensity * 0.004) return der.mote;
-	return pal.page;
-};
 
 /** Columns the launch sweep covers; wider windows finish the sweep at their right edge. */
 const AURORA_SWEEP_COLUMNS = 180;
@@ -399,6 +302,175 @@ const auroraPixel: PixelFn = (x, py, pixelRows, edge, pal, _der, { time, intensi
 	return star ?? pal.page;
 };
 
+/** Sparse stars at two brightnesses, a few twinkling; undefined where there is none. */
+function starAt(x: number, py: number, salt: number, time: number, pal: PixelPalette, more = 0): string | undefined {
+	if (pal.spark === pal.page) return undefined;
+	const twinkle = Math.floor(time / 13);
+	const seed = hash(x, py, salt + 99 + (hash(x, py, salt) > 0.7 ? twinkle : 0));
+	if (seed > 0.996 - more) return pal.spark;
+	if (seed > 0.991 - more) return mix(pal.page, pal.spark, 0.45);
+	return undefined;
+}
+
+/**
+ * Top of a cloud layer at column `x`, as a 0–1 share of the band: a continuous base with rounded
+ * billows of seeded sizes every ~`spacing` columns.
+ */
+function billowTop(x: number, spacing: number, base: number, amp: number, salt: number): number {
+	const cell = Math.floor(x / spacing);
+	let top = base;
+	for (let k = -2; k <= 2; k++) {
+		const slot = cell + k;
+		const cx = slot * spacing + hash(slot, 1, salt) * spacing;
+		const r = spacing * (0.55 + 0.6 * hash(slot, 2, salt));
+		const dx = (x - cx) / r;
+		if (Math.abs(dx) >= 1) continue;
+		top = Math.max(top, base + amp * (0.45 + 0.55 * hash(slot, 3, salt)) * Math.sqrt(1 - dx * dx));
+	}
+	return top;
+}
+
+/** Cloud layers of the flight floor, near first: drift speed, billow spacing, base and height. */
+const CLOUD_LAYERS = [
+	{ speed: 0.24, spacing: 14, base: 0.18, amp: 0.72 },
+	{ speed: 0.12, spacing: 19, base: 0.5, amp: 0.45 },
+	{ speed: 0.05, spacing: 27, base: 0.72, amp: 0.3 },
+] as const;
+
+const flightPixel: PixelFn = (x, py, pixelRows, edge, pal, _der, opts) => {
+	const { time, intensity, cellPixels = 2, width = 120 } = opts;
+	const q = pal.quantized === true;
+	const salt = edge === "top" ? 11 : 29;
+	const tall = cellPixels === 1 ? 2 : 1; // a whole-cell pixel is twice as tall as it is wide
+
+	if (edge === "bottom") {
+		// A sea of clouds below: three layers drifting at their own speeds, the nearest fastest
+		// (forward flight), each with a lit rim and darker undersides.
+		const clouds = pal.clouds ?? pal.ramp;
+		const fromBase = pixelRows - 1 - py;
+		const pace = 1 + intensity * 0.6;
+		for (let i = 0; i < CLOUD_LAYERS.length; i++) {
+			const layer = CLOUD_LAYERS[i]!;
+			const body = clouds[Math.max(0, clouds.length - 1 - i)]!;
+			// Higher effort: billows rise a little taller and their rims glow brighter.
+			const amp = layer.amp * (1 + intensity * 0.2);
+			const top =
+				pixelRows * billowTop(x + time * layer.speed * pace, layer.spacing, layer.base, amp, salt + i * 13);
+			if (fromBase >= top) continue;
+			const inside = top - fromBase;
+			const rim = pal.rim ?? body;
+			// The lit rim shows on billow tops, not along the flat base between them.
+			const crest = top > pixelRows * (layer.base + layer.amp * 0.35);
+			const glow = (i === 0 ? 0.7 : 0.3) + intensity * 0.25;
+			if (inside <= 1 && crest && i < 2) return q ? (i === 0 ? rim : body) : mix(body, rim, glow);
+			if (q) return body;
+			// Lit near the top, darker underneath.
+			return mix(body, pal.shade ?? body, smoothstep(1, pixelRows * 0.6, inside) * (i === 0 ? 0.7 : 0.4));
+		}
+		return starAt(x, py, salt, time, pal) ?? pal.page;
+	}
+
+	// The sky above: a moon (a sun in light themes) with a soft halo, high wisps, stars.
+	const cx = width * 0.8;
+	const cy = pixelRows * 0.42;
+	const dist = Math.hypot(x - cx, (py - cy) * tall);
+	if (dist < 2.4) return dist < 1.5 || q ? pal.accent : mix(pal.accent, pal.page, 0.35);
+	let sky = pal.page;
+	if (!q && dist < 10) sky = mix(pal.page, pal.accent, 0.2 * (1 - dist / 10) ** 2);
+	const wisp = smoothstep(0.58, 0.74, fbm((x + time * 0.06) / 34, (py * tall) / 3.4, salt)) * (0.4 + 0.25 * intensity);
+	if (wisp > 0) {
+		if (q) {
+			if (wisp > 0.3) return pal.wisp ?? pal.ramp[0]!;
+		} else {
+			sky = mix(sky, pal.wisp ?? pal.ramp[1] ?? pal.ramp[0]!, wisp);
+		}
+	}
+	if (sky === pal.page) return starAt(x, py, salt, time, pal, intensity * 0.004) ?? sky;
+	return sky;
+};
+
+const divePixel: PixelFn = (x, py, pixelRows, edge, pal, der, opts) => {
+	const { time, intensity, cellPixels = 2 } = opts;
+	const q = pal.quantized === true;
+	const d = depth(py, pixelRows, edge);
+	const salt = edge === "top" ? 41 : 53;
+	const tall = cellPixels === 1 ? 2 : 1;
+	const light = pal.surface ?? pal.ramp[pal.ramp.length - 1]!;
+
+	// Rising bubbles: each column has its own speed and a gentle wobble; more at higher effort.
+	const column = Math.floor(x / 4);
+	const bubbleSeed = hash(column, 7, salt);
+	if (bubbleSeed > 0.82 - intensity * 0.35) {
+		const speed = (0.16 + hash(column, 9, salt) * 0.22) / tall;
+		const span = pixelRows + 8;
+		const travel = (time * speed + bubbleSeed * 97) % span;
+		const by = pixelRows - 1 - Math.floor(travel);
+		const wobble = Math.round(Math.sin(travel * 0.55 + bubbleSeed * 6) * 0.9);
+		if (py === by && x === column * 4 + 1 + wobble) return pal.spark;
+	}
+
+	if (edge === "bottom") {
+		const ground = pal.ground ?? [pal.page];
+		const rock = ground[0]!;
+		const rockLit = ground[Math.min(1, ground.length - 1)]!;
+		const sand = ground[Math.min(2, ground.length - 1)]!;
+		const fromBed = pixelRows - 1 - py;
+		// Sand floor with soft ripples.
+		const sandTop = (pixelRows * 0.14 + (Math.sin(x / 3.1) > 0.6 ? 0.6 : 0)) / tall;
+		if (fromBed < sandTop) return sand;
+		// Seaweed in front of the rocks: tapering stalks whose tips sway more than their bases.
+		const plants = pal.plants ?? pal.ramp;
+		const cell = Math.floor(x / 7);
+		for (let k = -1; k <= 1; k++) {
+			const slot = cell + k;
+			const seed = hash(slot, 0, salt);
+			if (seed < 0.3) continue;
+			const root = slot * 7 + 1 + Math.floor(hash(slot, 1, salt) * 5);
+			const height = 3 / tall + Math.floor(hash(slot, 2, salt) * (pixelRows * 0.85 - 3 / tall));
+			if (fromBed > height) continue;
+			const bend = fromBed / height;
+			const sway = Math.sin(time * 0.09 + slot * 1.7 + fromBed * tall * 0.42) * bend * bend * 1.8;
+			if (Math.abs(x - (root + sway)) < 0.75 - bend * 0.4) {
+				return plants[Math.min(plants.length - 1, Math.floor(bend * plants.length))]!;
+			}
+		}
+		// Rock outcrops with a lit top edge; a few carry coral.
+		const slope = cellPixels === 1 ? 0.5 : 1;
+		const rockTop = ridgeHeight(x, 17, pixelRows * 0.25, pixelRows * 0.75, 0.55 * slope, salt);
+		if (fromBed < rockTop - 1) return rock;
+		if (fromBed < rockTop) return hash(Math.floor(x / 3), 4, salt) > 0.86 ? pal.accent : rockLit;
+		// Dim water above the bed.
+		const haze = (1 - d) * 0.18;
+		if (!q && haze > 0.01) return mix(pal.page, pal.ramp[0]!, haze);
+		return hash(x, Math.floor(py + time * 0.05), salt + 17) > 0.993 ? der.mote : pal.page;
+	}
+
+	// The surface seen from below: brighter water near the top, rippling caustic lines, and soft
+	// shafts slanting down; all fade with depth.
+	const near = 1 - d;
+	const y = py * tall;
+	// The surface itself: a shimmering line along the window edge.
+	if (py === 0) {
+		const glint = 0.5 + 0.5 * Math.sin(x * 0.7 + time * 0.08 + Math.sin(x * 0.13) * 3);
+		return q ? (glint > 0.6 ? (pal.caustic ?? light) : pal.ramp[0]!) : mix(pal.page, light, 0.45 + 0.35 * glint);
+	}
+	let water = q ? pal.page : mix(pal.page, light, 0.3 * near ** 1.6);
+	// Caustics: two interfering ripple fields; their product makes bright patches that wander.
+	const a = 0.5 + 0.5 * Math.sin(x * 0.42 + 2.2 * Math.sin(y * 0.55 + time * 0.035));
+	const b = 0.5 + 0.5 * Math.sin(y * 0.9 + 1.6 * Math.sin(x * 0.27 - time * 0.03));
+	const caustic = smoothstep(0.45, 0.85, a * b) * smoothstep(0.35, 0.85, near);
+	const wave = Math.sin((x * 0.85 + y * 0.7 + Math.sin(time * 0.03) * 6) / 6.5 + salt);
+	const shaft = smoothstep(0.45, 1, wave) * near * (0.32 + intensity * 0.14);
+	if (q) {
+		if (caustic > 0.55) return pal.caustic ?? light;
+		if (shaft > 0.12) return pal.ramp[0]!;
+		return hash(x, Math.floor(py + time * 0.05), salt + 17) > 0.993 ? der.mote : pal.page;
+	}
+	if (shaft > 0) water = mix(water, light, shaft);
+	if (caustic > 0) water = mix(water, pal.caustic ?? light, caustic * 0.5);
+	return water;
+};
+
 const SCENE_PIXELS: Record<SceneKind, PixelFn> = { flight: flightPixel, dive: divePixel, aurora: auroraPixel };
 
 /** Render `rows` terminal rows of the scene band. */
@@ -420,6 +492,7 @@ export function renderPixelScene(
 		intensity: Math.min(1, Math.max(0, opts.intensity)),
 		intro: Math.min(1, Math.max(0, opts.intro ?? 1)),
 		cellPixels: half ? 2 : 1,
+		width,
 	};
 	const fgCache = new Map<string, string>();
 	const bgCache = new Map<string, string>();

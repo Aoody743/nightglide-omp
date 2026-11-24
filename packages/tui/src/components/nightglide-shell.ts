@@ -111,15 +111,24 @@ function familyFor(name: string | undefined): Family {
 				scene: {
 					page: "#f5f8ff",
 					ramp: ["#d7d7ff", "#afd7ff", "#87afff", "#5f87d7", "#005fd7"],
-					accent: "#ffaf00",
-					spark: "#87afd7",
+					// Cloud sea far → near, undersides, sunlit rims; a sun; no stars by day.
+					clouds: ["#e3ebfa", "#d2def6", "#fbfdff"],
+					shade: "#b9caee",
+					rim: "#ffffff",
+					wisp: "#dde7fb",
+					accent: "#ffb547",
+					spark: "#f5f8ff",
 				},
 				scene256: {
 					page: "#ffffff",
 					ramp: ["#d7d7ff", "#afd7ff", "#87afff", "#5f87d7", "#005fd7"],
+					clouds: ["#e4e4e4", "#d7d7ff", "#d7ffff"],
+					shade: "#afafd7",
+					rim: "#ffffff",
+					wisp: "#eeeeee",
 					accent: "#ffaf00",
-					spark: "#87afd7",
-					blends: { glow: ["#ffd7af", "#ffd787", "#ffaf00"] },
+					spark: "#ffffff",
+					quantized: true,
 				},
 			};
 		case "nightglide-abyss":
@@ -138,6 +147,10 @@ function familyFor(name: string | undefined): Family {
 					accent: "#ff875f",
 					spark: "#afffff",
 					plants: ["#00875f", "#00af87", "#5fd787"],
+					// Rock, lit rock edge, sand; light from the surface and its caustics.
+					ground: ["#0c3c42", "#22777a", "#3a6458"],
+					surface: "#5fd7d7",
+					caustic: "#9ff5ec",
 				},
 				scene256: {
 					page: "#121212",
@@ -145,11 +158,11 @@ function familyFor(name: string | undefined): Family {
 					accent: "#ff875f",
 					spark: "#afffff",
 					plants: ["#00875f", "#00af87", "#5fd787"],
-					blends: {
-						far: ["#005f5f"],
-						shaft: ["#1c1c1c", "#262626", "#303030"],
-						mote: "#5f8787",
-					},
+					ground: ["#1c1c1c", "#005f5f", "#3a3a3a"],
+					surface: "#5fd7d7",
+					caustic: "#87d7d7",
+					blends: { mote: "#5f8787" },
+					quantized: true,
 				},
 			};
 		case "nightglide-daybreak":
@@ -166,20 +179,23 @@ function familyFor(name: string | undefined): Family {
 					page: "#f2fbf9",
 					ramp: ["#d7ffff", "#afd7d7", "#87d7d7", "#5fafaf"],
 					accent: "#ff5f5f",
-					spark: "#5fafaf",
+					spark: "#ffffff",
 					plants: ["#5faf87", "#00875f", "#005f5f"],
+					ground: ["#7fb0a6", "#a8d4ca", "#efe3c4"],
+					surface: "#ffffff",
+					caustic: "#9fd8d0",
 				},
 				scene256: {
 					page: "#ffffff",
 					ramp: ["#d7ffff", "#afd7d7", "#87d7d7", "#5fafaf"],
 					accent: "#ff5f5f",
-					spark: "#5fafaf",
+					spark: "#d7ffff",
 					plants: ["#5faf87", "#00875f", "#005f5f"],
-					blends: {
-						far: ["#d7ffff"],
-						shaft: ["#eeeeee", "#e4e4e4", "#d7ffff"],
-						mote: "#87d7d7",
-					},
+					ground: ["#87afaf", "#afd7d7", "#ffffd7"],
+					surface: "#ffffff",
+					caustic: "#afd7d7",
+					blends: { mote: "#87d7d7" },
+					quantized: true,
 				},
 			};
 		case "nightglide-aurora":
@@ -228,15 +244,25 @@ function familyFor(name: string | undefined): Family {
 				scene: {
 					page: "#0b1022",
 					ramp: ["#18244e", "#22417e", "#2f6daf", "#5fb0dc", "#b8ecf7"],
-					accent: "#f5b94c",
-					spark: "#6c78b0",
+					// Cloud sea far → near, undersides, moonlit rims; a moon; high wisps.
+					clouds: ["#1b2955", "#2a4a88", "#4677bd"],
+					shade: "#152048",
+					rim: "#cdeeff",
+					wisp: "#2a3b74",
+					accent: "#f5d58c",
+					spark: "#b4bfe8",
 				},
 				scene256: {
 					page: "#121212",
 					ramp: ["#303030", "#005f87", "#5f87af", "#87afd7", "#d7ffff"],
-					accent: "#ffaf5f",
-					spark: "#5f5f87",
-					blends: { far: ["#262626", "#303030"], glow: ["#875f5f", "#af875f", "#ffaf5f"] },
+					// Dark grid blues and a soft rim: brighter steps turn the band into a solid strip.
+					clouds: ["#00005f", "#00005f", "#005f87"],
+					shade: "#00005f",
+					rim: "#5f87af",
+					wisp: "#262626",
+					accent: "#ffd787",
+					spark: "#8787af",
+					quantized: true,
 				},
 			};
 	}
