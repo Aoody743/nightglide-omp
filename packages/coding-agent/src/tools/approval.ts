@@ -86,30 +86,76 @@ function asPolicyMap(value: unknown): Record<string, unknown> {
  * Missing context (or context with no settings and no `--auto-approve`) is
  * fail-closed: `always-ask` with an empty policy map — no user grant. When
  * settings are present, the configured `tools.approvalMode` is used (schema
- * default remains `yolo`). `--auto-approve` still forces `yolo`.
+ * default is `write` in Nightglide). `--auto-approve` still forces `yolo`.
  *
  * Shared by `ExtensionToolWrapper.execute`, `refuseByWritePolicy`,
  * `mcpApprovalPreflight`, and eval prelude host calls so those sites cannot
  * drift. `ExtensionToolWrapper.execute` still inherits the runner's session
  * settings when the caller omits context, so a live session keeps its
- * configured (schema-default `yolo`) grant.
+ * configured (schema-default `write`) grant.
  */
 export function resolveApprovalFromContext(context?: ApprovalContextSource | null): ResolvedExecuteTimeApproval {
 	if (context?.autoApprove === true) {
 		return {
 			approvalMode: "yolo",
-			userPolicies: context.settings ? asPolicyMap(cfgToolsApproval.get(context.settings)) : {},
+			userPolicies: context.settings ? operatorBoundPolicies(context.settings) : {},
 		};
 	}
 	const settings = context?.settings;
 	if (!settings) {
 		return { approvalMode: "always-ask", userPolicies: {} };
 	}
-	const configured: unknown = cfgToolsApprovalMode.get(settings);
+	const configured = operatorBoundMode(settings);
 	return {
-		approvalMode: isApprovalMode(configured) ? configured : "yolo",
-		userPolicies: asPolicyMap(cfgToolsApproval.get(settings)),
+		approvalMode: isApprovalMode(configured) ? configured : "write",
+		userPolicies: operatorBoundPolicies(settings),
 	};
+}
+
+// Nightglide: project settings files are writable by the agent (see `Settings.grantAuthority`), so
+// a value a project layer supplies may tighten approvals but never loosen what the operator's
+// global, `--config` and runtime layers set — the rule `bash.patterns` already follows.
+
+/** Rank of an approval mode by the highest tier it auto-approves. */
+function approvalModeRank(mode: ApprovalMode): number {
+	return TIER_RANK[APPROVAL_MODE_MAX_TIER[mode]];
+}
+
+/** `tools.approvalMode`, with a project-layer value kept from loosening the operator's. */
+function operatorBoundMode(settings: Settings): unknown {
+	const configured: unknown = cfgToolsApprovalMode.get(settings);
+	if (cfgToolsApprovalMode.provenance(settings) !== "project") return configured;
+	const operator: unknown = cfgToolsApprovalMode.get(settings.grantAuthority());
+	if (!isApprovalMode(configured)) return operator;
+	if (!isApprovalMode(operator)) return configured;
+	return approvalModeRank(configured) <= approvalModeRank(operator) ? configured : operator;
+}
+
+const POLICY_RANK: Readonly<Record<ApprovalPolicy, number>> = { allow: 0, prompt: 1, deny: 2 };
+
+/** `tools.approval`, with project-layer entries applied only where they are stricter than the operator's. */
+function operatorBoundPolicies(settings: Settings): Record<string, unknown> {
+	const merged = asPolicyMap(cfgToolsApproval.get(settings));
+	if (cfgToolsApproval.provenance(settings) !== "project") return merged;
+	const operator = asPolicyMap(cfgToolsApproval.get(settings.grantAuthority()));
+	const bounded: Record<string, unknown> = { ...operator };
+	for (const [key, value] of Object.entries(merged)) {
+		const policy = normalizePolicy(value);
+		if (policy === undefined) continue;
+		const operatorPolicy = normalizePolicy(operator[key]);
+		const stricter =
+			operatorPolicy === undefined ? policy !== "allow" : POLICY_RANK[policy] > POLICY_RANK[operatorPolicy];
+		if (stricter) bounded[key] = value;
+	}
+	return bounded;
+}
+
+/** `tools.restrictedFolders`; a project layer may add folders but not drop the operator's. */
+function operatorBoundRestrictedFolders(settings: Settings): readonly string[] {
+	const configured = cfgToolsRestrictedFolders.get(settings);
+	if (cfgToolsRestrictedFolders.provenance(settings) !== "project") return configured;
+	const operator = cfgToolsRestrictedFolders.get(settings.grantAuthority());
+	return [...new Set([...operator, ...configured])];
 }
 
 export interface ResolvedApproval {
@@ -338,7 +384,7 @@ export function approvalRestrictions(
 	cwd: string | undefined,
 ): ApprovalRestrictions | undefined {
 	if (!settings) return undefined;
-	const restrictedFolders = cfgToolsRestrictedFolders.get(settings);
+	const restrictedFolders = operatorBoundRestrictedFolders(settings);
 	if (restrictedFolders.length === 0) return undefined;
 	return cwd === undefined ? { restrictedFolders } : { restrictedFolders, cwd };
 }

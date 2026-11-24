@@ -17,7 +17,6 @@ import {
 } from "../session/retry-fallback-chains";
 import { cfgRetryFallbackChains } from "../session/settings";
 import type { Settings } from "./settings";
-import { cfgToolsApproval, cfgToolsApprovalMode } from "../tools/settings";
 
 /** Routing modes. `manual` is the default and changes nothing. */
 export type NightglideRoutingMode = "manual" | "local" | "balanced" | "performance";
@@ -436,27 +435,4 @@ function resolveStrongestModel(settings: Settings, models: NightglideModelSource
 	if (resolved.model) return formatModelString(resolved.model);
 	const pick = pickDefaultAvailableModel(available.filter(model => models.hasModelAuth?.(model) ?? true));
 	return pick ? formatModelString(pick) : undefined;
-}
-
-// ─────────────────────────────────────────────────────────────────────────
-// Headless approval default warning (print/-p and piped stdin paths)
-// ─────────────────────────────────────────────────────────────────────────
-
-/**
- * The warning to print on stderr when a headless run would execute with the
- * default `yolo` approval without the user expressing any approval intent:
- * no `--approval-mode`/`--auto-approve` flag, no `tools.approvalMode` in any
- * settings layer or env var, and no per-tool `tools.approval` entries.
- * Undefined when approvals are explicitly configured or the effective mode
- * is not `yolo`.
- */
-export function headlessApprovalWarning(
-	settings: Settings,
-	flags: { approvalMode?: string; autoApprove?: boolean } = {},
-): string | undefined {
-	if (flags.approvalMode || flags.autoApprove) return undefined;
-	if (cfgToolsApprovalMode.isConfigured(settings)) return undefined;
-	if (Object.keys(cfgToolsApproval.get(settings)).length > 0) return undefined;
-	if (cfgToolsApprovalMode.get(settings) !== "yolo") return undefined;
-	return "warning: headless approval defaults to yolo (writes/execs run without approval); pass --approval-mode always-ask to restrict";
 }

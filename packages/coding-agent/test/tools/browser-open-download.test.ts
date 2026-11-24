@@ -37,6 +37,8 @@ function createBrowserHost() {
 			"browser.cmux": false,
 			"browser.tern": false,
 			"tools.maxTimeout": 0,
+			// Headless kernel tests that assumed upstream's `yolo` approval default.
+			"tools.approvalMode": "yolo",
 		}),
 	};
 	const prelude = createBrowserPrelude(session);
@@ -71,6 +73,7 @@ describe("browser open during first-use Chromium download", () => {
 					"async.enabled": false,
 					"browser.cmux": false,
 					"browser.tern": false,
+					"tools.approvalMode": "yolo",
 				}),
 				getEvalSessionId: () => "browser-download-regression",
 				getEvalPreludes: () => [prelude],

@@ -158,7 +158,6 @@ import { cfgPlanDefaultOnStartup, cfgPlanEnabled } from "./plan-mode/settings";
 
 import { cfgAdvisorEnabled } from "./advisor/settings";
 import { cfgAsyncPrintWake, cfgLaunchPersist, cfgToolsApprovalMode } from "./tools/settings";
-import { headlessApprovalWarning } from "./config/nightglide-routing";
 import { claimTerminal } from "./tools/browser/terminal-owner";
 import {
 	cfgAutocompleteMaxVisible,
@@ -1999,17 +1998,6 @@ export async function runRootCommand(
 			// --auto-approve / --yolo without an explicit --approval-mode: reflect in settings so
 			// setup-time checks (e.g. #wrapToolForAcpPermission) also see the yolo intent.
 			cfgToolsApprovalMode.override(settingsInstance, "yolo");
-		}
-		// Headless runs have no approval surface: when the effective default is
-		// yolo and the user expressed no approval intent anywhere (flag, env,
-		// any settings layer, or per-tool policies), say so once on stderr.
-		// `--no-tools` runs nothing, so there is nothing the default would approve.
-		if ((parsedArgs.print || autoPrint) && !parsedArgs.noTools) {
-			const approvalWarning = headlessApprovalWarning(settingsInstance, {
-				approvalMode: parsedArgs.approvalMode,
-				autoApprove: parsedArgs.autoApprove,
-			});
-			if (approvalWarning) process.stderr.write(`${approvalWarning}\n`);
 		}
 		// Runtime overrides (not persisted): the session's cost gate reads its thresholds from settings.
 		if (parsedArgs.warnCost !== undefined) cfgSessionWarnCost.override(settingsInstance, parsedArgs.warnCost);

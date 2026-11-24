@@ -1397,9 +1397,9 @@ describe("resolveApprovalFromContext fail-closed default", () => {
 		});
 	});
 
-	it("keeps the schema default yolo when settings exist but approvalMode is unset", () => {
+	it("keeps the schema default write when settings exist but approvalMode is unset", () => {
 		expect(resolveApprovalFromContext({ settings: Settings.isolated() })).toEqual({
-			approvalMode: "yolo",
+			approvalMode: "write",
 			userPolicies: {},
 		});
 	});

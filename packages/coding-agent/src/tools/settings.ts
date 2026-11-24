@@ -315,7 +315,8 @@ export const cfgToolsApprovalMode = register({
 	id: "tools.approvalMode",
 	type: "enum",
 	values: ["always-ask", "always-ask-cached", "write", "yolo"] as const,
-	default: "yolo",
+	// Nightglide: default to `write` ("high-risk ask") instead of upstream `yolo`.
+	default: "write",
 	ui: {
 		tab: "interaction",
 		group: "Approvals",
@@ -351,10 +352,16 @@ export const cfgToolsApprovalMode = register({
 });
 
 // Folders where every action asks, in every approval mode and whatever was remembered.
+// Nightglide: protect the agent's own config directory by default. Under the `write` default an
+// agent could otherwise edit `~/.omp/agent/config.yml` and raise its own approval mode without
+// asking. Project `.omp` folders are not listed: a recursive search of the project would then ask
+// every time; project layers are instead kept from loosening approvals (see tools/approval.ts).
+const NIGHTGLIDE_RESTRICTED_FOLDERS: string[] = ["~/.omp"];
+
 export const cfgToolsRestrictedFolders = register({
 	id: "tools.restrictedFolders",
 	type: "array",
-	default: EMPTY_STRING_ARRAY,
+	default: NIGHTGLIDE_RESTRICTED_FOLDERS,
 	ui: {
 		tab: "interaction",
 		group: "Approvals",

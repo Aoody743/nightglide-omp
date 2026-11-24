@@ -89,7 +89,6 @@ import {
 } from "./settings";
 import { cfgStartupQuiet } from "../modes/settings";
 import {
-	cfgToolsApproval,
 	cfgToolsApprovalMode,
 	cfgToolsXdevDocs,
 	cfgToolsXdevInlineDevices,
@@ -1211,7 +1210,7 @@ export class SessionTools {
 		// Default-config ACP sessions still ask for executable calls even though
 		// the schema defaults to yolo; explicit yolo is an intentional opt-in.
 		if (tool.name !== "bash" && this.#isExplicitAutoApproveMode()) {
-			const userPolicies: Record<string, unknown> = cfgToolsApproval.get(this.#host.settings);
+			const { userPolicies } = resolveApprovalFromContext({ settings: this.#host.settings });
 			const toolPolicy = userPolicies[tool.name];
 			if (!toolPolicy || toolPolicy === "allow") return tool;
 		}
@@ -1443,7 +1442,7 @@ export class SessionTools {
 		return (
 			this.#autoApprove ||
 			(cfgToolsApprovalMode.isConfigured(this.#host.settings) &&
-				cfgToolsApprovalMode.get(this.#host.settings) === "yolo")
+				resolveApprovalFromContext({ settings: this.#host.settings }).approvalMode === "yolo")
 		);
 	}
 

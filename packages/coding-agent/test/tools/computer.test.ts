@@ -447,7 +447,8 @@ function toolSession(): ToolSession {
 	return {
 		cwd: import.meta.dir,
 		hasUI: false,
-		settings: Settings.isolated({ "computer.enabled": true }),
+		// These prelude tests run headless and assumed upstream's `yolo` default.
+		settings: Settings.isolated({ "computer.enabled": true, "tools.approvalMode": "yolo" }),
 		getSessionFile: () => null,
 		getSessionSpawns: () => null,
 	};

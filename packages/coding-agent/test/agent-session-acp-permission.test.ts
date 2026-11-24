@@ -187,7 +187,8 @@ it("eval applies a custom-wire patch exactly once through the canonical tool's A
 	expect(await Bun.file(tempDir.join("eval-wire.txt")).text()).toBe("ok\n");
 	expect(await Bun.file(tempDir.join("eval-wire-old.txt")).exists()).toBe(false);
 	expect(executeSpy).toHaveBeenCalledTimes(1);
-	expect(executeSpy.mock.calls[0]?.[1]).toEqual({ input });
+	// The approval check caches its patch inspection on the args under a Symbol key.
+	expect(executeSpy.mock.calls[0]?.[1]).toMatchObject({ input });
 	expect(permissionSpy).toHaveBeenCalledTimes(1);
 	expect(session.getToolForEvalBridge("edit")?.name).toBe("edit");
 	expect(session.getEvalBridgeToolNames()).toEqual(["edit", "apply_patch"]);

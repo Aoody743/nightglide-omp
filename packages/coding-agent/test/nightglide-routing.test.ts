@@ -1,14 +1,11 @@
-import { describe, expect, it, test } from "bun:test";
-import * as fs from "node:fs";
+import { afterEach, describe, expect, it, spyOn } from "bun:test";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { Model } from "@oh-my-pi/pi-catalog/types";
 import { buildModel } from "@oh-my-pi/pi-catalog/build";
-import { removeSyncWithRetries, Snowflake } from "@oh-my-pi/pi-utils";
 import {
 	applyNightglideRouting,
 	getAppliedNightglideRouting,
-	headlessApprovalWarning,
 	NIGHTGLIDE_LOCAL_CHAT_ROLES,
 	NIGHTGLIDE_PERFORMANCE_STRONG_ROLES,
 	resolveLocalModel,
@@ -26,6 +23,16 @@ import {
 } from "@oh-my-pi/pi-coding-agent/session/retry-fallback-chains";
 import { cfgRetryFallbackChains } from "@oh-my-pi/pi-coding-agent/session/settings";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
+import {
+	approvalRestrictions,
+	resolveApproval,
+	resolveApprovalFromContext,
+} from "@oh-my-pi/pi-coding-agent/tools/approval";
+import {
+	cfgToolsApproval,
+	cfgToolsApprovalMode,
+	cfgToolsRestrictedFolders,
+} from "@oh-my-pi/pi-coding-agent/tools/settings";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -565,107 +572,105 @@ describe("per-call model constraint under LOCAL routing", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────
-// headless approval warning
+// Nightglide approval default ("high-risk ask" = OMP `write` mode)
 // ─────────────────────────────────────────────────────────────────────────
 
-describe("headlessApprovalWarning", () => {
-	it("warns when nothing configures approval and the default applies", () => {
-		const message = headlessApprovalWarning(Settings.isolated());
-		expect(message).toContain("headless approval defaults to yolo");
-		expect(message).toContain("--approval-mode always-ask");
+describe("Nightglide approval default", () => {
+	it("defaults tools.approvalMode to write", () => {
+		expect(cfgToolsApprovalMode.get(Settings.isolated())).toBe("write");
+		expect(resolveApprovalFromContext({ settings: Settings.isolated() }).approvalMode).toBe("write");
 	});
 
-	it("stays quiet for explicit flags, configured mode, or per-tool policies", () => {
-		expect(headlessApprovalWarning(Settings.isolated(), { approvalMode: "always-ask" })).toBeUndefined();
-		expect(headlessApprovalWarning(Settings.isolated(), { autoApprove: true })).toBeUndefined();
-		expect(headlessApprovalWarning(Settings.isolated({ "tools.approvalMode": "always-ask" }))).toBeUndefined();
-		expect(headlessApprovalWarning(Settings.isolated({ "tools.approvalMode": "yolo" }))).toBeUndefined();
-		expect(headlessApprovalWarning(Settings.isolated({ "tools.approval": { bash: "allow" } }))).toBeUndefined();
+	it("keeps an explicitly configured mode", () => {
+		for (const mode of ["always-ask", "always-ask-cached", "write", "yolo"] as const) {
+			const settings = Settings.isolated({ "tools.approvalMode": mode });
+			expect(resolveApprovalFromContext({ settings }).approvalMode).toBe(mode);
+		}
+		expect(resolveApprovalFromContext({ settings: Settings.isolated(), autoApprove: true }).approvalMode).toBe(
+			"yolo",
+		);
+	});
+
+	it("auto-runs reads and writes but asks for exec and critical commands by default", () => {
+		const mode = resolveApprovalFromContext({ settings: Settings.isolated() }).approvalMode;
+		expect(resolveApproval({ name: "read", approval: "read" }, {}, mode).policy).toBe("allow");
+		expect(resolveApproval({ name: "write", approval: "write" }, {}, mode).policy).toBe("allow");
+		expect(resolveApproval({ name: "bash", approval: "exec" }, {}, mode).policy).toBe("prompt");
+		expect(resolveApproval({ name: "task", approval: "exec" }, {}, mode).policy).toBe("prompt");
+		const critical = resolveApproval(
+			{ name: "bash", approval: { tier: "exec", override: true, reason: "Critical pattern detected" } },
+			{},
+			mode,
+		);
+		expect(critical.policy).toBe("prompt");
+		expect(critical.override).toBe(true);
 	});
 });
 
-// ─────────────────────────────────────────────────────────────────────────
-// headless approval warning end to end (real CLI, print mode, stderr)
-// ─────────────────────────────────────────────────────────────────────────
-
-/** Stderr read until it contains `needle`, or all of it once the stream ends without it. */
-function spawnHeadlessCli(args: string[], home: string): Bun.Subprocess<"ignore", "pipe", "pipe"> {
-	return Bun.spawn([process.execPath, path.resolve(import.meta.dir, "../src/cli.ts"), ...args], {
-		cwd: home,
-		env: {
-			PATH: process.env.PATH,
-			HOME: home,
-			USERPROFILE: home,
-			TMPDIR: process.env.TMPDIR,
-			NO_COLOR: "1",
-			// The request never completes; the run stops as soon as the warning lands.
-			ANTHROPIC_API_KEY: "test-key",
-			ANTHROPIC_BASE_URL: "http://127.0.0.1:9",
-		},
-		stdin: "ignore",
-		stdout: "pipe",
-		stderr: "pipe",
+describe("Nightglide approval: agent-writable config cannot loosen approvals", () => {
+	afterEach(() => {
+		// spyOn stubs installed below are per-test.
+		for (const setting of [cfgToolsApprovalMode, cfgToolsApproval, cfgToolsRestrictedFolders]) {
+			const provenance = setting.provenance as unknown as { mockRestore?: () => void };
+			provenance.mockRestore?.();
+		}
 	});
-}
 
-describe("headless approval warning end to end", () => {
-	const approvalWarning = "headless approval defaults to yolo";
-
-	// Both cases run `-p` with a model the catalog lacks, so startup fails fast
-	// with a "Model not found" error and a closed stderr stream; the only
-	// difference is whether the approval default warning rides along.
-	function spawnModelMiss(args: string[], home: string): Bun.Subprocess<"ignore", "pipe", "pipe"> {
-		return spawnHeadlessCli(["--no-title", "--no-lsp", "--no-extensions", "--no-session", "-p", ...args], home);
+	/** A session whose `values` come from the project layer, over `operator` global settings. */
+	function projectSession(values: Record<string, unknown>, operator: Record<string, unknown> = {}): Settings {
+		const session = Settings.isolated({ ...operator, ...values });
+		spyOn(session, "grantAuthority").mockReturnValue(Settings.isolated(operator));
+		return session;
 	}
 
-	test("plain -p run prints the yolo default warning on stderr", async () => {
-		const home = path.join(os.tmpdir(), `pi-nightglide-approval-${Snowflake.next()}`);
-		fs.mkdirSync(home, { recursive: true });
-		try {
-			const proc = spawnModelMiss(["--model", "anthropic/no-such-model-x9", "hi"], home);
-			const [exitCode, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()]);
-			expect(exitCode).toBe(1);
-			expect(stderr).toContain(approvalWarning);
-		} finally {
-			removeSyncWithRetries(home);
-		}
-	}, 60_000);
+	it("ignores a project yolo but keeps a stricter project mode", () => {
+		spyOn(cfgToolsApprovalMode, "provenance").mockReturnValue("project");
+		expect(
+			resolveApprovalFromContext({ settings: projectSession({ "tools.approvalMode": "yolo" }) }).approvalMode,
+		).toBe("write");
+		expect(
+			resolveApprovalFromContext({ settings: projectSession({ "tools.approvalMode": "always-ask" }) }).approvalMode,
+		).toBe("always-ask");
+		// The operator's own yolo stays yolo when the project repeats it.
+		expect(
+			resolveApprovalFromContext({
+				settings: projectSession({ "tools.approvalMode": "yolo" }, { "tools.approvalMode": "yolo" }),
+			}).approvalMode,
+		).toBe("yolo");
+	});
 
-	test("an explicit --approval-mode keeps stderr quiet about the default", async () => {
-		const home = path.join(os.tmpdir(), `pi-nightglide-approval-${Snowflake.next()}`);
-		fs.mkdirSync(home, { recursive: true });
-		try {
-			const proc = spawnModelMiss(
-				["--approval-mode", "always-ask", "--model", "anthropic/no-such-model-x9", "hi"],
-				home,
-			);
-			const [exitCode, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()]);
-			expect(exitCode).toBe(1);
-			expect(stderr).toContain("not found");
-			expect(stderr).not.toContain(approvalWarning);
-		} finally {
-			removeSyncWithRetries(home);
-		}
-	}, 60_000);
+	it("keeps a non-project yolo, such as a subagent overlay", () => {
+		const settings = Settings.isolated({ "tools.approvalMode": "yolo" });
+		expect(resolveApprovalFromContext({ settings }).approvalMode).toBe("yolo");
+	});
 
-	// `--mode json` consumers parse stdout as events: the yolo-default warning
-	// must ride stderr only, never the JSON stream.
-	test("-p --mode json keeps the yolo default warning on stderr and stdout clean", async () => {
-		const home = path.join(os.tmpdir(), `pi-nightglide-approval-${Snowflake.next()}`);
-		fs.mkdirSync(home, { recursive: true });
-		try {
-			const proc = spawnModelMiss(["--mode", "json", "--model", "anthropic/no-such-model-x9", "hi"], home);
-			const [exitCode, stderr, stdout] = await Promise.all([
-				proc.exited,
-				new Response(proc.stderr).text(),
-				new Response(proc.stdout).text(),
-			]);
-			expect(exitCode).toBe(1);
-			expect(stderr).toContain(approvalWarning);
-			expect(stdout).not.toContain(approvalWarning);
-			expect(stdout).not.toContain("headless");
-		} finally {
-			removeSyncWithRetries(home);
-		}
-	}, 60_000);
+	it("applies project tool policies only where they are stricter", () => {
+		spyOn(cfgToolsApproval, "provenance").mockReturnValue("project");
+		const settings = projectSession(
+			{ "tools.approval": { bash: "allow", edit: "deny", eval: "prompt", read: "allow" } },
+			{ "tools.approval": { eval: "allow", read: "allow" } },
+		);
+		expect(resolveApprovalFromContext({ settings }).userPolicies).toEqual({
+			edit: "deny",
+			eval: "prompt",
+			read: "allow",
+		});
+	});
+
+	it("restricts ~/.omp by default, and a project cannot drop it", () => {
+		const configFile = path.join(os.homedir(), ".omp", "agent", "config.yml");
+		const writeConfig = { name: "write", approval: "write" as const, approvalCacheTargets: () => [configFile] };
+		const cwd = os.tmpdir();
+		const defaults = approvalRestrictions(Settings.isolated(), cwd);
+		expect(defaults?.restrictedFolders).toEqual(["~/.omp"]);
+		const resolved = resolveApproval(writeConfig, {}, "write", {}, undefined, defaults);
+		expect(resolved.policy).toBe("prompt");
+		expect(resolved.source).toBe("restriction");
+		// Even yolo asks for it.
+		expect(resolveApproval(writeConfig, {}, "yolo", {}, undefined, defaults).policy).toBe("prompt");
+
+		spyOn(cfgToolsRestrictedFolders, "provenance").mockReturnValue("project");
+		const fromProject = approvalRestrictions(projectSession({ "tools.restrictedFolders": ["./secrets"] }), cwd);
+		expect(fromProject?.restrictedFolders).toEqual(["~/.omp", "./secrets"]);
+	});
 });

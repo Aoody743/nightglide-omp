@@ -87,8 +87,16 @@ describe("tools.approvalMode setting", () => {
 		return bash;
 	}
 
-	it("yolo mode (default) bypasses approval for non-overriding tool calls", async () => {
-		const settings = approvalSettings();
+	it("write mode (Nightglide default) rejects exec tools when no UI is available", async () => {
+		await expect(
+			bashTool().execute("default-write", { command: "echo leaked" }, undefined, undefined, {
+				settings: approvalSettings(),
+			} as AgentToolContext),
+		).rejects.toThrow(/requires approval but no interactive UI available/);
+	});
+
+	it("explicit yolo mode bypasses approval for non-overriding tool calls", async () => {
+		const settings = approvalSettings({ "tools.approvalMode": "yolo" });
 		const result = await bashTool().execute("yolo", { command: "echo ok" }, undefined, undefined, {
 			settings,
 		} as AgentToolContext);
@@ -96,13 +104,15 @@ describe("tools.approvalMode setting", () => {
 	});
 
 	it("omitted execute-time context inherits the session runner settings", async () => {
-		const result = await bashTool().execute("inherit-session", { command: "echo inherited" });
-		expect(textOf(result)).toContain("inherited");
+		// The session runner has no approvalMode set, so it inherits the `write` default and asks.
+		await expect(bashTool().execute("inherit-session", { command: "echo inherited" })).rejects.toThrow(
+			/requires approval but no interactive UI available/,
+		);
 	});
 
 	it("missing execute-time context fails closed for an exec-tier tool", async () => {
 		// Explicit empty context: no settings and no --auto-approve. Omitting the
-		// argument inherits the session runner's settings (schema default yolo),
+		// argument inherits the session runner's settings (schema default write),
 		// which is the live-session path used by direct execute() callers.
 		await expect(
 			bashTool().execute("no-context", { command: "echo leaked" }, undefined, undefined, {} as AgentToolContext),

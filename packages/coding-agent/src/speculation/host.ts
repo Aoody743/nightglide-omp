@@ -21,7 +21,7 @@ import {
 } from "@oh-my-pi/pi-utils";
 import type { Settings } from "../config/settings";
 import type { ToolSession } from "../tools";
-import { approvalRestrictions, resolveApproval } from "../tools/approval";
+import { approvalRestrictions, resolveApproval, resolveApprovalFromContext } from "../tools/approval";
 import { getApprovalGrants } from "../tools/approval-cache";
 import { CONVERTIBLE_EXTENSIONS } from "../utils/markit";
 import {
@@ -35,12 +35,7 @@ import { isSampleProfilePath } from "../utils/sample-profile";
 import { isVideoPath } from "@oh-my-pi/pi-tui/prompt/video";
 import { cfgTaskSpeculativeLaunch } from "../task/settings";
 
-import {
-	cfgToolsApproval,
-	cfgToolsApprovalMode,
-	cfgToolsSpeculativeExecutionEnabled,
-	cfgToolsSpeculativeExecutionMaxInFlight,
-} from "../tools/settings";
+import { cfgToolsSpeculativeExecutionEnabled, cfgToolsSpeculativeExecutionMaxInFlight } from "../tools/settings";
 
 type LocalReadEvidence = {
 	path: string;
@@ -222,11 +217,12 @@ export class CodingAgentSpeculativeExecutionHost implements SpeculativeExecution
 		if (hasLifecycleHandlers(this.extensionRunner)) {
 			return { allowed: false, reason: "active extension lifecycle handler" };
 		}
+		const { approvalMode, userPolicies } = resolveApprovalFromContext({ settings: this.settings });
 		const approval = resolveApproval(
 			tool,
 			args,
-			cfgToolsApprovalMode.get(this.settings),
-			cfgToolsApproval.get(this.settings),
+			approvalMode,
+			userPolicies,
 			getApprovalGrants(this.settings.getAgentDir(), this.toolSession.sessionManager?.getSessionId?.()),
 			approvalRestrictions(this.settings, this.toolSession.cwd),
 		);
