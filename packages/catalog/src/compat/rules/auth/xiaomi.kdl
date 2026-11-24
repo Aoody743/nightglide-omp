@@ -3,4 +3,6 @@ auth "xiaomi" {
 	// Generic login accepts both pay-as-you-go and regional token-plan keys and
 	// preserves the historical SGP → AMS → CN validation fallback.
 	login "custom" hook="xiaomi"
+	// Nightglide: an API-key form, not an account sign-in; `/provider` adds any compatible endpoint.
+	show-in-login-list #false
 }

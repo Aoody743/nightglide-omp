@@ -65,6 +65,7 @@ export function buildProviderDefinition(
 		...(policy.nativeAuthApis !== undefined ? { nativeAuthApis: policy.nativeAuthApis } : {}),
 		...(policy.available !== undefined ? { available: policy.available } : {}),
 		...(policy.showInLoginList !== undefined ? { showInLoginList: policy.showInLoginList } : {}),
+		...(policy.login ? { loginKind: policy.login.kind } : {}),
 		...(policy.storeAs !== undefined ? { storeCredentialsAs: policy.storeAs } : {}),
 		...(policy.callbackPort !== undefined ? { callbackPort: policy.callbackPort } : {}),
 		...(policy.pasteCode ? { pasteCodeFlow: true } : {}),

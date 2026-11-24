@@ -80,6 +80,8 @@ export interface OAuthProviderInfo {
 	 * entry back to the model provider it authenticates.
 	 */
 	storeCredentialsAs?: string;
+	/** How the login runs (see `ProviderDefinition.loginKind`); undefined for extension-registered logins. */
+	loginKind?: "api-key" | "oauth-code" | "device-code" | "custom";
 }
 
 /** Sign-in URL and accepted cookies for an isolated, host-owned browser. */

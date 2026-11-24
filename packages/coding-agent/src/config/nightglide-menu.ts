@@ -19,6 +19,7 @@ export const NIGHTGLIDE_COMMON_COMMANDS: ReadonlyArray<{ name: string; descripti
 	{ name: "effort", description: "模型 · 调整思考强度" },
 	{ name: "setup", description: "模型 · 设置向导（提供商与模型）" },
 	{ name: "login", description: "模型 · 登录提供商" },
+	{ name: "provider", description: "模型 · 自定义提供商（Base URL + Key）" },
 	{ name: "theme", description: "外观 · 切换主题" },
 	{ name: "settings", description: "外观 · 打开设置" },
 	{ name: "plan", description: "工作 · 计划模式" },

@@ -8,4 +8,6 @@ auth "alibaba-token-plan" {
 	// international endpoint, stored in the credential so inference and discovery
 	// both target it (#6682).
 	login "custom" hook="alibaba-token-plan"
+	// Nightglide: an API-key form, not an account sign-in; `/provider` adds any compatible endpoint.
+	show-in-login-list #false
 }

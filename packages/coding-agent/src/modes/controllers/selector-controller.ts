@@ -1,4 +1,5 @@
 import { type AgentMessage, type AgentToolResult, ThinkingLevel } from "@oh-my-pi/pi-agent-core";
+import { addCustomProvider } from "../../slash-commands/builtin-nightglide";
 import type { CompactionOutcome } from "@oh-my-pi/pi-agent-core/compaction";
 import type { ImageContent, Model, UsageReport } from "@oh-my-pi/pi-ai";
 import type { OAuthProvider } from "@oh-my-pi/pi-ai/oauth/types";
@@ -193,6 +194,9 @@ interface OpenMenu {
 export function focusActiveEditorArea(ctx: InteractiveModeContext): void {
 	ctx.ui.setFocus(ctx.editorContainer.children[0] ?? ctx.editor);
 }
+
+/** Login-list row that opens the custom provider form instead of a sign-in. */
+const ADD_CUSTOM_PROVIDER_ID = "nightglide:add-custom-provider";
 
 export class SelectorController {
 	/**
@@ -2434,7 +2438,9 @@ export class SelectorController {
 				async (selectedProviderId: string) => {
 					selector.stopValidation();
 					done();
-					if (mode === "login") {
+					if (mode === "login" && selectedProviderId === ADD_CUSTOM_PROVIDER_ID) {
+						await addCustomProvider(this.ctx);
+					} else if (mode === "login") {
 						await this.#handleOAuthLogin(selectedProviderId);
 					} else {
 						await this.#showOAuthLogoutAccountSelector(selectedProviderId);
@@ -2457,6 +2463,10 @@ export class SelectorController {
 					requestRender: () => {
 						this.ctx.ui.requestRender();
 					},
+					// Nightglide: API-key providers left this list; any compatible endpoint is added here.
+					leadingItems: [
+						{ id: ADD_CUSTOM_PROVIDER_ID, name: "＋ 添加自定义提供商（Base URL + Key）", available: true },
+					],
 				},
 			);
 			return { component: selector, focus: selector };

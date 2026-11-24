@@ -28,6 +28,7 @@ const builtInOAuthProviders: OAuthProviderInfo[] = PROVIDER_REGISTRY.filter(
 	name: providerLoginWarning(provider.id) === undefined ? provider.name : `${provider.name} (at your own risk)`,
 	available: provider.available ?? true,
 	storeCredentialsAs: provider.storeCredentialsAs,
+	...(provider.loginKind ? { loginKind: provider.loginKind } : {}),
 }));
 
 const customOAuthProviders = new Map<string, OAuthProviderInterface>();
@@ -237,6 +238,16 @@ export function getOAuthProviders(): OAuthProviderInfo[] {
 		provider => !customOAuthProviders.has(provider.id) && providerPauseReason(provider.id) === undefined,
 	);
 	return [...builtIns, ...customProviders];
+}
+
+/**
+ * Nightglide: the providers a sign-in list offers — real account sign-ins (OAuth code, device code,
+ * custom flows), not "paste an API key" forms, which `/provider` covers for any OpenAI- or
+ * Anthropic-compatible endpoint. {@link getOAuthProviders} stays complete for credential lookups,
+ * logout and hints; hidden providers still work from environment variables or models.yml.
+ */
+export function getSignInProviders(): OAuthProviderInfo[] {
+	return getOAuthProviders().filter(provider => provider.loginKind !== "api-key");
 }
 
 /** Provider id that stores `providerId`'s credentials: login aliases (`openai-codex-device`) map to their target (`openai-codex`). */

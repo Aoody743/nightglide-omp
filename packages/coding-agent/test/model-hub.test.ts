@@ -541,7 +541,8 @@ describe("ModelHub", () => {
 			expect(normalize(hub.render(220))).toContain("All available models");
 		});
 
-		test("typing while on a locked provider in scope focus switches to All models and focuses model list", () => {
+		// Nightglide: no locked provider rows exist to type from (see "catalog providers without credentials are not listed").
+		test.skip("typing while on a locked provider in scope focus switches to All models and focuses model list", () => {
 			const model = makeModel("anthropic", "claude-locked-test");
 			const { hub } = createHub({
 				models: [model],
@@ -1845,7 +1846,9 @@ describe("ModelHub", () => {
 	});
 
 	describe("locked providers", () => {
-		test("catalog providers without credentials appear locked and forward to login", () => {
+		// Nightglide hides providers without credentials from the sidebar (upstream lists them locked
+		// under "Not signed in"); /login and /provider bring a provider in.
+		test("catalog providers without credentials are not listed", () => {
 			const anthropicModel = makeModel("anthropic", "claude-locked-test");
 			const { hub, onLoginRequest } = createHub({
 				models: [anthropicModel],
@@ -1853,13 +1856,11 @@ describe("ModelHub", () => {
 			});
 			installTestTheme();
 
-			hub.handleInput(DOWN); // All models → locked anthropic (separator skipped)
+			hub.handleInput(DOWN);
 			const rendered = normalize(hub.render(220));
-			expect(rendered).toContain("anthropic has no credentials configured");
-			expect(rendered).toContain("claude-locked-test");
-
+			expect(rendered).not.toContain("anthropic has no credentials configured");
 			hub.handleInput("\n");
-			expect(onLoginRequest).toHaveBeenCalledWith("anthropic");
+			expect(onLoginRequest).not.toHaveBeenCalled();
 		});
 	});
 });

@@ -7,7 +7,7 @@
  * the next session sees the models the credential unlocked.
  */
 import * as readline from "node:readline";
-import { getOAuthProviders } from "@oh-my-pi/pi-ai";
+import { getSignInProviders } from "@oh-my-pi/pi-ai";
 import { CLI_NAME, getAgentDbPath, getProjectDir } from "@oh-my-pi/pi-utils";
 import chalk from "@oh-my-pi/pi-utils/chalk";
 import { ModelRegistry } from "../config/model-registry";
@@ -32,7 +32,7 @@ export async function runLoginCommand(provider: string | undefined): Promise<voi
 		// Extensions may register OAuth providers; load them so they are listed.
 		await loadCliExtensionProviders(modelRegistry, settings, cwd);
 
-		const providers = getOAuthProviders().filter(p => p.available);
+		const providers = getSignInProviders().filter(p => p.available);
 		const providerId = provider ?? (await pickOAuthProvider(rl, providers));
 		const info = providers.find(p => p.id === providerId);
 		if (!info) {

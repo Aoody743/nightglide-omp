@@ -1,5 +1,5 @@
 import type { CredentialsApi, KeysApi } from "@oh-my-pi/pi-ai";
-import { getOAuthProviders } from "@oh-my-pi/pi-ai/oauth";
+import { getOAuthProviders, getSignInProviders } from "@oh-my-pi/pi-ai/oauth";
 import type { OAuthProviderInfo } from "@oh-my-pi/pi-ai/oauth/types";
 import {
 	Container,
@@ -106,6 +106,8 @@ export class OAuthSelectorComponent extends OverlayPanel {
 			validateAuth?: (providerId: string) => Promise<boolean>;
 			requestRender?: () => void;
 			sheet?: OAuthSelectorSheet;
+			/** Login mode: rows listed before the providers (Nightglide's "add a custom provider"). */
+			leadingItems?: readonly OAuthProviderInfo[];
 		},
 	) {
 		super(mode === "login" ? "Select provider to login" : "Select provider to logout", "omp.overlay.oauth");
@@ -121,7 +123,7 @@ export class OAuthSelectorComponent extends OverlayPanel {
 			getSearchText: provider => this.#getProviderSearchText(provider),
 		});
 		// Load all OAuth providers
-		this.#loadProviders(options?.disabledProviders);
+		this.#loadProviders(options?.disabledProviders, options?.leadingItems);
 		// Create list container
 		this.#listContainer = new Container();
 		this.addChild(this.#listContainer);
@@ -172,8 +174,9 @@ export class OAuthSelectorComponent extends OverlayPanel {
 			: this.#authStorage.keys.source(providerId) !== undefined;
 	}
 
-	#loadProviders(disabledProviders: readonly string[] = []): void {
-		const providers = getOAuthProviders();
+	#loadProviders(disabledProviders: readonly string[] = [], leadingItems: readonly OAuthProviderInfo[] = []): void {
+		// Nightglide: sign-in lists offer account sign-ins only; logout keeps every provider.
+		const providers = this.#mode === "logout" ? getOAuthProviders() : getSignInProviders();
 		if (this.#mode === "logout") {
 			// Logout stays unfiltered by `disabledProviders`: a now-disabled
 			// provider may still hold stored credentials worth removing.
@@ -184,13 +187,14 @@ export class OAuthSelectorComponent extends OverlayPanel {
 			// stores credentials under is disabled, so alias logins (e.g.
 			// `openai-codex-device` ⇒ `openai-codex`) disappear alongside the
 			// model provider they authenticate.
-			this.#menu.setItems(
-				providers.filter(
+			this.#menu.setItems([
+				...leadingItems,
+				...providers.filter(
 					provider =>
 						!disabled.has(provider.id) &&
 						!(provider.storeCredentialsAs && disabled.has(provider.storeCredentialsAs)),
 				),
-			);
+			]);
 		}
 	}
 

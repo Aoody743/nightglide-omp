@@ -102,6 +102,9 @@ type AssignTarget =
 	| { kind: "fallbackKey" };
 
 /** Live preferences and selector operations supplied by the host. */
+/** Nightglide hides providers with no usable models from the model hub sidebar. */
+const SHOW_LOCKED_PROVIDERS = false;
+
 export interface ModelHubSource extends ModelBrowserSource {
 	readonly disabledProviders: readonly string[];
 	readonly fallbackChains: Record<string, string[]>;
@@ -776,7 +779,9 @@ export class ModelHubComponent implements Component {
 		if (providers.length > 0) {
 			entries.push({ id: "sep:providers", kind: "separator", label: "" }, ...providers);
 		}
-		if (this.#lockedProviderEntries.length > 0) {
+		// Nightglide: only usable providers are listed; signing in (/login) or adding one (/provider)
+		// brings a provider in. The locked catalog entries stay out of the sidebar.
+		if (SHOW_LOCKED_PROVIDERS && this.#lockedProviderEntries.length > 0) {
 			entries.push({ id: "sep:locked", kind: "separator", label: "" }, ...this.#lockedProviderEntries);
 		}
 

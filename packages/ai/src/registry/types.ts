@@ -65,6 +65,8 @@ export interface ProviderDefinition {
 	readonly available?: boolean;
 	/** Whether to surface in the interactive login list. Defaults to true when `login` is present. */
 	readonly showInLoginList?: boolean;
+	/** How the login runs, from the compiled auth rules: a pasted API key, an OAuth code or device flow, or a hook. */
+	readonly loginKind?: "api-key" | "oauth-code" | "device-code" | "custom";
 	// --- env-var fallback (the catalog table's `envVars` supplies plain names; set this only for computed resolvers) ---
 	readonly envKeys?: KeyResolver;
 	/** Provider transport can authenticate without a resolved API-key string. */
