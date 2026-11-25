@@ -300,7 +300,16 @@ export const TEXT = {
 	"cmd.marketplace": { zh: "插件市场", en: "Plugin marketplace" },
 	"cmd.reload-plugins": { zh: "重新加载插件", en: "Reload plugins" },
 	"cmd.skills": { zh: "搜索和安装技能", en: "Search and install skills" },
-	"more.title": { zh: "全部命令（{count}）", en: "All commands ({count})" },
+	"more.title": { zh: "命令（{count}）", en: "Commands ({count})" },
+	"more.titleAll": { zh: "全部命令（{count}，含高级）", en: "All commands ({count}, with advanced)" },
+	"more.heading": { zh: "── {group} ──", en: "── {group} ──" },
+	"more.groupExtensions": { zh: "扩展、技能与模板", en: "Extensions, skills and templates" },
+	"more.groupAdvanced": { zh: "高级命令", en: "Advanced commands" },
+	"more.showAdvanced": { zh: "＋ 显示高级命令（{count}）", en: "＋ Show advanced commands ({count})" },
+	"more.help": {
+		zh: "输入文字筛选 · Enter 填入输入框 · Esc 关闭",
+		en: "Type to filter · Enter puts it in the input · Esc closes",
+	},
 
 	// Custom providers (`/provider`, `/login`)
 	"provider.addRow": { zh: "＋ 添加自定义提供商（Base URL + Key）", en: "＋ Add a custom provider (Base URL + key)" },

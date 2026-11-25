@@ -225,6 +225,82 @@ export function applyCommandTiers(
 	});
 }
 
+/** One `/more` row: a group heading, a command, or the "show advanced" switch. */
+export type MoreRow =
+	| { kind: "heading"; label: string }
+	| { kind: "command"; label: string; name: string }
+	| { kind: "showAdvanced"; label: string };
+
+const GROUP_ORDER: readonly CommandGroup[] = ["session", "model", "appearance", "work", "other"];
+
+/** First sentence, at most 80 characters: extension and skill descriptions can run to a paragraph. */
+function shortDescription(raw: string): string {
+	const flat = raw.replace(/\s+/g, " ").trim();
+	const sentence = flat.match(/^.+?[.。!?！？](?=\s|$)/)?.[0] ?? flat;
+	return sentence.length > 80 ? `${sentence.slice(0, 79).trimEnd()}…` : sentence;
+}
+
+/** A row's text: `/name  description`, on one line (the selector drops per-row descriptions on long lists). */
+function moreLabel(command: SlashCommand): string {
+	const builtin = COMMAND_ENTRIES.has(command.name);
+	const raw = builtin ? t(`cmd.${command.name}` as TextKey) : (command.description ?? "");
+	const description = shortDescription(raw);
+	return description ? `/${command.name}  ${description}` : `/${command.name}`;
+}
+
+/**
+ * The `/more` list from the tiered command list (see {@link applyCommandTiers}): builtins under
+ * their group headings, common ones first in menu order, then standard ones in list order;
+ * extension, skill, template and file commands under their own heading. Advanced commands are
+ * left out behind a leading "show advanced" row, or, with `showAdvanced`, listed last under
+ * their own heading.
+ */
+export function buildMoreRows(commands: readonly SlashCommand[], showAdvanced: boolean): MoreRow[] {
+	const order = new Map(NIGHTGLIDE_COMMANDS.map((entry, index) => [entry.name, index]));
+	const rankOf = (command: SlashCommand): number =>
+		command.featuredRank ?? NIGHTGLIDE_COMMANDS.length + (order.get(command.name) ?? 0);
+	const byGroup = new Map<CommandGroup, SlashCommand[]>(GROUP_ORDER.map(group => [group, []]));
+	const others: SlashCommand[] = [];
+	const advanced: SlashCommand[] = [];
+	for (const command of commands) {
+		if (command.advanced) advanced.push(command);
+		else {
+			const entry = COMMAND_ENTRIES.get(command.name);
+			if (entry) byGroup.get(entry.group)!.push(command);
+			else others.push(command);
+		}
+	}
+	const rows: MoreRow[] = [];
+	// The switch leads the list: one Up from the first command (the selector does not wrap).
+	if (advanced.length > 0 && !showAdvanced) {
+		rows.push({ kind: "showAdvanced", label: t("more.showAdvanced", { count: advanced.length }) });
+	}
+	const section = (group: string, list: readonly SlashCommand[]) => {
+		if (list.length === 0) return;
+		rows.push({ kind: "heading", label: t("more.heading", { group }) });
+		for (const command of list) rows.push({ kind: "command", label: moreLabel(command), name: command.name });
+	};
+	for (const group of GROUP_ORDER) {
+		section(
+			t(`cmdgroup.${group}` as TextKey),
+			byGroup.get(group)!.sort((a, b) => rankOf(a) - rankOf(b)),
+		);
+	}
+	section(
+		t("more.groupExtensions"),
+		others.sort((a, b) => a.name.localeCompare(b.name)),
+	);
+	if (showAdvanced) {
+		const groupRank = (command: SlashCommand) =>
+			GROUP_ORDER.indexOf(COMMAND_ENTRIES.get(command.name)?.group ?? "other");
+		section(
+			t("more.groupAdvanced"),
+			advanced.sort((a, b) => groupRank(a) - groupRank(b) || a.name.localeCompare(b.name)),
+		);
+	}
+	return rows;
+}
+
 /** Language of Nightglide's own interface text; `auto` follows LC_ALL / LC_MESSAGES / LANG. */
 export const cfgNightglideLanguage = register({
 	id: "nightglide.language",

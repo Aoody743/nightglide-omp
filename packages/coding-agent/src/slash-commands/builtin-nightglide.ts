@@ -1,9 +1,10 @@
 /**
- * Nightglide: `/more` — browse every slash command.
+ * Nightglide: `/provider` (custom providers) and `/more` (the grouped command list).
  *
- * A bare `/` lists only the common commands (`nightglide.commonCommands`); this
- * opens the full list, including extension, skill, file and prompt commands.
- * Picking one puts `/name ` in the input box so arguments can be added first.
+ * A bare `/` lists only the common commands; `/more` lists them by group with the
+ * standard ones and extension, skill, file and prompt commands, and keeps the
+ * advanced tier behind a "show advanced" row. Picking one puts `/name ` in the
+ * input box so arguments can be added first.
  */
 import {
 	type CustomProviderApi,
@@ -14,6 +15,7 @@ import {
 	saveCustomProvider,
 } from "../config/nightglide-custom-providers";
 import { t } from "@oh-my-pi/pi-tui/i18n";
+import { buildMoreRows } from "../config/nightglide-menu";
 import type { InteractiveModeContext } from "../modes/types";
 import { clearSubmittedText } from "./helpers/draft";
 import type { SlashCommandSpec } from "./types";
@@ -119,6 +121,28 @@ export async function manageCustomProviders(ctx: InteractiveModeContext): Promis
 	if (action === remove) return deleteCustomProvider(ctx, provider.id);
 }
 
+/**
+ * `/more`: the grouped command list. Advanced commands sit behind the closing
+ * leading "show advanced" row; picking a command puts `/name ` in the input box.
+ */
+async function browseCommands(ctx: InteractiveModeContext, showAdvanced: boolean): Promise<void> {
+	const rows = buildMoreRows(ctx.slashCommandList, showAdvanced);
+	const disabledIndices = rows.flatMap((row, index) => (row.kind === "heading" ? [index] : []));
+	const count = rows.filter(row => row.kind === "command").length;
+	const title = showAdvanced ? t("more.titleAll", { count }) : t("more.title", { count });
+	// Open on the first command, or on the first advanced one once they are shown.
+	const advancedHeading = showAdvanced ? rows.findLastIndex(row => row.kind === "heading") : -1;
+	const firstCommand = rows.findIndex((row, index) => row.kind === "command" && index > advancedHeading);
+	const choice = await ctx.showHookSelector(
+		title,
+		rows.map(row => row.label),
+		{ disabledIndices, initialIndex: Math.max(0, firstCommand), helpText: t("more.help") },
+	);
+	const picked = rows.find(row => row.label === choice);
+	if (picked?.kind === "showAdvanced") return browseCommands(ctx, true);
+	if (picked?.kind === "command") ctx.editor.setText(`/${picked.name} `);
+}
+
 export const BUILTIN_NIGHTGLIDE_SLASH_COMMANDS: ReadonlyArray<SlashCommandSpec> = [
 	{
 		name: "provider",
@@ -139,19 +163,7 @@ export const BUILTIN_NIGHTGLIDE_SLASH_COMMANDS: ReadonlyArray<SlashCommandSpec> 
 		description: "Browse every slash command",
 		handleTui: async (_command, runtime) => {
 			clearSubmittedText(runtime);
-			const { ctx } = runtime;
-			const commands = [...ctx.slashCommandList].sort((a, b) => a.name.localeCompare(b.name));
-			// One row per command, description inline: the selector hides per-option descriptions
-			// once a list this long overflows the screen.
-			const items = commands.map(command => {
-				const description = (command.getAutocompleteDescription?.() ?? command.description ?? "")
-					.replace(/\s+/g, " ")
-					.trim();
-				return description ? `/${command.name}  ${description}` : `/${command.name}`;
-			});
-			const choice = await ctx.showHookSelector(t("more.title", { count: items.length }), items);
-			const name = choice?.split(" ")[0];
-			if (name) ctx.editor.setText(`${name} `);
+			await browseCommands(runtime.ctx, false);
 		},
 	},
 ];

@@ -4,6 +4,8 @@ import { CombinedAutocompleteProvider } from "@oh-my-pi/pi-tui/autocomplete";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import {
 	applyCommandTiers,
+	buildMoreRows,
+	type MoreRow,
 	cfgNightglideCommonCommands,
 	cfgNightglideHiddenCommands,
 	cfgNightglideLanguage,
@@ -83,5 +85,50 @@ describe("Nightglide command list", () => {
 		expect(custom).toEqual({ name: "mine", description: "Mine" });
 		setLanguage("en");
 		expect(model?.getAutocompleteDescription?.()).toBe("Model · Switch model (omlx/endless)");
+	});
+});
+
+describe("Nightglide /more", () => {
+	/** The real builtin list with the default tiers, plus one extension command. */
+	function tiered() {
+		const settings = Settings.isolated();
+		return applyCommandTiers(
+			[
+				...BUILTIN_SLASH_COMMAND_DEFS.map(def => ({ name: def.name, description: def.description })),
+				{ name: "autoresearch", description: "Toggle autoresearch" },
+				{ name: "long", description: "First sentence. Then a second one\nover lines." },
+			],
+			{ common: cfgNightglideCommonCommands.get(settings), hidden: cfgNightglideHiddenCommands.get(settings) },
+		);
+	}
+	const commandNames = (rows: readonly MoreRow[]) => rows.flatMap(row => (row.kind === "command" ? [row.name] : []));
+
+	it("groups common and standard commands, keeps advanced ones behind a leading switch", () => {
+		const rows = buildMoreRows(tiered(), false);
+		expect(rows[0]).toEqual({ kind: "showAdvanced", label: "＋ 显示高级命令（52）" });
+		expect(rows[1]).toEqual({ kind: "heading", label: "── 会话 ──" });
+		const names = commandNames(rows);
+		// Common commands lead their group in menu order, then standard ones.
+		expect(names.slice(0, 7)).toEqual(["new", "resume", "clear", "compact", "export", "copy", "rename"]);
+		expect(names).toContain("autoresearch");
+		expect(names).not.toContain("switch");
+		// A paragraph-long extension description is cut to its first sentence.
+		expect(rows.find(row => row.kind === "command" && row.name === "long")?.label).toBe("/long  First sentence.");
+	});
+
+	it("lists advanced commands last under their own heading when asked", () => {
+		const rows = buildMoreRows(tiered(), true);
+		const heading = rows.findIndex(row => row.kind === "heading" && row.label === "── 高级命令 ──");
+		expect(heading).toBeGreaterThan(0);
+		expect(rows.slice(heading + 1).every(row => row.kind === "command")).toBe(true);
+		expect(rows.slice(heading + 1).map(row => (row.kind === "command" ? row.name : ""))).toContain("switch");
+		expect(rows.some(row => row.kind === "showAdvanced")).toBe(false);
+	});
+
+	it("labels rows in the interface language", () => {
+		setLanguage("en");
+		const rows = buildMoreRows(tiered(), false);
+		expect(rows[1]?.label).toBe("── Session ──");
+		expect(rows.find(row => row.kind === "command" && row.name === "new")?.label).toBe("/new  Start a new session");
 	});
 });
