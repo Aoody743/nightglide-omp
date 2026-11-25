@@ -47,7 +47,6 @@ import { AUTO_THINKING, type ConfiguredThinkingLevel } from "../thinking";
 import type { TabBarTheme } from "../components/tab-bar";
 import { type ComposerPreviewStatusSource, ComposerShapePreview } from "./composer-shape-preview";
 import { setLanguage } from "../i18n";
-import { commonValueLabel, isCommonSettingRow } from "./settings-common";
 import { getComposerShapeOptions } from "./composer-shape-registry";
 import { bottomBorder, divider, row, topBorder } from "../chrome/overlay-box";
 import { PluginSettingsComponent, type PluginSettingsHost } from "./plugin-settings";
@@ -556,9 +555,6 @@ class ProviderLimitsSubmenu extends Container {
 	}
 }
 
-/** Tabs whose settings search covers: every tab but the common page, which repeats them. */
-const SEARCHABLE_SETTING_TABS: readonly SettingTab[] = SETTING_TABS.filter(tab => tab !== "common");
-
 /** Stable sidebar width derived from the host's complete schema. */
 function settingsSidebarWidth(entries: readonly SettingsDisplayEntry[]): number {
 	let nameWidth = 0;
@@ -649,9 +645,8 @@ export class SettingsSelectorComponent implements Component {
 	#currentList: SettingsList | null = null;
 	#searchList: SettingsList | null = null;
 	#pluginComponent: PluginSettingsComponent | null = null;
-	// Nightglide: `/settings` opens on the common page.
-	#currentTabId: SettingTab | "plugins" = "common";
-	#preSearchTabId: SettingTab | "plugins" = "common";
+	#currentTabId: SettingTab | "plugins" = "appearance";
+	#preSearchTabId: SettingTab | "plugins" = "appearance";
 	#searchQuery = "";
 	/** Single-line editor backing the search banner (cursor, word ops, paste). */
 	#searchInput = new Input();
@@ -709,7 +704,7 @@ export class SettingsSelectorComponent implements Component {
 		};
 
 		// Initialize with first tab
-		this.#switchToTab("common");
+		this.#switchToTab("appearance");
 	}
 
 	invalidate(): void {
@@ -1386,8 +1381,7 @@ export class SettingsSelectorComponent implements Component {
 		const tabResults: { tab: SettingTab; matched: SettingItem[]; bestScore: number; order: number }[] = [];
 		this.#searchFirstMatch.clear();
 		let total = 0;
-		// The common page only re-lists settings from other tabs; search them there once.
-		this.#searchCorpora ??= SEARCHABLE_SETTING_TABS.map(tab => {
+		this.#searchCorpora ??= SETTING_TABS.map(tab => {
 			const candidates: SettingItem[] = [];
 			for (const def of getSettingsForTab(this.#context.settings.entries, tab)) {
 				const item = this.#defToItem(def);
@@ -1469,7 +1463,7 @@ export class SettingsSelectorComponent implements Component {
 				matched.push({ id, label: `${icon} ${meta.label} (${count})`, short: `${icon} ${count}` });
 			}
 		}
-		for (const id of SEARCHABLE_SETTING_TABS) {
+		for (const id of SETTING_TABS) {
 			if (matchedIds.has(id)) continue;
 			const meta = TAB_METADATA[id];
 			const icon = theme.symbol(meta.icon);
@@ -1549,16 +1543,8 @@ export class SettingsSelectorComponent implements Component {
 			case "submenu":
 				return {
 					...item,
-					// Nightglide: the common page shows the option's Chinese label; the picker still
-					// starts from the stored value.
-					currentValue:
-						commonValueLabel(def, currentValue) ?? this.#getSubmenuCurrentValue(def.path, currentValue),
-					submenu: (cv, done) =>
-						this.#createSubmenu(
-							def,
-							isCommonSettingRow(def) ? this.#getSubmenuCurrentValue(def.path, this.#getCurrentValue(def)) : cv,
-							done,
-						),
+					currentValue: this.#getSubmenuCurrentValue(def.path, currentValue),
+					submenu: (cv, done) => this.#createSubmenu(def, cv, done),
 				};
 
 			case "text":

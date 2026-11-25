@@ -96,8 +96,9 @@ interface Family {
 	scene256?: PixelPalette;
 }
 
-/** Surfaces per theme family; tuned to survive 256-color quantization. */
-function familyFor(name: string | undefined): Family {
+/** Surfaces per theme family; tuned to survive 256-color quantization. Shared with the
+ * settings page's theme cards (nightglide-settings.ts). */
+export function familyFor(name: string | undefined): Family {
 	switch (name) {
 		case "nightglide-cloudlight":
 			return {
@@ -273,9 +274,10 @@ const SGR = /\x1b\[([0-9;:]*)m/g;
 
 /**
  * Fit `line` to exactly `width` cells on background `bg`: every SGR that
- * clears the background (full reset or 49) re-asserts it, then pad.
+ * clears the background (full reset or 49) re-asserts it, then pad. Shared by
+ * the Glide shell and the settings page's themed surface.
  */
-function onBg(line: string, width: number, bg: string): string {
+export function onBg(line: string, width: number, bg: string): string {
 	const fitted = visibleWidth(line) > width ? truncateToWidth(line, width, "") : line;
 	const painted = fitted.replace(SGR, (seq, params: string) => {
 		const parts = params.split(/[;:]/);
@@ -293,9 +295,10 @@ const SCENE_SPEED_MAX = 1.8;
 /**
  * Scene pixels per cell. Terminal.app draws `▀` with the font's own glyph, which in many fonts
  * (NeoX Mono among them) does not fill its half cell, leaving gaps between pixel rows; there each
- * cell paints its background only. `NIGHTGLIDE_SCENE_PIXELS=1|2` overrides the choice.
+ * cell paints its background only. `NIGHTGLIDE_SCENE_PIXELS=1|2` overrides the choice. Exported for
+ * the settings page's theme-card previews.
  */
-function sceneCellPixels(env: NodeJS.ProcessEnv = process.env): 1 | 2 {
+export function sceneCellPixels(env: NodeJS.ProcessEnv = process.env): 1 | 2 {
 	const forced = env.NIGHTGLIDE_SCENE_PIXELS;
 	if (forced === "1" || forced === "2") return Number(forced) as 1 | 2;
 	return env.TERM_PROGRAM === "Apple_Terminal" ? 1 : 2;

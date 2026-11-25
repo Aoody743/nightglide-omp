@@ -260,7 +260,6 @@ export type SymbolKey =
 	| "chip.video"
 	| "chip.paste"
 	// Settings tab icons
-	| "tab.common"
 	| "tab.appearance"
 	| "tab.model"
 	| "tab.interaction"
@@ -652,7 +651,6 @@ const UNICODE_SYMBOLS: SymbolMap = {
 	"chip.video": "🎬",
 	"chip.paste": "📄",
 	// Settings tabs
-	"tab.common": "✦",
 	"tab.appearance": "🎨",
 	"tab.model": "🤖",
 	"tab.interaction": "⌨",
@@ -1131,7 +1129,6 @@ const NERD_SYMBOLS: SymbolMap = {
 	// pick:  (fa-file_text, matches omp2) | alt: 󰈙 (md-file_document)  (cod-file)
 	"chip.paste": "\uf15c",
 	// Settings tab icons
-	"tab.common": "\u{f04ce}",
 	"tab.appearance": "󰃣",
 	"tab.model": "󰚩",
 	"tab.interaction": "󰌌",
@@ -1448,7 +1445,6 @@ const ASCII_SYMBOLS: SymbolMap = {
 	"chip.video": "vid",
 	"chip.paste": "txt",
 	// Settings tab icons
-	"tab.common": "[*]",
 	"tab.appearance": "[A]",
 	"tab.model": "[M]",
 	"tab.interaction": "[I]",

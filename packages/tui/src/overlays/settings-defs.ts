@@ -1,10 +1,8 @@
 /** Schema-independent display definitions for the settings overlay. */
 import type { SymbolKey } from "../theme/symbols";
 import { t, type TextKey } from "../i18n";
-import { commonSettingDefs, commonSettingGroups } from "./settings-common";
 
 export type SettingTab =
-	| "common"
 	| "appearance"
 	| "model"
 	| "interaction"
@@ -21,7 +19,6 @@ export type TabMetadata = { label: string; icon: Extract<SymbolKey, `tab.${strin
 
 /** Ordered list of tabs for UI rendering */
 export const SETTING_TABS: SettingTab[] = [
-	"common",
 	"appearance",
 	"model",
 	"interaction",
@@ -50,9 +47,6 @@ export const TAB_METADATA: Record<SettingTab, TabMetadata> = Object.fromEntries(
 
 /** One-sentence lead per tab, under the page title of the native settings page. */
 export const TAB_LEADS: Record<SettingTab, string> = {
-	get common() {
-		return t("lead.common");
-	},
 	appearance: "Theme, composer, status line and how the transcript renders.",
 	model: "Thinking, sampling, the system prompt, retries and the helper models.",
 	interaction: "Input, approvals, notifications, speech and what happens at startup.",
@@ -71,9 +65,6 @@ export const TAB_LEADS: Record<SettingTab, string> = {
  * Ungrouped settings render first, before any section heading.
  */
 export const TAB_GROUPS: Record<SettingTab, readonly string[]> = {
-	get common() {
-		return commonSettingGroups();
-	},
 	appearance: ["Theme", "Composer", "Status Line", "Display", "Images"],
 	model: ["Thinking", "Sampling", "Prompt", "Retry & Fallback", "Advisor", "Prewalk", "Vision", "Nightglide Routing"],
 	interaction: [
@@ -308,12 +299,39 @@ function entryToSettingDef(entry: SettingsDisplayEntry): SettingDef | null {
 
 const definitions = new WeakMap<readonly SettingsDisplayEntry[], SettingDef[]>();
 
+/**
+ * Nightglide: settings that do nothing in Nightglide, left out of every settings
+ * surface (tab pages, search, the native prefs page). They stay registered with
+ * their upstream `ui`, so old configs keep loading and an upstream merge keeps
+ * the definitions intact; only the display skips them. Confirmed by reading the
+ * code, not the setting descriptions:
+ *
+ * - `startup.changelogMode`: `main.ts` pins `showsStartupChangelog` to `false` —
+ *   the bundled changelog is upstream OMP's release history, not Nightglide's.
+ * - `startup.checkUpdate`, `update.channel`, `update.auto`: the startup check
+ *   (`checkForNewVersion`) returns before it reads the channel when
+ *   `isSourceCheckout()` holds, and `canSelfUpdate()` is false there too, so
+ *   no worker starts and the setup wizard never offers auto-update. Nightglide
+ *   ships only as that source checkout (the launcher and `scripts/install.sh`),
+ *   and `nightglide update` stops at its git hint in the same case. Revisit if a
+ *   compiled binary ever ships: the paths would be live again (against upstream
+ *   OMP releases).
+ */
+export const NIGHTGLIDE_HIDDEN_SETTINGS: ReadonlySet<string> = new Set([
+	"startup.checkUpdate",
+	"update.channel",
+	"update.auto",
+	"startup.changelogMode",
+]);
+
 /** Get all setting definitions with UI, retaining live host visibility predicates. */
 export function getAllSettingDefs(entries: readonly SettingsDisplayEntry[]): SettingDef[] {
 	let defs = definitions.get(entries);
 	if (!defs) {
 		defs = [];
 		for (const entry of entries) {
+			// Nightglide: display-only hide list (see NIGHTGLIDE_HIDDEN_SETTINGS).
+			if (NIGHTGLIDE_HIDDEN_SETTINGS.has(entry.path)) continue;
 			const def = entryToSettingDef(entry);
 			if (def) defs.push(def);
 		}
@@ -324,7 +342,6 @@ export function getAllSettingDefs(entries: readonly SettingsDisplayEntry[]): Set
 
 /** Get settings ordered by their tab's section layout. */
 export function getSettingsForTab(entries: readonly SettingsDisplayEntry[], tab: SettingTab): SettingDef[] {
-	if (tab === "common") return commonSettingDefs(getAllSettingDefs(entries));
 	const defs = getAllSettingDefs(entries).filter(def => def.tab === tab);
 	const order = TAB_GROUPS[tab];
 	const rank = (def: SettingDef): number => {

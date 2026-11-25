@@ -63,7 +63,6 @@ export const TEXT = {
 	"ask.recommended": { zh: "[推荐]", en: "[Recommended]" },
 
 	// Settings: tabs
-	"tab.common": { zh: "常用", en: "Common" },
 	"tab.appearance": { zh: "外观", en: "Appearance" },
 	"tab.model": { zh: "模型", en: "Model" },
 	"tab.interaction": { zh: "交互", en: "Interaction" },
@@ -74,17 +73,92 @@ export const TEXT = {
 	"tab.tools": { zh: "工具", en: "Tools" },
 	"tab.tasks": { zh: "任务", en: "Tasks" },
 	"tab.providers": { zh: "提供商", en: "Providers" },
-	"lead.common": {
-		zh: "最常改的设置。其余设置在后面的标签页里（英文）。",
-		en: "The settings changed most often. Every other setting is on the tabs that follow.",
-	},
 
-	// Settings: the common page
-	"common.group.appearance": { zh: "外观", en: "Appearance" },
-	"common.group.model": { zh: "模型", en: "Model" },
-	"common.group.approval": { zh: "审批", en: "Approval" },
-	"common.group.notify": { zh: "通知", en: "Notifications" },
-	"common.group.input": { zh: "输入", en: "Input" },
+	// Settings: the graphical page (S4). Labels for its rows live in the
+	// "common.*" block above; this block holds the page chrome and the texts
+	// that only this page shows.
+	"set.title": { zh: "设置", en: "Settings" },
+	"set.cat.appearance": { zh: "外观", en: "Appearance" },
+	"set.cat.model": { zh: "模型", en: "Model" },
+	"set.cat.approval": { zh: "审批", en: "Approval" },
+	"set.cat.notify": { zh: "通知", en: "Notifications" },
+	"set.cat.session": { zh: "会话", en: "Session" },
+	"set.cat.language": { zh: "语言", en: "Language" },
+	"set.cat.advanced": { zh: "高级设置", en: "Advanced" },
+	"set.key.select": { zh: "选择", en: "select" },
+	"set.key.change": { zh: "调整", en: "change" },
+	"set.key.confirm": { zh: "确认", en: "confirm" },
+	"set.key.categories": { zh: "分类栏", en: "sidebar" },
+	"set.key.close": { zh: "关闭", en: "close" },
+	"set.key.open": { zh: "打开", en: "open" },
+	"set.key.back": { zh: "返回", en: "back" },
+	"set.key.switchCat": { zh: "切换分类", en: "switch category" },
+	"set.scroll.above": { zh: "上方还有 {count} 项", en: "{count} more above" },
+	"set.scroll.below": { zh: "下方还有 {count} 项", en: "{count} more below" },
+	"set.other": { zh: "其他值：{value}", en: "Other value: {value}" },
+	"set.default": { zh: "默认", en: "Default" },
+	"set.effort.unsupported": {
+		zh: "{level}（当前模型不支持）",
+		en: "{level} (not supported by this model)",
+	},
+	"set.effort.noLevels": {
+		zh: "此模型没有可选的思考强度",
+		en: "This model has no thinking levels to pick",
+	},
+	"set.text.placeholder": { zh: "（未设置，自动检测）", en: "(unset — auto-detect)" },
+	"set.text.hint": {
+		zh: "{save} 保存 · {cancel} 取消 · 清空恢复默认",
+		en: "{save} save · {cancel} cancel · clear to reset",
+	},
+	"set.approval.lead": {
+		zh: "工具调用前的询问策略。其他模式在高级设置里。",
+		en: "What asks before a tool runs. Other modes live in Advanced settings.",
+	},
+	"set.approval.runs": { zh: "自动", en: "Runs" },
+	"set.approval.asks": { zh: "询问", en: "Asks" },
+	"set.approval.alwaysAsk.runs": { zh: "只读操作", en: "Read-only tools" },
+	"set.approval.alwaysAsk.asks": { zh: "写入和命令", en: "Writes and commands" },
+	"set.approval.write.runs": { zh: "读取、写入", en: "Reads and writes" },
+	"set.approval.write.asks": {
+		zh: "命令、子智能体、危险命令",
+		en: "Commands, subagents, dangerous ones",
+	},
+	"set.approval.yolo.runs": { zh: "全部操作", en: "Everything" },
+	"set.approval.yolo.asks": { zh: "无", en: "Nothing" },
+	"set.approval.other": {
+		zh: "当前是其他模式（{value}），在高级设置中调整",
+		en: "Currently another mode ({value}); change it in Advanced settings",
+	},
+	"set.model.current": { zh: "当前模型", en: "Current model" },
+	"set.model.effort": { zh: "实际生效的思考强度", en: "Effective thinking effort" },
+	"set.action.login": { zh: "登录", en: "Sign in" },
+	"set.action.provider": { zh: "自定义提供商", en: "Custom provider" },
+	"set.action.model": { zh: "切换模型", en: "Switch model" },
+	"set.session.autoResume": { zh: "自动恢复会话", en: "Auto-resume session" },
+	"set.session.autoResume.desc": {
+		zh: "启动时恢复这个目录最近的会话",
+		en: "Resume this directory's latest session on startup",
+	},
+	"set.session.compaction": { zh: "自动压缩上下文", en: "Auto-compact context" },
+	"set.session.compaction.desc": {
+		zh: "上下文过大时自动压缩",
+		en: "Compact the context automatically when it grows too large",
+	},
+	"set.session.retry": { zh: "出错自动重试", en: "Retry on errors" },
+	"set.session.retry.desc": { zh: "请求失败时自动重试", en: "Retry automatically when a request fails" },
+	"set.session.tokenUsage": { zh: "显示 token 用量", en: "Show token usage" },
+	"set.session.tokenUsage.desc": {
+		zh: "在回复下方显示每轮的 token 用量",
+		en: "Show each turn's token usage under replies",
+	},
+	"set.session.turnTime": { zh: "显示每轮耗时", en: "Show turn time" },
+	"set.session.turnTime.desc": {
+		zh: "在回复下方显示每轮耗时",
+		en: "Show the time each turn took under replies",
+	},
+	"set.advanced.desc": { zh: "全部 OMP 设置（英文）", en: "Every upstream setting (English)" },
+
+	// Settings: the common rows shared by the graphical settings page
 	"common.on": { zh: "开", en: "On" },
 	"common.off": { zh: "关", en: "Off" },
 	"common.language": { zh: "语言", en: "Language" },
@@ -131,6 +205,7 @@ export const TEXT = {
 		en: "Default reasoning depth for models that think; levels the current model lacks are not listed.",
 	},
 	"common.effort.auto": { zh: "自动", en: "Auto" },
+	"common.effort.off": { zh: "关", en: "off" },
 	"common.effort.minimal": { zh: "最低", en: "Minimal" },
 	"common.effort.low": { zh: "低", en: "Low" },
 	"common.effort.medium": { zh: "中", en: "Medium" },
@@ -161,22 +236,9 @@ export const TEXT = {
 		en: "Do not show the model's thinking blocks in the conversation.",
 	},
 	"common.approval": { zh: "审批策略", en: "Approval" },
-	"common.approval.desc": {
-		zh: "工具调用前是否询问。其他模式在“交互”标签页。",
-		en: "Whether tool calls ask first. Other modes are on the Interaction tab.",
-	},
 	"common.approval.alwaysAsk": { zh: "全部询问", en: "Ask for all" },
-	"common.approval.alwaysAskDesc": {
-		zh: "只读操作自动执行，写入和命令都询问",
-		en: "Reads run on their own; writes and commands ask",
-	},
 	"common.approval.write": { zh: "高风险询问", en: "Ask when risky" },
-	"common.approval.writeDesc": {
-		zh: "读写自动执行，命令、子智能体和危险命令询问（默认）",
-		en: "Reads and writes run; commands, subagents and dangerous commands ask (default)",
-	},
 	"common.approval.yolo": { zh: "自动执行", en: "Run everything" },
-	"common.approval.yoloDesc": { zh: "全部自动执行", en: "Nothing asks" },
 	"common.notifyDone": { zh: "完成时通知", en: "Notify when done" },
 	"common.notifyDone.desc": {
 		zh: "回复完成时发送系统通知。",
@@ -189,11 +251,6 @@ export const TEXT = {
 	},
 	"common.notifyError": { zh: "出错时通知", en: "Notify on errors" },
 	"common.notifyError.desc": { zh: "出错时发送系统通知。", en: "Send a system notification when something fails." },
-	"common.commands": { zh: "常用命令", en: "Common commands" },
-	"common.commands.desc": {
-		zh: "输入 / 时列出的命令，按顺序排列（JSON 列表）。其余命令输入名字可搜到，或用 /more 浏览。",
-		en: "Commands a bare / lists, in order (a JSON list). Others are found by typing their name, or browsed with /more.",
-	},
 
 	// The `/` menu: command groups and descriptions (see nightglide-commands.ts for tiers)
 	"cmdgroup.session": { zh: "会话", en: "Session" },

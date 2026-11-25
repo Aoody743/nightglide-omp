@@ -1,6 +1,6 @@
 import { t } from "@oh-my-pi/pi-tui/i18n";
 import { type AgentMessage, type AgentToolResult, ThinkingLevel } from "@oh-my-pi/pi-agent-core";
-import { addCustomProvider } from "../../slash-commands/builtin-nightglide";
+import { addCustomProvider, manageCustomProviders } from "../../slash-commands/builtin-nightglide";
 import type { CompactionOutcome } from "@oh-my-pi/pi-agent-core/compaction";
 import type { ImageContent, Model, UsageReport } from "@oh-my-pi/pi-ai";
 import type { OAuthProvider } from "@oh-my-pi/pi-ai/oauth/types";
@@ -38,6 +38,7 @@ import {
 } from "../../config/model-presets";
 import { resolveAdvisorRoleSelection, resolveModelRoleValue } from "../../config/model-resolver";
 import { formatModelSelectorValue } from "@oh-my-pi/pi-tui/overlays/model-selector";
+import { thinkingLevelWord } from "@oh-my-pi/pi-tui/status-line/segments";
 import { getRoleInfo } from "../../config/model-roles";
 import { settings } from "../../config/settings";
 import { createSettingsHost } from "../../config/settings-ui";
@@ -127,7 +128,7 @@ import { type ResetUsageAccount, ResetUsageSelectorComponent } from "@oh-my-pi/p
 import { type BranchVariantPath, RewindSelectorComponent } from "@oh-my-pi/pi-tui/overlays/rewind-selector";
 import { SessionAccountSelectorComponent } from "@oh-my-pi/pi-tui/overlays/session-account-selector";
 import { SessionSelectorComponent, type SessionSelectorOptions } from "@oh-my-pi/pi-tui/overlays/session-selector";
-import { SettingsSelectorComponent } from "@oh-my-pi/pi-tui/overlays/settings-selector";
+import { NightglideSettingsComponent } from "@oh-my-pi/pi-tui/overlays/nightglide-settings";
 import { TranscriptBlock } from "@oh-my-pi/pi-tui/chrome/transcript-container";
 import { TreeSelectorComponent } from "@oh-my-pi/pi-tui/overlays/tree-selector";
 import { ThinkingSelectorComponent } from "@oh-my-pi/pi-tui/overlays/thinking-selector";
@@ -340,12 +341,15 @@ export class SelectorController {
 					this.focusActiveEditorArea();
 					this.ctx.ui.requestRender();
 				};
-				const selector = new SettingsSelectorComponent(
+				// Nightglide: `/settings` opens the graphical page (S4); the upstream
+				// tabbed selector stays reachable through its “高级设置” entry.
+				const model = this.ctx.session.state.model;
+				const selector = new NightglideSettingsComponent(
 					{
 						availableThinkingLevels: [...this.ctx.session.getAvailableThinkingLevels()],
 						thinkingLevel: this.ctx.session.thinkingLevel,
 						availableThemes,
-						providers: [...new Set(this.ctx.session.getAvailableModels().map(model => model.provider))].sort(
+						providers: [...new Set(this.ctx.session.getAvailableModels().map(entry => entry.provider))].sort(
 							(a, b) => a.localeCompare(b),
 						),
 						settings: createSettingsHost(),
@@ -354,6 +358,14 @@ export class SelectorController {
 						imageBudget: this.ctx.ui.imageBudget,
 						requestRender: () => this.ctx.ui.requestRender(),
 						composerPreviewStatus: this.ctx.statusLine,
+						// The Model page's read-only card, read from live session state.
+						modelLabel: model?.name || model?.id || undefined,
+						modelProvider: model?.provider,
+						effortWord: thinkingLevelWord(this.ctx.session),
+						effortAutoPending:
+							Boolean(model?.thinking) &&
+							this.ctx.session.isAutoThinking &&
+							!this.ctx.session.autoResolvedThinkingLevel(),
 					},
 					{
 						onChange: (id, value) => this.handleSettingChange(id, value),
@@ -413,6 +425,20 @@ export class SelectorController {
 								segmentOptions: cfgStatusLineSegmentOptions.get(settings),
 							});
 							this.ctx.ui.requestRender();
+						},
+						// Nightglide: entry buttons close the page first, then open each flow
+						// through the same paths the slash commands use.
+						onAction: action => {
+							done();
+							if (action === "login") void this.showOAuthSelector("login");
+							else if (action === "model") this.showModelSelector();
+							else {
+								void manageCustomProviders(this.ctx).catch(err => {
+									this.ctx.showError(
+										t("provider.error", { message: err instanceof Error ? err.message : String(err) }),
+									);
+								});
+							}
 						},
 					},
 				);

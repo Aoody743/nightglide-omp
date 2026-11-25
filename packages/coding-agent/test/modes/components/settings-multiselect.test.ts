@@ -88,8 +88,8 @@ function clickOption(component: SettingsSelectorComponent, label: string): void 
 describe("settings section sidebar", () => {
 	it("does not toggle the selected section's first setting", () => {
 		const comp = createSelector();
-		// Tools tab: index 8 now that Nightglide puts the common page first.
-		for (let i = 0; i < 8; i++) comp.handleInput("\x1b[C");
+		// Tools tab: index 7 now that the common page is gone (S4).
+		for (let i = 0; i < 7; i++) comp.handleInput("\x1b[C");
 		expect(cfgDevAutoqa.get(settings)).toBe(true);
 
 		clickOption(comp, "Developer");

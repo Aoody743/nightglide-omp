@@ -1,5 +1,14 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { getLanguage, onLanguageChange, resolveLanguage, setLanguage, t, TEXT } from "@oh-my-pi/pi-tui/i18n";
+import {
+	getLanguage,
+	onLanguageChange,
+	resolveLanguage,
+	setLanguage,
+	t,
+	TEXT,
+	type TextKey,
+} from "@oh-my-pi/pi-tui/i18n";
+import { CATEGORIES } from "@oh-my-pi/pi-tui/overlays/nightglide-settings";
 import { getSettingsForTab, type SettingsDisplayEntry, TAB_METADATA } from "@oh-my-pi/pi-tui/overlays/settings-defs";
 
 afterEach(() => setLanguage("zh"));
@@ -54,7 +63,7 @@ describe("Nightglide language", () => {
 		expect(heard).toEqual(["en"]);
 	});
 
-	it("names settings tabs and the common page in the current language", () => {
+	it("names settings tabs and the settings page's categories in the current language", () => {
 		const entries: SettingsDisplayEntry[] = [
 			{
 				path: "tools.approvalMode",
@@ -72,22 +81,19 @@ describe("Nightglide language", () => {
 			},
 		];
 		expect(TAB_METADATA.interaction.label).toBe("交互");
-		expect(getSettingsForTab(entries, "common").map(row => row.label)).toEqual(["语言", "审批策略"]);
+		expect(getSettingsForTab(entries, "interaction").map(row => row.label)).toEqual(["Tool Approval"]);
+		const categories = CATEGORIES.map(id => t(`set.cat.${id}` as TextKey));
+		expect(categories).toEqual(["外观", "模型", "审批", "通知", "会话", "语言", "高级设置"]);
 		setLanguage("en");
 		expect(TAB_METADATA.interaction.label).toBe("Interaction");
-		const rows = getSettingsForTab(entries, "common");
-		expect(rows.map(row => row.label)).toEqual(["Language", "Approval"]);
-		const approval = rows[1]!;
-		if (approval.type === "submenu") {
-			expect(approval.options.map(option => option.label)).toEqual([
-				"Ask for all",
-				"Ask when risky",
-				"Run everything",
-			]);
-		}
-		const language = rows[0]!;
-		if (language.type === "submenu") {
-			expect(language.options.map(option => option.label)).toEqual(["中文", "English", "Follow system"]);
-		}
+		expect(CATEGORIES.map(id => t(`set.cat.${id}` as TextKey))).toEqual([
+			"Appearance",
+			"Model",
+			"Approval",
+			"Notifications",
+			"Session",
+			"Language",
+			"Advanced",
+		]);
 	});
 });

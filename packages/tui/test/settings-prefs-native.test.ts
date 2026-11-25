@@ -129,8 +129,7 @@ function harness(initial: Record<string, unknown> = {}): Harness {
 			onCancel: () => {},
 		},
 	);
-	// Nightglide opens on the common page; these fixtures live on Appearance, one tab to the right.
-	selector.handleInput("\x1b[C");
+	// Nightglide: opens on the Appearance tab (the common page is gone).
 	return { selector, values, changes, previews };
 }
 

@@ -114,6 +114,11 @@ export function createSessionStub(
 		extensionRunner: undefined,
 		effectiveExtensionRoots: { explicit: [], mode: "merge", configured: [], configuredLevel: "user" },
 		modelRegistry: {},
+		// Members the settings controller's graphical page reads for its Model card.
+		state: { model: undefined },
+		thinkingLevel: undefined,
+		isAutoThinking: false,
+		autoResolvedThinkingLevel: () => undefined,
 		getToolByName: () => undefined,
 		hasBuiltInTool: () => true,
 		getLastAssistantMessage: () => undefined,
