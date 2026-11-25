@@ -100,6 +100,40 @@ interface Family {
  * settings page's theme cards (nightglide-settings.ts). */
 export function familyFor(name: string | undefined): Family {
 	switch (name) {
+		case "nightglide-iris":
+			return {
+				label: "IRIS LIGHT",
+				kind: "flight",
+				border: "#c3d2e2",
+				title: "#3c7dbb",
+				text: "#2f3640",
+				soft: "#4a5568",
+				accent: "#6aa3d7",
+				warm: "#d18b3b",
+				// 彩虹穿云：sky-blue ramp over cirrus layers tinted faintly spectral —
+				// far→near clouds in pale violet, pink and mint, golden sun.
+				scene: {
+					page: "#eef2f7",
+					ramp: ["#dbe9f6", "#b9d4ec", "#8fb8dd", "#6aa3d7", "#3c7dbb"],
+					clouds: ["#e6e2ff", "#ffe1ea", "#e0f5ea"],
+					shade: "#c4d2e2",
+					rim: "#ffffff",
+					wisp: "#e3e0f6",
+					accent: "#ffd166",
+					spark: "#ffffff",
+				},
+				scene256: {
+					page: "#ffffff",
+					ramp: ["#d7d7ff", "#afd7ff", "#87afd7"],
+					clouds: ["#d7d7ff", "#ffd7d7", "#d7ffd7"],
+					shade: "#afafd7",
+					rim: "#ffffff",
+					wisp: "#eeeeee",
+					accent: "#ffd787",
+					spark: "#ffffff",
+					quantized: true,
+				},
+			};
 		case "nightglide-cloudlight":
 			return {
 				label: "FLIGHT LIGHT",

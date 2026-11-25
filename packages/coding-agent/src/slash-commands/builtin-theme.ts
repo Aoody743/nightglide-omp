@@ -10,6 +10,7 @@ const BUILTIN_THEMES: ReadonlyArray<SubcommandDef> = [
 	{ name: "abyss", description: "Dive · dark" },
 	{ name: "daybreak", description: "Dive · light" },
 	{ name: "aurora", description: "Aurora · dark" },
+	{ name: "iris", description: "Iris · light (rainbow clouds)" },
 ];
 
 /** Resolve a typed name to an available theme: exact name first, then the `nightglide-` short form. */

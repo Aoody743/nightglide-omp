@@ -9,6 +9,7 @@ import nightglideAbyssJson from "./nightglide-abyss.json" with { type: "json" };
 import nightglideAuroraJson from "./nightglide-aurora.json" with { type: "json" };
 import nightglideCloudlightJson from "./nightglide-cloudlight.json" with { type: "json" };
 import nightglideDaybreakJson from "./nightglide-daybreak.json" with { type: "json" };
+import nightglideIrisJson from "./nightglide-iris.json" with { type: "json" };
 import type { ColorMode, ThemeBg, ThemeColor, ThemeJson } from "./schema";
 import { normalizeSpinnerFramesOverride, type SymbolPreset } from "./symbols";
 import { Theme } from "./theme-class";
@@ -21,13 +22,14 @@ function isPrintableAscii(text: string): boolean {
 	return /^[\x20-\x7e]*$/.test(text);
 }
 
-/** Nightglide ships only its own themes; these are the names pickers list. */
+/** Nightglide ships its own themes; these are the names pickers list. */
 const NIGHTGLIDE_THEMES: Record<string, ThemeJson> = {
 	"nightglide-flight": nightglideFlightJson as ThemeJson,
 	"nightglide-cloudlight": nightglideCloudlightJson as ThemeJson,
 	"nightglide-abyss": nightglideAbyssJson as ThemeJson,
 	"nightglide-daybreak": nightglideDaybreakJson as ThemeJson,
 	"nightglide-aurora": nightglideAuroraJson as ThemeJson,
+	"nightglide-iris": nightglideIrisJson as ThemeJson,
 };
 
 /**
@@ -44,6 +46,7 @@ const THEME_ALIASES: Record<string, ThemeJson> = {
 	abyss: nightglideAbyssJson as ThemeJson,
 	daybreak: nightglideDaybreakJson as ThemeJson,
 	aurora: nightglideAuroraJson as ThemeJson,
+	iris: nightglideIrisJson as ThemeJson,
 };
 
 const BUILTIN_THEMES: Record<string, ThemeJson> = { ...NIGHTGLIDE_THEMES, ...THEME_ALIASES };
