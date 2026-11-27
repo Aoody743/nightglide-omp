@@ -20,6 +20,35 @@ export interface SetupUiHost {
 	};
 }
 
+/** Routing modes supported by Nightglide setup. */
+export type SetupRoutingMode = "manual" | "local" | "balanced" | "performance";
+
+/** Wire protocol supported by custom providers in setup. */
+export type SetupCustomProviderApi = "openai-completions" | "anthropic-messages";
+
+/** Existing custom provider entry surfaced in setup. */
+export interface SetupCustomProviderSummary {
+	readonly id: string;
+	readonly baseUrl: string;
+	readonly api: string;
+	readonly hasModelList?: boolean;
+	readonly hasInlineKey?: boolean;
+}
+
+/** Input to create or update a custom provider during setup. */
+export interface SaveSetupCustomProviderInput {
+	readonly id: string;
+	readonly baseUrl: string;
+	readonly api: SetupCustomProviderApi;
+	readonly apiKey?: string;
+}
+
+/** Discovery outcome after saving a custom provider during setup. */
+export interface SaveSetupCustomProviderResult {
+	readonly modelCount: number;
+	readonly error?: string;
+}
+
 /** Application-owned preferences and effects consumed by setup scenes. */
 export interface SetupHost extends SetupUiHost {
 	readonly statusLine: ComposerPreviewStatusSource | undefined;
@@ -29,6 +58,10 @@ export interface SetupHost extends SetupUiHost {
 	readonly disabledProviders: readonly string[];
 	/** Whether background self-update (`update.auto`) is on. */
 	readonly autoUpdate: boolean;
+	readonly routingMode?: SetupRoutingMode;
+	readonly localModel?: string;
+	/** Non-global config layer overriding `nightglide.routingMode` (e.g. `project` or `env`), if any. */
+	readonly routingOverrideLayer?: string;
 	readonly authStorage: AuthStorage;
 	readonly modelSource: ModelBrowserSource;
 	/** Available and catalog models of every kind; role chips resolve over all of them, rows list chat models. */
@@ -36,13 +69,18 @@ export interface SetupHost extends SetupUiHost {
 	refreshModels(): Promise<void>;
 	selectModel(model: Model, selector: string): Promise<void>;
 	refreshProvider(provider: string): Promise<void>;
+	isLocalModel?(model: Model): boolean;
+	saveRoutingMode?(mode: SetupRoutingMode, localModel?: string | null): Promise<void>;
+	listCustomProviders?(): Promise<readonly SetupCustomProviderSummary[]>;
+	saveCustomProvider?(input: SaveSetupCustomProviderInput): Promise<SaveSetupCustomProviderResult>;
+	removeCustomProvider?(id: string): Promise<boolean>;
 	saveComposerShape(shape: ComposerShape): Promise<void>;
 	saveSymbolPreset(preset: SymbolPreset): void;
 	saveColorBlindMode(enabled: boolean): void;
 	saveTheme(mode: "dark" | "light", name: string): void;
 	/**
-	 * Whether this omp can install its own updates; false where something else
-	 * owns them: Tern (which updates its omp itself), Nix, a source checkout.
+	 * Whether Nightglide can install its own updates; false where something else
+	 * owns them: Tern (which updates it itself), Nix, a source checkout.
 	 */
 	canAutoUpdate(): Promise<boolean>;
 	saveAutoUpdate(enabled: boolean): Promise<void>;

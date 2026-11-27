@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { closeDashboard, getClosable } from "../api";
+import { useWebLanguage } from "../webI18n";
 import { isDialogOpen, isTypingTarget } from "./keys";
 
 /**
@@ -11,6 +12,7 @@ import { isDialogOpen, isTypingTarget } from "./keys";
  */
 export function CloseButton() {
 	const closable = useClosable();
+	const { t } = useWebLanguage();
 
 	useEffect(() => {
 		if (!closable) return;
@@ -25,9 +27,9 @@ export function CloseButton() {
 
 	if (!closable) return null;
 	return (
-		<button type="button" className="btn" data-variant="ghost" onClick={close} title="Close the dashboard (Esc)">
+		<button type="button" className="btn" data-variant="ghost" onClick={close} title={t("close.title")}>
 			<X size={15} />
-			Close
+			{t("close.label")}
 			<span className="kbd">Esc</span>
 		</button>
 	);

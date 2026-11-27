@@ -1,4 +1,12 @@
-import { applyBackgroundToLine, padding, stripTerminalSequences, visibleWidth } from "../utils";
+import {
+	applyBackgroundToLine,
+	Ellipsis,
+	padding,
+	stripTerminalSequences,
+	truncateToWidth,
+	visibleWidth,
+} from "../utils";
+import { getLanguage, type Language, t } from "../i18n";
 import type { AnimationFrame, TranscriptPresentationTarget } from "../chrome/transcript-container";
 import { type Component, Container } from "../tui";
 import { Disclosure } from "../components/disclosure";
@@ -147,6 +155,7 @@ export class UserMessageComponent extends Container implements ReactionTarget, T
 	#zoneSource: readonly string[] | undefined;
 	#zoneLines: string[] | undefined;
 	#zoneMarked = false;
+	#zoneLanguage: Language = getLanguage();
 	readonly #bgColor: (value: string) => string;
 	readonly #liveSteered: boolean;
 	readonly #synthetic: boolean;
@@ -323,14 +332,20 @@ export class UserMessageComponent extends Container implements ReactionTarget, T
 	}
 
 	/**
-	 * The top padding row: the live-steering marker left-aligned and the reaction
-	 * badge right-aligned, both inside the horizontal padding.
+	 * The top padding row: user speaker tag (`> 你` / `> you`) with optional
+	 * live-steering marker on the left and the reaction badge right-aligned,
+	 * both inside the horizontal padding.
 	 */
 	#badgeRow(width: number): string {
-		const marker = this.#liveSteered ? theme.fg("accent", "*") : "";
 		const emoji = this.#reaction ?? "";
-		const gap = Math.max(0, width - 2 - visibleWidth(marker) - visibleWidth(emoji));
-		return applyBackgroundToLine(` ${marker}${padding(gap)}${emoji}`, width, this.#bgColor);
+		const steerPrefix = this.#liveSteered ? `${theme.fg("accent", "*")} ` : "";
+		const speakerTag = !this.#synthetic ? `${theme.fg("accent", ">")} ${theme.fg("muted", t("card.userLabel"))}` : "";
+		const rawLeft = `${steerPrefix}${speakerTag}`;
+		const maxLeftWidth = Math.max(0, width - 2 - (emoji ? visibleWidth(emoji) + 1 : 0));
+		const left =
+			visibleWidth(rawLeft) > maxLeftWidth ? truncateToWidth(rawLeft, maxLeftWidth, Ellipsis.Omit) : rawLeft;
+		const gap = Math.max(0, width - 2 - visibleWidth(left) - visibleWidth(emoji));
+		return applyBackgroundToLine(` ${left}${padding(gap)}${emoji}`, width, this.#bgColor);
 	}
 
 	/** Apply the transcript allocator's current viewport reservation. */
@@ -374,11 +389,19 @@ export class UserMessageComponent extends Container implements ReactionTarget, T
 			const emergency = this.#selectEmergencyRow(lines);
 			if (emergency !== undefined) return [emergency];
 		}
-		if (this.#zoneSource === lines && this.#zoneLines !== undefined && this.#zoneMarked === promptZonesEnabled) {
+		const lang = getLanguage();
+		if (
+			this.#zoneSource === lines &&
+			this.#zoneLines !== undefined &&
+			this.#zoneMarked === promptZonesEnabled &&
+			this.#zoneLanguage === lang
+		) {
 			return this.#zoneLines;
 		}
 		const wrapped = lines.slice();
-		if (this.#reaction !== undefined || this.#liveSteered) wrapped[0] = this.#badgeRow(width);
+		if (!this.#synthetic || this.#reaction !== undefined || this.#liveSteered) {
+			wrapped[0] = this.#badgeRow(width);
+		}
 		if (promptZonesEnabled) {
 			wrapped[0] = OSC133_ZONE_START + wrapped[0];
 			wrapped[wrapped.length - 1] = wrapped[wrapped.length - 1] + OSC133_ZONE_CLOSE;
@@ -386,6 +409,7 @@ export class UserMessageComponent extends Container implements ReactionTarget, T
 		this.#zoneSource = lines;
 		this.#zoneLines = wrapped;
 		this.#zoneMarked = promptZonesEnabled;
+		this.#zoneLanguage = lang;
 		return wrapped;
 	}
 }

@@ -1,5 +1,6 @@
 import { type LucideIcon, Monitor, Moon, Sun } from "lucide-react";
 import { type ThemePreference, useThemePreference } from "../useSystemTheme";
+import { useWebLanguage, type WebTextKey } from "../webI18n";
 
 const NEXT_PREFERENCE: Record<ThemePreference, ThemePreference> = {
 	system: "light",
@@ -13,16 +14,18 @@ const PREFERENCE_ICON: Record<ThemePreference, LucideIcon> = {
 	dark: Moon,
 };
 
-const PREFERENCE_LABEL: Record<ThemePreference, string> = {
-	system: "System theme",
-	light: "Light theme",
-	dark: "Dark theme",
+const PREFERENCE_LABEL_KEY: Record<ThemePreference, WebTextKey> = {
+	system: "theme.system",
+	light: "theme.light",
+	dark: "theme.dark",
 };
 
 /** Cycles system → light → dark. */
 export function ThemeToggle() {
 	const { preference, setPreference } = useThemePreference();
+	const { t } = useWebLanguage();
 	const Icon = PREFERENCE_ICON[preference];
+	const label = t(PREFERENCE_LABEL_KEY[preference]);
 
 	return (
 		<button
@@ -31,8 +34,8 @@ export function ThemeToggle() {
 			data-variant="ghost"
 			data-icon="true"
 			onClick={() => setPreference(NEXT_PREFERENCE[preference])}
-			aria-label={`${PREFERENCE_LABEL[preference]} (click to switch)`}
-			title={`${PREFERENCE_LABEL[preference]} — click to switch`}
+			aria-label={t("theme.switchAria", { label })}
+			title={t("theme.switchTitle", { label })}
 		>
 			<Icon size={15} />
 		</button>

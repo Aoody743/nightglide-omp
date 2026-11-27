@@ -26,6 +26,8 @@ import {
 	cfgUpdateAuto,
 } from "./settings";
 import { cfgDisabledProviders, cfgModelRoleStorage } from "../config/model-settings";
+import { listCustomProviders, removeCustomProvider, saveCustomProvider } from "../config/nightglide-custom-providers";
+import { cfgNightglideLocalModel, cfgNightglideRoutingMode, isLocalModel } from "../config/nightglide-routing";
 
 export { ALL_SCENES, CURRENT_SETUP_VERSION, setupWizardAllowed };
 export type { SetupScene, SetupSceneHost } from "@oh-my-pi/pi-tui/setup/scenes/types";
@@ -54,6 +56,16 @@ export function createSetupHost(ctx: InteractiveModeContext): SetupHost {
 		get autoUpdate() {
 			return cfgUpdateAuto.get(ctx.settings);
 		},
+		get routingMode() {
+			return cfgNightglideRoutingMode.get(ctx.settings);
+		},
+		get localModel() {
+			return cfgNightglideLocalModel.get(ctx.settings);
+		},
+		get routingOverrideLayer() {
+			const provenance = cfgNightglideRoutingMode.provenance(ctx.settings);
+			return provenance !== "global" && provenance !== "default" ? provenance : undefined;
+		},
 		get authStorage() {
 			return ctx.session.modelRegistry.authStorage;
 		},
@@ -74,6 +86,38 @@ export function createSetupHost(ctx: InteractiveModeContext): SetupHost {
 			// An OAuth alias (`openai-codex-device`) stores its credential under the base provider.
 			await ctx.session.modelRegistry.refreshProvider(getOAuthCredentialProvider(provider), "online");
 			await ctx.session.refreshScopedModels();
+		},
+		isLocalModel: model => isLocalModel(model),
+		saveRoutingMode: async (mode, localModel) => {
+			cfgNightglideRoutingMode.set(ctx.settings, mode);
+			if (localModel === null) {
+				cfgNightglideLocalModel.set(ctx.settings, undefined);
+			} else if (localModel !== undefined) {
+				cfgNightglideLocalModel.set(ctx.settings, localModel.trim() || undefined);
+			}
+			await ctx.settings.flush();
+		},
+		listCustomProviders: () => listCustomProviders(),
+		saveCustomProvider: async input => {
+			const saved = await saveCustomProvider(input);
+			const registry = ctx.session.modelRegistry;
+			if (saved.storeKey) {
+				await registry.authStorage.credentials.set(input.id, { type: "api_key", key: saved.storeKey });
+			}
+			await registry.refresh("online");
+			await ctx.session.refreshScopedModels();
+			const state = registry.getProviderDiscoveryState(input.id);
+			const modelCount = registry.getAll("all").filter(model => model.provider === input.id).length;
+			return { modelCount, error: state?.error };
+		},
+		removeCustomProvider: async id => {
+			const removed = await removeCustomProvider(id);
+			if (!removed) return false;
+			const registry = ctx.session.modelRegistry;
+			await registry.authStorage.credentials.remove(id);
+			await registry.refresh("online-if-uncached");
+			await ctx.session.refreshScopedModels();
+			return true;
 		},
 		saveComposerShape: async shape => {
 			cfgComposerShape.set(ctx.settings, shape);

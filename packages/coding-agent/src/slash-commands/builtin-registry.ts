@@ -21,6 +21,7 @@ import { BUILTIN_MODE_SLASH_COMMANDS } from "./builtin-modes";
 import { BUILTIN_NIGHTGLIDE_SLASH_COMMANDS } from "./builtin-nightglide";
 import { BUILTIN_SESSION_SLASH_COMMANDS } from "./builtin-session";
 import { BUILTIN_SKILLS_SLASH_COMMANDS } from "./builtin-skills";
+import { BUILTIN_SUMMARY_SLASH_COMMANDS } from "./builtin-summary";
 import { BUILTIN_THEME_SLASH_COMMANDS } from "./builtin-theme";
 import { parseSlashCommand } from "./helpers/parse";
 import type {
@@ -54,6 +55,7 @@ const BUILTIN_SLASH_COMMAND_REGISTRY: ReadonlyArray<SlashCommandSpec> = [
 	...BUILTIN_SKILLS_SLASH_COMMANDS,
 	...BUILTIN_CONTROL_SLASH_COMMANDS,
 	...BUILTIN_NIGHTGLIDE_SLASH_COMMANDS,
+	...BUILTIN_SUMMARY_SLASH_COMMANDS,
 ];
 
 const BUILTIN_SLASH_COMMAND_LOOKUP = new Map<string, SlashCommandSpec>();

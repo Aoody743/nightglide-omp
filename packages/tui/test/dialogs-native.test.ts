@@ -9,6 +9,7 @@ import { APPROVE_ARM_MS, ApprovalDialogComponent } from "@oh-my-pi/pi-tui/overla
 import { LoginDialogComponent } from "@oh-my-pi/pi-tui/overlays/login-dialog";
 import { PlanReviewOverlay } from "@oh-my-pi/pi-tui/overlays/plan-review-overlay";
 import { setNativeRendering } from "@oh-my-pi/pi-tui/native/state";
+import { getLanguage, type Language, setLanguage } from "@oh-my-pi/pi-tui/i18n";
 import { getThemeByName, setThemeInstance, theme } from "@oh-my-pi/pi-tui/theme";
 import { TspHarness } from "./native/tsp-harness";
 
@@ -59,6 +60,8 @@ function ask(onSubmit = vi.fn(), onCancel = vi.fn()): AskDialogComponent {
 }
 
 describe("dialogs under a native surface", () => {
+	let previousLanguage: Language = "zh";
+
 	beforeAll(async () => {
 		const dark = await getThemeByName("dark");
 		if (!dark) throw new Error("dark theme unavailable");
@@ -66,10 +69,13 @@ describe("dialogs under a native surface", () => {
 	});
 
 	beforeEach(() => {
+		previousLanguage = getLanguage();
+		setLanguage("en");
 		setKeybindings(KeybindingsManager.inMemory({ "tui.select.cancel": "escape" }));
 	});
 
 	afterEach(() => {
+		setLanguage(previousLanguage);
 		setKeybindings(KeybindingsManager.inMemory());
 	});
 

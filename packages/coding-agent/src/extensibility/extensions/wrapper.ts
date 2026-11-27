@@ -464,9 +464,8 @@ export class ExtensionToolWrapper<TParameters extends TSchema = TSchema, TDetail
 				throw new Error(
 					`Tool "${this.tool.name}" requires approval but no interactive UI available.\n` +
 						`Options:\n` +
-						`  1. Set tools.approvalMode: yolo in /settings\n` +
-						`  2. Add tools.approval.${this.tool.name}: allow to config\n` +
-						`  3. Use an interactive UI to approve the tool call`,
+						`  1. Ask the user to approve this tool interactively, or allow it in config (tools.approval.${this.tool.name}: allow)\n` +
+						`  2. For headless automation, launch nightglide with --auto-approve or --approval-mode`,
 				);
 			}
 

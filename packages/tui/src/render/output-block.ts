@@ -17,6 +17,8 @@ import { getStateBgColor, Hasher, padToWidth } from "./utils";
 export interface OutputBlockOptions {
 	header?: string;
 	headerMeta?: string;
+	/** Optional compact pill badge rendered alongside `headerMeta`. */
+	badge?: { label: string; color?: ThemeColor };
 	/** Facts drawn inside the bottom border (`╰── Wall 0.16s · Timeout 300s ──╯`). */
 	footerMeta?: string;
 	state?: State;
@@ -111,8 +113,23 @@ export function renderOutputBlock(options: OutputBlockOptions, theme: Theme): st
 	// caller did not override the border color (legacy muted frames keep their
 	// uniform quiet look) and the header/meta do not already carry ANSI styling
 	// of their own (code cells and status lines style themselves).
-	const headerSelfStyled = header !== undefined && header.includes("\x1b[");
+	const badgeText = options.badge
+		? `${theme.fg("dim", theme.format.bracketLeft)}${theme.fg(options.badge.color ?? "accent", options.badge.label)}${theme.fg("dim", theme.format.bracketRight)}`
+		: undefined;
 	const headerMetaSelfStyled = headerMeta !== undefined && headerMeta.includes("\x1b[");
+	const headerMetaText = headerMeta
+		? options.borderColor === undefined && !headerMetaSelfStyled
+			? theme.fg("dim", headerMeta)
+			: headerMeta
+		: undefined;
+	const resolvedHeaderMeta =
+		badgeText !== undefined
+			? [headerMetaText, badgeText]
+					.filter((value): value is string => value !== undefined && value.trim().length > 0)
+					.join(theme.fg("dim", theme.sep.dot))
+			: headerMeta;
+	const resolvedMetaSelfStyled = resolvedHeaderMeta !== undefined && resolvedHeaderMeta.includes("\x1b[");
+	const headerSelfStyled = header !== undefined && header.includes("\x1b[");
 	const deriveHeaderStyle = options.borderColor === undefined && !headerSelfStyled;
 	const headerTitleColor: ThemeColor | undefined = deriveHeaderStyle
 		? state === "error"
@@ -126,7 +143,9 @@ export function renderOutputBlock(options: OutputBlockOptions, theme: Theme): st
 						: undefined
 		: undefined;
 	const headerMetaColor: ThemeColor | undefined =
-		options.borderColor === undefined && headerMeta !== undefined && !headerMetaSelfStyled ? "dim" : undefined;
+		options.borderColor === undefined && resolvedHeaderMeta !== undefined && !resolvedMetaSelfStyled
+			? "dim"
+			: undefined;
 	const border = (text: string) => theme.fg(borderColor, text);
 	const bgFn = (() => {
 		if (!state || !applyBg) return undefined;
@@ -157,7 +176,7 @@ export function renderOutputBlock(options: OutputBlockOptions, theme: Theme): st
 		leftChar: theme.boxRound.topLeft,
 		rightChar: theme.boxRound.topRight,
 		label: header,
-		meta: headerMeta,
+		meta: resolvedHeaderMeta,
 		titleColor: headerTitleColor,
 		metaColor: headerMetaColor,
 	});
@@ -245,7 +264,9 @@ export function renderOutputBlock(options: OutputBlockOptions, theme: Theme): st
 		if (row.label) parts.push(row.titleColor ? theme.fg(row.titleColor, row.label) : row.label);
 		if (row.meta) parts.push(row.metaColor ? theme.fg(row.metaColor, row.meta) : row.meta);
 		const dotSep =
-			row.metaColor || deriveHeaderStyle ? theme.fg(row.metaColor ?? "dim", theme.sep.dot) : theme.sep.dot;
+			row.metaColor || deriveHeaderStyle || parts.length > 1
+				? theme.fg(row.metaColor ?? "dim", theme.sep.dot)
+				: theme.sep.dot;
 		const labelText = parts.join(dotSep);
 		if (!labelText) {
 			// No header: draw a clean, continuous top/separator bar (no 1-col gap).

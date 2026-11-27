@@ -477,17 +477,17 @@ const UNICODE_SYMBOLS: SymbolMap = {
 	"icon.goal": "🎯",
 	"icon.pause": "⏸",
 	"icon.loop": "↻",
-	"icon.folder": "📁",
-	"icon.worktree": "🌳",
+	"icon.folder": "▸",
+	"icon.worktree": "⑂",
 	"icon.search": "🔍",
-	"icon.scratchFolder": "🗑",
+	"icon.scratchFolder": "▫",
 	"icon.file": "📄",
 	"icon.git": "⎇",
 	"icon.branch": "⑂",
 	"icon.pr": "⤴",
 	"icon.pin": "📌",
 	"icon.tokens": "🪙",
-	"icon.context": "◫",
+	"icon.context": "◔",
 	"icon.cost": "💲",
 	"icon.subscription": "(sub)",
 	"icon.advisor": "👁",
@@ -510,7 +510,7 @@ const UNICODE_SYMBOLS: SymbolMap = {
 	"icon.package": "📦",
 	"icon.warning": "⚠",
 	"icon.rewind": "↶",
-	"icon.auto": "⟲",
+	"icon.auto": "↻",
 	"icon.fast": "⚡",
 	"icon.extensionSkill": "✦",
 	"icon.extensionTool": "🛠",
@@ -847,11 +847,10 @@ const NERD_SYMBOLS: SymbolMap = {
 	"icon.pause": "\uf04c",
 	// pick: ↻ | alt: ⟳
 	"icon.loop": "\uf021",
-	// pick:  | alt:  
-	"icon.folder": "\uf115",
+	// Nightglide: clean geometric folder/scratch glyphs instead of tray/trash-can icons
+	"icon.folder": "▸",
 	"icon.search": "\uf002",
-	// pick:  | alt:
-	"icon.scratchFolder": "\uf014",
+	"icon.scratchFolder": "▫",
 	// pick: nf-fa-sitemap | alt: nf-cod-list_tree
 	"icon.worktree": "\uf0e8",
 	// pick:  | alt:  
@@ -866,10 +865,8 @@ const NERD_SYMBOLS: SymbolMap = {
 	"icon.pin": "\uf08d",
 	// pick:  | alt: ⊛ ◍ 
 	"icon.tokens": "\ue26b",
-	// pick:  (nf-dev-windows) | alt:  (nf-cod-window) ◫ ▦
-	// INTENTIONAL: the Windows logo is the chosen glyph here. It has been "fixed"
-	// to nf-cod-window before (739d5a3947) and reverted; do not swap it again.
-	"icon.context": "\ue70f",
+	// Nightglide: clean progress circle instead of the Windows logo glyph
+	"icon.context": "◔",
 	// pick:  | alt: $ ¢
 	"icon.cost": "\uf155",
 	// pick: 󰙺 (nf-md-currency_usd_off)
@@ -915,8 +912,8 @@ const NERD_SYMBOLS: SymbolMap = {
 	"icon.warning": "\uf071",
 	// pick:  | alt:  ↺
 	"icon.rewind": "\uf0e2",
-	// pick: 󰁨 | alt:   
-	"icon.auto": "\u{f0068}",
+	// Nightglide: clean refresh glyph instead of magic wand
+	"icon.auto": "\uf021",
 	"icon.fast": "\uf0e7",
 	"icon.extensionSkill": "\uf0eb",
 	// pick:  | alt:  

@@ -99,6 +99,11 @@ import { cfgHideThinkingBlock } from "../../session/settings";
 /** Bare words that quit (as `/<word>`) when typed alone into a session with no messages. */
 const BARE_EXIT_WORDS: Record<string, true> = { exit: true, quit: true, q: true };
 
+/** Host surface for Nightglide's collapsible Glide sidebar toggle. */
+interface NightglideSidebarHost {
+	toggleNightglideSidebar?(): void;
+}
+
 const REMOTE_CLIPBOARD_STATUS =
 	"Clipboard here belongs to the SSH host — use your terminal's paste shortcut to paste from your machine";
 
@@ -482,6 +487,13 @@ export class InputController {
 					if (this.ctx.ui.getFocused() instanceof TreeSelectorComponent && matchesKey(data, "alt+l"))
 						return undefined;
 					this.ctx.resetDisplayAfterAppearanceRefresh();
+					return { consume: true };
+				}
+				if (this.ctx.keybindings.matches(data, "app.sidebar.toggle")) {
+					if (this.ctx.ui.hasOverlay() || !this.ctx.ui.hasScreenProvider()) return undefined;
+					const host: InteractiveModeContext & NightglideSidebarHost = this.ctx;
+					if (!host.toggleNightglideSidebar) return undefined;
+					host.toggleNightglideSidebar();
 					return { consume: true };
 				}
 				return undefined;

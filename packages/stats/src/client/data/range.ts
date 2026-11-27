@@ -6,15 +6,16 @@
 
 import { format } from "@oh-my-pi/pi-utils/dates";
 import type { TimeRange } from "../types";
+import { translateWeb, type WebLanguage, type WebTextKey } from "../webI18n";
 
 const MINUTE_MS = 60 * 1000;
 const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
 
 export interface RangeMeta {
-	/** Short selector label ("24h"). */
+	/** Short selector label ("24h" / "全部"). */
 	label: string;
-	/** Prose label for subtitles ("the last 24 hours"). */
+	/** Prose label for subtitles ("the last 24 hours" / "最近 24 小时"). */
 	windowLabel: string;
 	/** Span covered by the range; `null` for all time. */
 	spanMs: number | null;
@@ -22,13 +23,16 @@ export interface RangeMeta {
 	bucketMs: number;
 }
 
-const RANGE_META: Record<TimeRange, RangeMeta> = {
-	"1h": { label: "1h", windowLabel: "the last hour", spanMs: HOUR_MS, bucketMs: 5 * MINUTE_MS },
-	"24h": { label: "24h", windowLabel: "the last 24 hours", spanMs: DAY_MS, bucketMs: HOUR_MS },
-	"7d": { label: "7d", windowLabel: "the last 7 days", spanMs: 7 * DAY_MS, bucketMs: DAY_MS },
-	"30d": { label: "30d", windowLabel: "the last 30 days", spanMs: 30 * DAY_MS, bucketMs: DAY_MS },
-	"90d": { label: "90d", windowLabel: "the last 90 days", spanMs: 90 * DAY_MS, bucketMs: DAY_MS },
-	all: { label: "All", windowLabel: "all time", spanMs: null, bucketMs: DAY_MS },
+const RANGE_META: Record<
+	TimeRange,
+	{ labelKey: WebTextKey; windowKey: WebTextKey; spanMs: number | null; bucketMs: number }
+> = {
+	"1h": { labelKey: "range.1h.label", windowKey: "range.1h.window", spanMs: HOUR_MS, bucketMs: 5 * MINUTE_MS },
+	"24h": { labelKey: "range.24h.label", windowKey: "range.24h.window", spanMs: DAY_MS, bucketMs: HOUR_MS },
+	"7d": { labelKey: "range.7d.label", windowKey: "range.7d.window", spanMs: 7 * DAY_MS, bucketMs: DAY_MS },
+	"30d": { labelKey: "range.30d.label", windowKey: "range.30d.window", spanMs: 30 * DAY_MS, bucketMs: DAY_MS },
+	"90d": { labelKey: "range.90d.label", windowKey: "range.90d.window", spanMs: 90 * DAY_MS, bucketMs: DAY_MS },
+	all: { labelKey: "range.all.label", windowKey: "range.all.window", spanMs: null, bucketMs: DAY_MS },
 };
 
 const MAX_BUCKETS = 1500;
@@ -36,8 +40,14 @@ const MAX_BUCKETS = 1500;
 /** Ranges in selector order. */
 export const TIME_RANGES: readonly TimeRange[] = ["1h", "24h", "7d", "30d", "90d", "all"];
 
-export function rangeMeta(range: TimeRange): RangeMeta {
-	return RANGE_META[range];
+export function rangeMeta(range: TimeRange, lang: WebLanguage = "en"): RangeMeta {
+	const entry = RANGE_META[range];
+	return {
+		label: translateWeb(lang, entry.labelKey),
+		windowLabel: translateWeb(lang, entry.windowKey),
+		spanMs: entry.spanMs,
+		bucketMs: entry.bucketMs,
+	};
 }
 
 /** Tick/tooltip label for a bucket start, precise enough for the bucket size. */

@@ -35,6 +35,7 @@ import {
 	Table,
 	TableSkeleton,
 } from "../ui";
+import { useWebLanguage } from "../webI18n";
 import "./frustration.css";
 
 export interface FrustrationRouteProps {
@@ -57,7 +58,8 @@ export function FrustrationRoute({ active, range }: FrustrationRouteProps) {
 		enabled: active,
 		pollMs: running ? RUNNING_POLL_MS : undefined,
 	});
-	const meta = rangeMeta(range);
+	const { lang, t } = useWebLanguage();
+	const meta = rangeMeta(range, lang);
 
 	const jobState = stats.data?.job.state;
 	useEffect(() => {
@@ -72,10 +74,7 @@ export function FrustrationRoute({ active, range }: FrustrationRouteProps) {
 
 	return (
 		<div className="page">
-			<PageHeader
-				title="Frustration"
-				description={`How often your messages sound annoyed, per model version, in ${meta.windowLabel}.`}
-			/>
+			<PageHeader title={t("frustration.title")} description={t("frustration.desc", { window: meta.windowLabel })} />
 
 			<QueryView query={stats} skeleton={<ChartSkeleton height={96} />}>
 				{data => (
@@ -189,7 +188,7 @@ interface JudgePanelProps {
 }
 
 const UNAVAILABLE_HINT =
-	"Judging needs the omp host process: open the dashboard with omp stats and configure a judge model. Until then messages are classified by regex signals.";
+	"Judging needs the Nightglide host process: open the dashboard with nightglide stats and configure a judge model. Until then messages are classified by regex signals.";
 
 function JudgePanel({ active, range, judgeAvailable, job, onRunStarted, onRunChanged }: JudgePanelProps) {
 	const [modalOpen, setModalOpen] = useState(false);
@@ -561,6 +560,7 @@ function FrustrationModelsSection({ models, stale }: { models: FrustrationModelS
 	const [showSmall, setShowSmall] = useState(false);
 	const [hideRegex, setHideRegex] = useState(false);
 
+	const { t } = useWebLanguage();
 	const familyColors = useMemo(() => assignFamilyColors(models), [models]);
 
 	const classes = useMemo(() => {
@@ -639,7 +639,7 @@ function FrustrationModelsSection({ models, stale }: { models: FrustrationModelS
 	if (models.length === 0) {
 		return (
 			<Card index={2} title="Frustration by model version" stale={stale}>
-				<EmptyState title="No user messages in this range" hint="Try a longer range." />
+				<EmptyState title={t("frustration.empty")} hint={t("models.emptyHint")} />
 			</Card>
 		);
 	}

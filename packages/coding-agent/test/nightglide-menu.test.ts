@@ -109,7 +109,7 @@ describe("Nightglide /more", () => {
 		expect(rows[1]).toEqual({ kind: "heading", label: "── 会话 ──" });
 		const names = commandNames(rows);
 		// Common commands lead their group in menu order, then standard ones.
-		expect(names.slice(0, 7)).toEqual(["new", "resume", "clear", "compact", "export", "copy", "rename"]);
+		expect(names.slice(0, 8)).toEqual(["new", "resume", "clear", "compact", "export", "copy", "summary", "rename"]);
 		expect(names).toContain("autoresearch");
 		expect(names).not.toContain("switch");
 		// A paragraph-long extension description is cut to its first sentence.

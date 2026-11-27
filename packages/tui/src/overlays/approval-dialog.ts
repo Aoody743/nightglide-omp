@@ -47,13 +47,18 @@ import { actionBar, actionButton } from "../native/overlay";
 import { PREVIEW_LIMITS, sanitizeDisplayLines } from "../render/render-utils";
 import { theme } from "../theme/theme";
 import { CountdownTimer } from "../chrome/countdown-timer";
+import { getLanguage, type Language, t } from "../i18n";
 
 /** Detail rows shown before the rest scrolls, so the composer beneath keeps its room. */
 const MAX_DETAIL_ROWS: number = PREVIEW_LIMITS.COLLAPSED_ITEMS;
 /** Enter and the approve key are ignored this long after mount, so a key sent as the prompt appears cannot answer it. */
 export const APPROVE_ARM_MS = 500;
-/** The Deny row while a composer draft holds Enter: sending it denies the call and steers the turn. */
-const DENY_AND_SEND_LABEL = "Deny and send message";
+
+function localizeApprovalTitle(rawTitle: string): string {
+	const match = /^Allow tool: (.+)$/.exec(rawTitle);
+	if (!match) return rawTitle;
+	return t("approval.allowTool", { name: match[1]! });
+}
 
 const NO_LINES: readonly string[] = [];
 
@@ -228,10 +233,11 @@ function styleApprovalDetails(details: readonly string[], isBash = false): { ans
 	return details.map(line => styleKeyValueLine(line));
 }
 
-function getChoiceShortcut(answer: ApprovalAnswer, drafting: boolean): string | undefined {
+function getChoiceShortcut(answer: ApprovalAnswer, hasDraftSupport: boolean): string | undefined {
+	if (hasDraftSupport) return undefined;
 	if (answer === "once") return "y";
 	if (answer === "session") return "s";
-	if (answer === "deny") return drafting ? undefined : "n";
+	if (answer === "deny") return "n";
 	return undefined;
 }
 
@@ -267,7 +273,7 @@ function styleSegmentLine(line: string): { ansi: string; spans?: TspSpan[] } {
 }
 
 export class ApprovalDialogComponent implements Component {
-	readonly #title: string;
+	readonly #rawTitle: string;
 	readonly #summary: readonly string[];
 	readonly #full: readonly string[] | undefined;
 	#expanded = false;
@@ -279,6 +285,7 @@ export class ApprovalDialogComponent implements Component {
 	#bodyRows = MAX_DETAIL_ROWS;
 	/** In list order: the remember toggle and grants (when offered), Approve (highlighted on mount), the session row, Deny last. */
 	#choices: readonly ApprovalChoice[];
+	#choicesLanguage: Language;
 	#choice = 0;
 	/** The remember toggle: grants are kept across sessions while it is on. */
 	#rememberAlways = false;
@@ -286,6 +293,8 @@ export class ApprovalDialogComponent implements Component {
 	#native: NativeNode | undefined;
 	/** Whether a draft held the keys when {@link #native} was described: it moves the highlight. */
 	#nativeDrafting = false;
+	#nativeLanguage: Language | undefined;
+	#remainingSeconds: number | undefined;
 	readonly #armedAt = performance.now() + APPROVE_ARM_MS;
 	readonly #countdown: CountdownTimer | undefined;
 
@@ -297,7 +306,8 @@ export class ApprovalDialogComponent implements Component {
 	) {
 		const lines = sanitizeDisplayLines(prompt);
 		const title = lines[0] ?? "";
-		this.#title = title;
+		const lang = getLanguage();
+		this.#rawTitle = title;
 		this.#summary = promptDetails(lines);
 		this.#full =
 			options.fullPrompt === undefined ? undefined : promptDetails(sanitizeDisplayLines(options.fullPrompt));
@@ -308,9 +318,14 @@ export class ApprovalDialogComponent implements Component {
 		if (firstPrompted >= 0 && segmentStart + firstPrompted >= MAX_DETAIL_ROWS) {
 			this.#scrollOffset = segmentStart + firstPrompted - MAX_DETAIL_ROWS + 1;
 		}
+		this.#choicesLanguage = lang;
 		this.#choices = this.#buildChoices();
 		this.#choice = this.#choices.findIndex(choice => choice.answer === "once");
-		this.#panel = new ApprovalOverlayPanel(title, "omp.overlay.approval", isWriteOrExecuteApproval(title));
+		this.#panel = new ApprovalOverlayPanel(
+			this.#panelTitle(),
+			"omp.overlay.approval",
+			isWriteOrExecuteApproval(this.#rawTitle),
+		);
 		this.#footer.setHeight(1);
 		this.#panel.addChild(this.#body);
 		this.#panel.addChild(this.#choiceRows);
@@ -322,7 +337,8 @@ export class ApprovalDialogComponent implements Component {
 				options.timeout,
 				options.tui,
 				seconds => {
-					this.#panel.title = `${title} (${seconds}s)`;
+					this.#remainingSeconds = seconds;
+					this.#panel.title = this.#panelTitle();
 				},
 				() => {
 					options.onTimeout?.();
@@ -332,18 +348,26 @@ export class ApprovalDialogComponent implements Component {
 		}
 	}
 
+	#panelTitle(): string {
+		const base = localizeApprovalTitle(this.#rawTitle);
+		if (this.#remainingSeconds === undefined) return base;
+		return `${base} (${t("approval.secondsRemaining", { seconds: String(this.#remainingSeconds) })})`;
+	}
+
 	#buildChoices(): ApprovalChoice[] {
 		const grants = this.options.grants ?? [];
 		const glyph = this.#rememberAlways ? theme.checkbox.checked : theme.checkbox.unchecked;
 		return [
-			...(grants.length > 0 ? [{ label: `${glyph} Remember across sessions`, answer: "remember" as const }] : []),
+			...(grants.length > 0
+				? [{ label: `${glyph} ${t("approval.rememberAlways")}`, answer: "remember" as const }]
+				: []),
 			...grants.map((grant, index) => ({
 				label: this.#rememberAlways ? grant.alwaysLabel : grant.label,
 				answer: `grant${index}` as const,
 			})),
-			{ label: grants.length > 0 ? "Approve Once" : "Approve", answer: "once" },
+			{ label: grants.length > 0 ? t("approval.approveOnce") : t("approval.approve"), answer: "once" },
 			...(this.options.session ? [{ label: this.options.session.label, answer: "session" as const }] : []),
-			{ label: "Deny", answer: "deny" },
+			{ label: t("approval.deny"), answer: "deny" },
 		];
 	}
 
@@ -354,6 +378,7 @@ export class ApprovalDialogComponent implements Component {
 			return;
 		}
 		this.#rememberAlways = !this.#rememberAlways;
+		this.#choicesLanguage = getLanguage();
 		this.#choices = this.#buildChoices();
 		this.#native = undefined;
 		this.options.tui?.requestRender();
@@ -466,10 +491,20 @@ export class ApprovalDialogComponent implements Component {
 	}
 
 	get #isBash(): boolean {
-		return isBashApproval(this.#title);
+		return isBashApproval(this.#rawTitle);
+	}
+
+	#syncLanguageChoices(lang: Language): void {
+		if (lang === this.#choicesLanguage) return;
+		this.#choicesLanguage = lang;
+		this.#choices = this.#buildChoices();
+		this.#choice = Math.min(this.#choice, this.#choices.length - 1);
 	}
 
 	render(width: number): readonly string[] {
+		const lang = getLanguage();
+		this.#syncLanguageChoices(lang);
+		this.#panel.title = this.#panelTitle();
 		const innerWidth = Math.max(1, width - 4);
 		let lines = this.#detailLines(innerWidth);
 		const rows = Math.max(1, Math.min(lines.length, MAX_DETAIL_ROWS));
@@ -482,7 +517,7 @@ export class ApprovalDialogComponent implements Component {
 			const view = new ScrollView(lines, {
 				height: rows,
 				scrollbar: "auto",
-				theme: { track: t => theme.fg("muted", t), thumb: t => theme.fg("accent", t) },
+				theme: { track: s => theme.fg("muted", s), thumb: s => theme.fg("accent", s) },
 			});
 			view.setScrollOffset(this.#scrollOffset);
 			this.#body.setLines(view.render(innerWidth));
@@ -490,13 +525,14 @@ export class ApprovalDialogComponent implements Component {
 			this.#body.setLines(lines);
 		}
 		this.#body.setHeight(rows);
+		const hasDraftSupport = this.options.draft !== undefined;
 		const drafting = this.options.draft?.hasDraft() ?? false;
 		// While a draft holds Enter the highlight sits on Deny (sending the draft denies), else on the arrows' choice.
 		const shown = drafting ? this.#choices.length - 1 : this.#choice;
 		this.#choiceRows.setLines(
 			this.#choices.map((choice, index) => {
-				const label = drafting && choice.answer === "deny" ? DENY_AND_SEND_LABEL : choice.label;
-				const shortcut = getChoiceShortcut(choice.answer, drafting);
+				const label = drafting && choice.answer === "deny" ? t("approval.denyAndSend") : choice.label;
+				const shortcut = getChoiceShortcut(choice.answer, hasDraftSupport);
 				const badge = shortcut ? ` [${shortcut}]` : "";
 				if (index !== shown) {
 					const unselected = `  ${label}${badge ? theme.fg("dim", badge) : ""}`;
@@ -523,31 +559,42 @@ export class ApprovalDialogComponent implements Component {
 	 * and the primary Approve, whose keys show in their tooltips.
 	 */
 	describe(): NativeNode {
+		const lang = getLanguage();
 		const drafting = this.options.draft?.hasDraft() ?? false;
-		if (this.#native && this.#nativeDrafting === drafting) return this.#native;
+		if (this.#native && this.#nativeDrafting === drafting && this.#nativeLanguage === lang) return this.#native;
+		this.#syncLanguageChoices(lang);
 		const cancelKey = getKeybindings().getKeys("tui.select.cancel")[0];
 		const approveKey = appApproveKeys()[0];
-		const deny = actionButton("Deny", "deny", {
+		const deny = actionButton(t("approval.deny"), "deny", {
 			...(cancelKey ? { keys: cancelKey } : {}),
 			tone: "error",
-			title: `Deny this call${cancelKey ? `  ${formatTooltipKey(cancelKey)}` : ""}`,
+			title: `${t("approval.denyBtnTitle")}${cancelKey ? `  ${formatTooltipKey(cancelKey)}` : ""}`,
 		});
-		const approve = actionButton(this.options.grants?.length ? "Approve Once" : "Approve", "approve", {
-			...(approveKey ? { keys: approveKey } : {}),
-			tone: "accent",
-			title: `Approve this call${approveKey ? `  ${formatTooltipKey(approveKey)}` : ""}`,
-		});
+		const approve = actionButton(
+			this.options.grants?.length ? t("approval.approveOnce") : t("approval.approve"),
+			"approve",
+			{
+				...(approveKey ? { keys: approveKey } : {}),
+				tone: "accent",
+				title: `${t("approval.approveBtnTitle")}${approveKey ? `  ${formatTooltipKey(approveKey)}` : ""}`,
+			},
+		);
 		const expandKey = appToolsExpandKey();
 		const expand = this.#full
 			? [
-					actionButton(this.#expanded ? "Less" : "Details", "expand", {
+					actionButton(this.#expanded ? t("approval.less") : t("approval.details"), "expand", {
 						keys: expandKey,
-						title: `${this.#expanded ? "Summarize" : "Show every detail of"} this call  ${formatTooltipKey(expandKey)}`,
+						title: `${t(this.#expanded ? "approval.summarizeCall" : "approval.showDetails")}  ${formatTooltipKey(expandKey)}`,
 					}),
 				]
 			: [];
 		const children: NativeNode[] = [
-			node("text", { text: this.#title, role: "omp.approval.title", tone: "accent" }, undefined, "title"),
+			node(
+				"text",
+				{ text: localizeApprovalTitle(this.#rawTitle), role: "omp.approval.title", tone: "accent" },
+				undefined,
+				"title",
+			),
 		];
 		if (this.#details.length > 0) {
 			// One clipped row per detail like the text view; expanded details wrap.
@@ -561,7 +608,7 @@ export class ApprovalDialogComponent implements Component {
 		}
 		const choices = this.#choices.map(choice =>
 			item(choice.answer, {
-				label: choice.label,
+				label: drafting && choice.answer === "deny" ? t("approval.denyAndSend") : choice.label,
 				role: "omp.approval.choice",
 				tone: choice.answer === "deny" ? "error" : "accent",
 			}),
@@ -576,6 +623,7 @@ export class ApprovalDialogComponent implements Component {
 		// composer column by that prefix, where a bare `omp.editor.*` role spans the whole dock.
 		this.#native = col(children, { role: "omp.editor.ask.approval", gap: "md" });
 		this.#nativeDrafting = drafting;
+		this.#nativeLanguage = lang;
 		return this.#native;
 	}
 
@@ -609,13 +657,15 @@ export class ApprovalDialogComponent implements Component {
 	#footerHint(overflows: boolean, drafting: boolean): string {
 		const approve = formatKeyHints(appApproveKeys());
 		const expand = this.#full
-			? ` · ${formatKeyHints([appToolsExpandKey()])} ${this.#expanded ? "less" : "details"}`
+			? ` · ${formatKeyHints([appToolsExpandKey()])} ${t(this.#expanded ? "approval.lessLower" : "approval.detailsLower")}`
 			: "";
-		const keys = `${approve} approve · ${editorKey("tui.select.cancel")} deny${expand}`;
-		if (drafting) return `${editorKey("tui.input.submit")} deny and send · ${keys}`;
-		const choose = `${editorKeys("tui.select.up", "tui.select.down")} choose · ${editorKey("tui.select.confirm")} select`;
-		const scroll = overflows ? ` · ${editorKeys("tui.select.pageUp", "tui.select.pageDown")} scroll` : "";
-		return `${choose} · ${keys}${scroll}${this.options.draft ? " · type to deny and steer" : ""}`;
+		const keys = `${approve} ${t("approval.hintApprove")} · ${editorKey("tui.select.cancel")} ${t("approval.hintDeny")}${expand}`;
+		if (drafting) return `${editorKey("tui.input.submit")} ${t("approval.hintDenyAndSend")} · ${keys}`;
+		const choose = `${editorKeys("tui.select.up", "tui.select.down")} ${t("approval.hintChoose")} · ${editorKey("tui.select.confirm")} ${t("approval.hintSelect")}`;
+		const scroll = overflows
+			? ` · ${editorKeys("tui.select.pageUp", "tui.select.pageDown")} ${t("approval.hintScroll")}`
+			: "";
+		return `${choose} · ${keys}${scroll}${this.options.draft ? ` · ${t("approval.hintTypeToDeny")}` : ""}`;
 	}
 
 	#scroll(delta: number): void {

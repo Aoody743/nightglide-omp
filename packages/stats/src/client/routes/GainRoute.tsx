@@ -18,6 +18,7 @@ import {
 	StatGrid,
 	Table,
 } from "../ui";
+import { useWebLanguage } from "../webI18n";
 
 export interface GainRouteProps {
 	active: boolean;
@@ -42,7 +43,8 @@ export function GainRoute({ active, range }: GainRouteProps) {
 	const gain = useQuery(["gain", range, project], ({ signal }) => getGainDashboardStats(range, project, signal), {
 		enabled: active,
 	});
-	const meta = rangeMeta(range);
+	const { lang, t } = useWebLanguage();
+	const meta = rangeMeta(range, lang);
 	const data = gain.data;
 
 	const series = useMemo(() => {
@@ -89,8 +91,8 @@ export function GainRoute({ active, range }: GainRouteProps) {
 	return (
 		<div className="page">
 			<PageHeader
-				title="Gain"
-				description={`Tokens snapcompact kept out of context${scope} in ${meta.windowLabel}.`}
+				title={t("gain.title")}
+				description={t("gain.desc", { scope, window: meta.windowLabel })}
 				actions={
 					projectOptions.length > 0 && (
 						<select
@@ -118,11 +120,11 @@ export function GainRoute({ active, range }: GainRouteProps) {
 				empty={
 					<Card>
 						<EmptyState
-							title={`No savings recorded${scope} in ${meta.windowLabel}`}
+							title={t("gain.empty", { scope, window: meta.windowLabel })}
 							hint={
 								range === "all"
 									? "Savings appear here once snapcompact compacts tool output."
-									: "Try a longer range."
+									: t("models.emptyHint")
 							}
 						/>
 					</Card>

@@ -3,19 +3,21 @@
  *
  * Each terminal cell is two vertical pixels drawn with `▀` (foreground = top
  * pixel, background = bottom pixel), doubling vertical resolution. Pixels
- * come from smooth value noise, so clouds and water read as soft shapes
- * instead of per-column speckle. Colors are palette hex values converted for
- * the terminal's actual color mode (truecolor or 256) by the caller-supplied
- * encoder, so terminals without 24-bit color (Terminal.app) stay correct.
+ * come from smooth value noise and billowing envelopes, so clouds and water
+ * read as soft shapes instead of per-column speckle. Colors are palette hex
+ * values converted for the terminal's actual color mode (truecolor or 256) by
+ * the caller-supplied encoder, so terminals without 24-bit color (Terminal.app)
+ * stay correct.
  *
- * Flight: a slow, faint far cloud layer under a faster, denser near layer
- * (parallax), one thin light band with soft edges, and twinkling sparks in
- * the gaps. Dive: slanted light shafts from the surface, tapering plants
- * swaying on the seabed, bubbles that wobble as they rise at their own speed,
- * and faint drifting particles. Aurora: curtains of light that glow green at
- * their lower edge and fade to violet as their rays climb, drifting over a
- * starfield, above a dark mountain ridge; on launch the curtains sweep in
- * from the left and brighten (`intro`).
+ * Flight: layered scrolling parallax clouds + thin glowing light band (`der.glow`
+ * or `pal.spectral` for Iris rainbow clouds) on BOTH top and bottom edges, plus
+ * moon/sun halo, shimmering wisps, and twinkling sparks in open sky. Dive:
+ * slanted light shafts from the surface, tapering plants swaying on the seabed,
+ * bubbles that wobble as they rise at their own speed, and faint drifting
+ * particles. Aurora: curtains of light that glow green at their lower edge and
+ * fade to violet as their rays climb, drifting over a starfield, above a dark
+ * mountain ridge; on launch the curtains sweep in from the left and brighten
+ * (`intro`).
  *
  * Pure function of its inputs: `time` is a scene clock the caller advances
  * (constant when motion is off), and `intensity` (0–1) comes from the
@@ -46,6 +48,8 @@ export interface PixelPalette {
 	rim?: string;
 	/** Flight: high wisps in the sky. */
 	wisp?: string;
+	/** Flight (Iris): multi-hue spectral light-band and shimmer stops. */
+	spectral?: readonly string[];
 	/** Dive: light from the surface, strongest at the top of the window. */
 	surface?: string;
 	/** Dive: rippling caustic lines near the surface. */
@@ -194,6 +198,12 @@ function along(stops: readonly string[], t: number, quantized: boolean): string 
 	return mix(stops[i]!, stops[i + 1]!, at - i);
 }
 
+/** Cyclic 0–1 phase helper for multi-hue spectral ribbons. */
+function wrap01(v: number): number {
+	const m = v % 1;
+	return m < 0 ? m + 1 : m;
+}
+
 /**
  * `light` (0–1) of `color` over the page: blended when truecolor; when quantized, the page below
  * a floor and the listed stops of `ramp` above it.
@@ -332,60 +342,149 @@ function billowTop(x: number, spacing: number, base: number, amp: number, salt: 
 
 /** Cloud layers of the flight floor, near first: drift speed, billow spacing, base and height. */
 const CLOUD_LAYERS = [
-	{ speed: 0.24, spacing: 14, base: 0.18, amp: 0.72 },
-	{ speed: 0.12, spacing: 19, base: 0.5, amp: 0.45 },
-	{ speed: 0.05, spacing: 27, base: 0.72, amp: 0.3 },
+	{ speed: 0.24, spacing: 15, base: 0.14, amp: 0.62 },
+	{ speed: 0.12, spacing: 20, base: 0.34, amp: 0.45 },
+	{ speed: 0.05, spacing: 27, base: 0.52, amp: 0.32 },
 ] as const;
 
-const flightPixel: PixelFn = (x, py, pixelRows, edge, pal, _der, opts) => {
+/** Mirror canopy cloud layers along the top edge: gentler height so open sky stays spacious. */
+const TOP_CLOUD_LAYERS = [
+	{ speed: 0.22, spacing: 18, base: 0.1, amp: 0.34 },
+	{ speed: 0.11, spacing: 24, base: 0.18, amp: 0.3 },
+	{ speed: 0.05, spacing: 31, base: 0.26, amp: 0.24 },
+] as const;
+
+/** Resolve base body color for a flight cloud layer, sweeping silky pastel rainbow bands on Iris. */
+function flightCloudColor(
+	x: number,
+	layerIdx: number,
+	edge: SceneEdge,
+	time: number,
+	pace: number,
+	pal: PixelPalette,
+	der: Derived,
+	q: boolean,
+): string {
+	if (pal.spectral && pal.spectral.length > 0) {
+		const phase = wrap01(
+			(x + time * CLOUD_LAYERS[layerIdx]!.speed * pace * 0.45) / 58 + layerIdx * 0.27 + (edge === "top" ? 0.14 : 0),
+		);
+		const hue = along(pal.spectral, phase, q);
+		if (q) return hue;
+		return layerIdx === 0 ? mix("#ffffff", hue, 0.72) : hue;
+	}
+	if (pal.clouds && pal.clouds.length > 0) {
+		return pal.clouds[Math.max(0, pal.clouds.length - 1 - layerIdx)]!;
+	}
+	if (layerIdx >= 2) return der.far[0] ?? pal.ramp[0]!;
+	if (layerIdx === 1) return pal.ramp[Math.min(1, pal.ramp.length - 1)]!;
+	return pal.ramp[pal.ramp.length - 1]!;
+}
+
+const flightPixel: PixelFn = (x, py, pixelRows, edge, pal, der, opts) => {
 	const { time, intensity, cellPixels = 2, width = 120 } = opts;
 	const q = pal.quantized === true;
 	const salt = edge === "top" ? 11 : 29;
 	const tall = cellPixels === 1 ? 2 : 1; // a whole-cell pixel is twice as tall as it is wide
+	const pace = 1 + intensity * 0.6;
+	const isSpectral = Boolean(pal.spectral && pal.spectral.length > 0);
+	const shadeWeight = isSpectral ? 0.2 : 0.65;
+	const layers = edge === "top" ? TOP_CLOUD_LAYERS : CLOUD_LAYERS;
+	const spanFromEdge = edge === "top" ? py : pixelRows - 1 - py;
 
-	if (edge === "bottom") {
-		// A sea of clouds below: three layers drifting at their own speeds, the nearest fastest
-		// (forward flight), each with a lit rim and darker undersides.
-		const clouds = pal.clouds ?? pal.ramp;
-		const fromBase = pixelRows - 1 - py;
-		const pace = 1 + intensity * 0.6;
-		for (let i = 0; i < CLOUD_LAYERS.length; i++) {
-			const layer = CLOUD_LAYERS[i]!;
-			const body = clouds[Math.max(0, clouds.length - 1 - i)]!;
-			// Higher effort: billows rise a little taller and their rims glow brighter.
-			const amp = layer.amp * (1 + intensity * 0.2);
-			const top =
-				pixelRows * billowTop(x + time * layer.speed * pace, layer.spacing, layer.base, amp, salt + i * 13);
-			if (fromBase >= top) continue;
-			const inside = top - fromBase;
-			const rim = pal.rim ?? body;
-			// The lit rim shows on billow tops, not along the flat base between them.
-			const crest = top > pixelRows * (layer.base + layer.amp * 0.35);
-			const glow = (i === 0 ? 0.7 : 0.3) + intensity * 0.25;
-			if (inside <= 1 && crest && i < 2) return q ? (i === 0 ? rim : body) : mix(body, rim, glow);
-			if (q) return body;
-			// Lit near the top, darker underneath.
-			return mix(body, pal.shade ?? body, smoothstep(1, pixelRows * 0.6, inside) * (i === 0 ? 0.7 : 0.4));
+	for (let i = 0; i < layers.length; i++) {
+		const layer = layers[i]!;
+		const amp = layer.amp * (1 + intensity * 0.18);
+		const top =
+			pixelRows *
+			billowTop(
+				x + time * layer.speed * pace,
+				layer.spacing,
+				layer.base,
+				amp,
+				salt + i * 13 + (edge === "top" ? 41 : 0),
+			);
+		if (spanFromEdge >= top) continue;
+		const inside = top - spanFromEdge;
+		const body = flightCloudColor(x, i, edge, time, pace, pal, der, q);
+		const rim = pal.rim ?? body;
+		const crest = top > pixelRows * (layer.base + layer.amp * 0.34);
+		const glow = (i === 0 ? 0.72 : 0.34) + intensity * 0.24;
+		if (inside <= 1 && crest && i < 2) {
+			if (q) {
+				if (!isSpectral && i === 0) {
+					const shimmer = valueNoise((x + time * 0.28 * pace) / 14, i, salt + 7);
+					if (shimmer > 0.72 - intensity * 0.16) {
+						return pal.blends?.glow?.[2] ?? rim;
+					}
+				}
+				return i === 0 ? rim : body;
+			}
+			// Crisp sunlit rim highlight; subtle pearlescent gold kiss only on sunlit near crests (never muddy brown).
+			if (!isSpectral && i === 0) {
+				const shimmer = valueNoise((x + time * 0.28 * pace) / 14, i, salt + 7);
+				if (shimmer > 0.72 - intensity * 0.16) {
+					return mix(rim, pal.accent, 0.32);
+				}
+			}
+			return mix(body, rim, glow);
 		}
-		return starAt(x, py, salt, time, pal) ?? pal.page;
+		if (q) return body;
+		return mix(
+			body,
+			pal.shade ?? body,
+			smoothstep(1, pixelRows * 0.6, inside) * (i === 0 ? shadeWeight : shadeWeight * 0.6),
+		);
 	}
 
-	// The sky above: a moon (a sun in light themes) with a soft halo, high wisps, stars.
-	const cx = width * 0.8;
-	const cy = pixelRows * 0.42;
+	if (edge === "bottom") {
+		const wispNoise = smoothstep(0.58, 0.76, fbm((x + time * 0.07) / 30, (py * tall) / 3.6, salt + 19));
+		if (wispNoise > 0) {
+			if (isSpectral) {
+				const spec = along(pal.spectral!, wrap01((x + time * 0.08) / 60), q);
+				if (q) {
+					if (wispNoise > 0.38) return spec;
+				} else {
+					return mix(pal.page, spec, wispNoise * (0.28 + 0.16 * intensity));
+				}
+			} else if (pal.wisp) {
+				if (q) {
+					if (wispNoise > 0.34) return pal.wisp;
+				} else {
+					return mix(pal.page, pal.wisp, wispNoise * (0.36 + 0.2 * intensity));
+				}
+			}
+		}
+		return starAt(x, py, salt, time, pal, intensity * 0.004) ?? pal.page;
+	}
+
+	// Open sky below the top cloud canopy: moon/sun + soft halo, gentle wisps, and twinkling stars.
+	const cx = width * 0.82;
+	const cy = pixelRows * 0.58;
 	const dist = Math.hypot(x - cx, (py - cy) * tall);
-	if (dist < 2.4) return dist < 1.5 || q ? pal.accent : mix(pal.accent, pal.page, 0.35);
+	if (dist < 2.3) return dist < 1.45 || q ? pal.accent : mix(pal.accent, pal.page, 0.3);
+
 	let sky = pal.page;
 	if (!q && dist < 10) sky = mix(pal.page, pal.accent, 0.2 * (1 - dist / 10) ** 2);
-	const wisp = smoothstep(0.58, 0.74, fbm((x + time * 0.06) / 34, (py * tall) / 3.4, salt)) * (0.4 + 0.25 * intensity);
+
+	const wisp =
+		smoothstep(0.58, 0.76, fbm((x + time * 0.06) / 32, (py * tall) / 3.6, salt + 31)) * (0.36 + 0.2 * intensity);
 	if (wisp > 0) {
-		if (q) {
-			if (wisp > 0.3) return pal.wisp ?? pal.ramp[0]!;
+		if (isSpectral) {
+			const spec = along(pal.spectral!, wrap01((x + time * 0.08) / 60), q);
+			if (q) {
+				if (wisp > 0.36) return spec;
+			} else {
+				sky = mix(sky, spec, wisp * 0.45);
+			}
+		} else if (q) {
+			if (wisp > 0.32) return pal.wisp ?? pal.ramp[0]!;
 		} else {
 			sky = mix(sky, pal.wisp ?? pal.ramp[1] ?? pal.ramp[0]!, wisp);
 		}
 	}
-	if (sky === pal.page) return starAt(x, py, salt, time, pal, intensity * 0.004) ?? sky;
+
+	if (sky === pal.page) return starAt(x, py, salt, time, pal, intensity * 0.005) ?? sky;
 	return sky;
 };
 
@@ -463,7 +562,9 @@ const divePixel: PixelFn = (x, py, pixelRows, edge, pal, der, opts) => {
 	const shaft = smoothstep(0.45, 1, wave) * near * (0.32 + intensity * 0.14);
 	if (q) {
 		if (caustic > 0.55) return pal.caustic ?? light;
-		if (shaft > 0.12) return pal.ramp[0]!;
+		if (shaft > 0.12) {
+			return pal.blends?.shaft ? along(der.shaft, (shaft - 0.12) / 0.88, true) : pal.ramp[0]!;
+		}
 		return hash(x, Math.floor(py + time * 0.05), salt + 17) > 0.993 ? der.mote : pal.page;
 	}
 	if (shaft > 0) water = mix(water, light, shaft);

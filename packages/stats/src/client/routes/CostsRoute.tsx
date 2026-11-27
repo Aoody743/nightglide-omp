@@ -26,6 +26,7 @@ import {
 	Table,
 	TableSkeleton,
 } from "../ui";
+import { useWebLanguage } from "../webI18n";
 
 export interface CostsRouteProps {
 	active: boolean;
@@ -46,10 +47,10 @@ const MODEL_LIMIT = 6;
 const DAY_MS = 86_400_000;
 
 const COMPONENTS = [
-	{ key: "costInput", label: "Input", color: "#5b8cff" },
+	{ key: "costInput", label: "Input", color: "#4f9cf9" },
 	{ key: "costOutput", label: "Output", color: "var(--chart-secondary)" },
 	{ key: "costCacheRead", label: "Cache read", color: "var(--chart-primary)" },
-	{ key: "costCacheWrite", label: "Cache write", color: "#f5b54a" },
+	{ key: "costCacheWrite", label: "Cache write", color: "var(--warn)" },
 ] as const satisfies readonly { key: keyof CostComponents; label: string; color: string }[];
 
 const LOCAL_DAY = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
@@ -62,21 +63,19 @@ const LOCAL_DAY_LONG = new Intl.DateTimeFormat(undefined, {
 
 export function CostsRoute({ active, range }: CostsRouteProps) {
 	const query = useQuery(["costs", range], ({ signal }) => getCostDashboardStats(range, signal), { enabled: active });
-	const meta = rangeMeta(range);
+	const { lang, t } = useWebLanguage();
+	const meta = rangeMeta(range, lang);
 	const [split, setSplit] = useState<SplitMode>("model");
 	const [hidden, toggleSeries] = useHiddenSeries();
 	const view = useMemo(() => (query.data ? buildCostsView(query.data, range) : null), [query.data, range]);
 	// Stable columns: a fresh array would make Table re-sort on every render.
 	const columns = useMemo(() => (view ? buildCostColumns(view) : []), [view]);
 	const isEmpty = (data: CostDashboardStats) => data.costSeries.length === 0;
-	const empty = <EmptyState title="No usage in this range" hint="Pick a wider range in the top bar." />;
+	const empty = <EmptyState title={t("costs.empty")} hint={t("models.emptyHint")} />;
 
 	return (
 		<div className="page">
-			<PageHeader
-				title="Costs"
-				description={`What ${meta.windowLabel} of usage would cost at public API rates. Subscription usage without a public price is counted as unpriced, not free.`}
-			/>
+			<PageHeader title={t("costs.title")} description={t("costs.desc", { window: meta.windowLabel })} />
 
 			<QueryView
 				query={query}

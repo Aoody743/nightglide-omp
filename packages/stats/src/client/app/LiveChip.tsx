@@ -3,11 +3,13 @@ import { type ReactNode, useEffect, useState } from "react";
 import { formatInteger } from "../data/formatters";
 import { useLiveStatus } from "../data/live";
 import { Dot } from "../ui";
+import { useWebLanguage, type WebLanguage, translateWeb } from "../webI18n";
 
 /** Topbar ingest status; click to sync now. */
 export function LiveChip() {
 	const { sync, indexingHours, connected, requestSync } = useLiveStatus();
 	const now = useNow(sync.phase === "idle" ? 15_000 : null);
+	const { lang, t } = useWebLanguage();
 
 	let body: ReactNode;
 	let title: string;
@@ -15,15 +17,15 @@ export function LiveChip() {
 		body = (
 			<>
 				<Dot tone="warn" />
-				<span>Reconnecting</span>
+				<span>{t("live.reconnecting")}</span>
 			</>
 		);
-		title = "Lost the live connection to the stats server; retrying";
+		title = t("live.reconnectingTitle");
 	} else if (sync.phase === "syncing") {
 		body = (
 			<>
 				<RefreshCw size={13} className="spin" />
-				<span>Syncing</span>
+				<span>{t("live.syncing")}</span>
 				{sync.total > 0 && (
 					<span className="live-chip-count">
 						{formatInteger(sync.current)}/{formatInteger(sync.total)}
@@ -31,33 +33,35 @@ export function LiveChip() {
 				)}
 			</>
 		);
-		title = "Ingesting session files";
+		title = t("live.syncingTitle");
 	} else if (sync.phase === "error") {
 		body = (
 			<>
 				<Dot tone="bad" />
-				<span>Sync failed</span>
+				<span>{t("live.syncFailed")}</span>
 			</>
 		);
-		title = `${sync.error ?? "Sync failed"} — click to retry`;
+		title = t("live.syncFailedTitle", { error: sync.error ?? t("live.syncFailed") });
 	} else if (indexingHours > INDEXING_VISIBLE_HOURS) {
 		body = (
 			<>
 				<RefreshCw size={13} className="spin" />
-				<span>Indexing</span>
-				<span className="live-chip-count">{formatInteger(indexingHours)}h left</span>
+				<span>{t("live.indexing")}</span>
+				<span className="live-chip-count">{t("live.indexingLeft", { hours: formatInteger(indexingHours) })}</span>
 			</>
 		);
-		title = "Building hourly rollups; older ranges fill in as it goes";
+		title = t("live.indexingTitle");
 	} else {
 		body = (
 			<>
 				<Dot tone="live" pulse />
-				<span>Live</span>
-				{sync.lastSyncedAt !== null && <span className="live-chip-count">{ago(now - sync.lastSyncedAt)}</span>}
+				<span>{t("live.live")}</span>
+				{sync.lastSyncedAt !== null && (
+					<span className="live-chip-count">{ago(now - sync.lastSyncedAt, lang)}</span>
+				)}
 			</>
 		);
-		title = "Click to sync session files now";
+		title = t("live.liveTitle");
 	}
 
 	return (
@@ -87,11 +91,13 @@ function useNow(intervalMs: number | null): number {
 	return now;
 }
 
-function ago(ms: number): string {
+function ago(ms: number, lang: WebLanguage): string {
 	const s = Math.max(0, Math.round(ms / 1000));
-	if (s < 45) return "just now";
+	if (s < 45) return translateWeb(lang, "live.justNow");
 	const m = Math.round(s / 60);
-	if (m < 60) return `${m}m ago`;
+	if (m < 60) return translateWeb(lang, "live.minAgo", { n: m });
 	const h = Math.round(m / 60);
-	return h < 24 ? `${h}h ago` : `${Math.round(h / 24)}d ago`;
+	return h < 24
+		? translateWeb(lang, "live.hourAgo", { n: h })
+		: translateWeb(lang, "live.dayAgo", { n: Math.round(h / 24) });
 }

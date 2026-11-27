@@ -1,7 +1,12 @@
 import { afterEach, beforeAll, describe, expect, it } from "bun:test";
 import { stripVTControlCharacters } from "node:util";
 import { type AnimationFrame, TranscriptContainer } from "@oh-my-pi/pi-tui/chrome/transcript-container";
-import { NightglideShell, type NightglideShellDeps } from "@oh-my-pi/pi-tui/components/nightglide-shell";
+import {
+	NightglideShell,
+	type NightglideShellDeps,
+	type NightglideShellState,
+} from "@oh-my-pi/pi-tui/components/nightglide-shell";
+import { setLanguage } from "@oh-my-pi/pi-tui/i18n";
 import { getThemeByName, setThemeInstance } from "@oh-my-pi/pi-tui/theme";
 import type { Component } from "@oh-my-pi/pi-tui";
 
@@ -35,9 +40,14 @@ class Clock implements Component {
 const shells: NightglideShell[] = [];
 afterEach(() => {
 	for (const shell of shells.splice(0)) shell.dispose();
+	setLanguage("zh");
 });
 
-function makeShell(transcript: TranscriptContainer, rows = 30): NightglideShell {
+function makeShell(
+	transcript: TranscriptContainer,
+	rows = 30,
+	overrides: Partial<NightglideShellDeps> = {},
+): NightglideShell {
 	const deps: NightglideShellDeps = {
 		transcript,
 		dock: () => [],
@@ -46,6 +56,7 @@ function makeShell(transcript: TranscriptContainer, rows = 30): NightglideShell 
 		focusTargets: () => [],
 		rows: () => rows,
 		requestRender: () => {},
+		...overrides,
 	};
 	const shell = new NightglideShell(deps);
 	shells.push(shell);
@@ -123,44 +134,141 @@ describe("NightglideShell live blocks", () => {
 	});
 });
 
-describe("NightglideShell information column", () => {
-	it("reports the column appearing and disappearing as the window crosses the narrow threshold", () => {
+describe("NightglideShell collapsible information column", () => {
+	it("starts collapsed by default and notifies sidebarShown when toggled across width thresholds", () => {
 		const seen: boolean[] = [];
-		const shell = new NightglideShell({
-			transcript: new TranscriptContainer(),
-			dock: () => [],
-			status: () => undefined,
-			state: () => ({ model: "m", thinkingLevel: undefined, subagents: [], streaming: false }),
-			focusTargets: () => [],
-			rows: () => 30,
-			requestRender: () => {},
+		const shell = makeShell(new TranscriptContainer(), 30, {
 			sidebarShown: shown => seen.push(shown),
 		});
-		shells.push(shell);
+
+		expect(shell.isSidebarOpen()).toBe(false);
+		const initial = plain(shell.render(140)).join("\n");
+		expect(initial).not.toContain("会话");
+		expect(initial).toContain("详情");
+		expect(seen).toEqual([false]);
+
+		shell.toggleSidebar();
+		expect(shell.isSidebarOpen()).toBe(true);
 		shell.render(140);
 		shell.render(140);
 		shell.render(80);
 		shell.render(120);
-		expect(seen).toEqual([true, false, true]);
+		expect(seen).toEqual([false, true, false, true]);
 	});
 
-	it("shows the selected model in the column and says when no model is selected", () => {
+	it("toggles open and closed when clicking the top-border toggle pill", () => {
+		const shell = makeShell(new TranscriptContainer(), 32);
+		const collapsed = plain(shell.render(120));
+		const pillRow = collapsed.findIndex(row => row.includes("详情"));
+		expect(pillRow).toBeGreaterThanOrEqual(0);
+		const pillCol = collapsed[pillRow]!.indexOf("详情");
+
+		// Clicking outside the pill does not toggle.
+		expect(shell.click(pillRow, 2)).toBe(false);
+		expect(shell.isSidebarOpen()).toBe(false);
+
+		// Clicking the collapsed pill expands the sidebar.
+		expect(shell.click(pillRow, pillCol)).toBe(true);
+		expect(shell.isSidebarOpen()).toBe(true);
+
+		const expanded = plain(shell.render(120));
+		const hideCol = expanded[pillRow]!.indexOf("收起");
+		expect(hideCol).toBeGreaterThan(0);
+		expect(shell.click(pillRow, hideCol)).toBe(true);
+		expect(shell.isSidebarOpen()).toBe(false);
+	});
+
+	it("shows enriched model, routing mode, effort, robot, subagent details, and triggers summary on click", () => {
 		const transcript = new TranscriptContainer();
-		let model: string | undefined = "Test Model";
-		const shell = new NightglideShell({
-			transcript,
-			dock: () => [],
-			status: () => undefined,
-			state: () => ({ model, provider: "acme", thinkingLevel: undefined, subagents: [], streaming: false }),
-			focusTargets: () => [],
-			rows: () => 30,
-			requestRender: () => {},
+		let summaryClicks = 0;
+		let state: NightglideShellState = {
+			model: "Test Model",
+			provider: "omlx",
+			routingMode: "local",
+			routingNonLocalDefault: "anthropic/claude",
+			cwd: "~/Projects/nightglide",
+			contextTokens: 8400,
+			contextWindow: 200_000,
+			contextPercent: 4.2,
+			robotStyle: "cat",
+			thinkingLevel: "high",
+			subagents: [
+				{
+					label: "worker-1",
+					agent: "reviewer",
+					status: "running",
+					currentTool: "read",
+					elapsedMs: 4200,
+					toolCount: 3,
+					tokens: 1500,
+				},
+			],
+			streaming: false,
+			turnDone: false,
+		};
+
+		const shell = makeShell(transcript, 40, {
+			state: () => state,
+			onSummary: () => summaryClicks++,
 		});
-		shells.push(shell);
-		const text = () => plain(shell.render(140)).join("\n");
-		expect(text()).toContain("Test Model");
-		expect(text()).toContain("acme");
-		model = undefined;
-		expect(text()).toContain("未选择模型");
+		shell.setSidebarOpen(true);
+
+		const frame1 = plain(shell.render(140));
+		const text1 = frame1.join("\n");
+		expect(text1).toContain("Test Model");
+		expect(text1).toContain("omlx");
+		expect(text1).toContain("路由：本地");
+		expect(text1).toContain("主模型指定");
+		expect(text1).toContain("工作目录");
+		expect(text1).toContain("~/Projects/nightglide");
+		expect(text1).toContain("上下文");
+		expect(text1).toContain("4% · 8.4K/200K");
+		expect(text1).toContain("high");
+		expect(text1).toContain("worker-1");
+		expect(text1).toContain("read");
+		expect(text1).not.toContain("3 工具");
+
+		// Clicking subagents row expands real subagent metrics.
+		const agentRow = frame1.findIndex(row => row.includes("worker-1"));
+		const agentCol = frame1[agentRow]!.indexOf("worker-1");
+		expect(shell.click(agentRow, agentCol)).toBe(true);
+		expect(shell.isSubagentDetailsOpen()).toBe(true);
+		const expandedText = plain(shell.render(140)).join("\n");
+		expect(expandedText).toContain("3 工具");
+		expect(expandedText).toContain("1.5K tok");
+		// Clicking again collapses subagent metrics.
+		expect(shell.click(agentRow, agentCol)).toBe(true);
+		expect(shell.isSubagentDetailsOpen()).toBe(false);
+
+		// Clicking the summary action row fires onSummary.
+		const frame2 = plain(shell.render(140));
+		const summaryRow = frame2.findIndex(row => row.includes("/summary"));
+		expect(summaryRow).toBeGreaterThan(0);
+		const summaryCol = frame2[summaryRow]!.indexOf("/summary");
+		expect(shell.click(summaryRow, summaryCol)).toBe(true);
+		expect(summaryClicks).toBe(1);
+
+		// Missing model / unknown context window shows localized no-model notice and dash without `/?`.
+		state = {
+			...state,
+			model: undefined,
+			provider: undefined,
+			routingMode: undefined,
+			contextWindow: 0,
+			contextPercent: null,
+		};
+		const unsetText = plain(shell.render(140)).join("\n");
+		expect(unsetText).toContain("未选择模型");
+		expect(unsetText).not.toContain("/?");
+	});
+
+	it("adapts robot to compact 1-line badge when sidebar height is tight and localizes to English", () => {
+		setLanguage("en");
+		const shell = makeShell(new TranscriptContainer(), 13);
+		shell.setSidebarOpen(true);
+		const text = plain(shell.render(140)).join("\n");
+		expect(text).toContain("[✦◠✦]");
+		expect(text).toContain("Summary /summary");
+		expect(text).toContain("Hide");
 	});
 });

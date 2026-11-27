@@ -1,6 +1,6 @@
 /* ==========================================================================
-   omp stats — design system
-   Pure-black chassis, one inset panel, hairline edges, one accent gradient.
+   Nightglide Stats — design system
+   Nightglide Flight Dark & Cloudlight chassis, hairline edges, twilight accents.
    Page-specific styles live next to their route (`routes/*.css`).
    ========================================================================== */
 
@@ -8,105 +8,106 @@
 [data-theme="dark"] {
 	color-scheme: dark;
 
-	/* Surface ramp: each step rises one notch off the page. */
-	--bg: #000;
-	--panel: #09090a;
-	--card: #0e0e10;
-	--raised: #17171a;
-	--overlay: rgba(14, 14, 16, 0.78);
-	--hover: rgba(255, 255, 255, 0.035);
-	--press: rgba(255, 255, 255, 0.06);
-	--selected: rgba(255, 255, 255, 0.075);
+	/* Nightglide Flight Dark surface ramp: deep midnight indigo steps. */
+	--bg: #080c1a;
+	--panel: #0c1124;
+	--card: #111833;
+	--raised: #172042;
+	--overlay: rgba(12, 17, 36, 0.84);
+	--hover: rgba(181, 182, 255, 0.055);
+	--press: rgba(181, 182, 255, 0.09);
+	--selected: rgba(124, 139, 255, 0.14);
 
-	/* Hairlines are alpha so one value reads on every surface step. */
-	--line-1: rgba(255, 255, 255, 0.06);
-	--line-2: rgba(255, 255, 255, 0.09);
-	--line-3: rgba(255, 255, 255, 0.14);
-	--line-4: rgba(255, 255, 255, 0.22);
+	/* Crisp slate-blue hairlines read consistently across every surface step. */
+	--line-1: rgba(165, 180, 214, 0.1);
+	--line-2: rgba(165, 180, 214, 0.16);
+	--line-3: rgba(165, 180, 214, 0.24);
+	--line-4: rgba(165, 180, 214, 0.36);
 
-	--ink-1: #ededef;
-	--ink-2: #a0a0a8;
-	--ink-3: #6c6c74;
-	--ink-4: #46464c;
-	--ink-inverse: #0a0a0b;
+	--ink-1: #eef2ff;
+	--ink-2: #a5b4d6;
+	--ink-3: #6c7ba3;
+	--ink-4: #475478;
+	--ink-inverse: #080c1a;
 
-	/* Accent: omp cyan → pink. Solid `--accent` for text/strokes, gradient for hero marks. */
-	--accent-a: #5ad8e6;
-	--accent-b: #ed4abf;
-	--accent: #f068c8;
-	--accent-soft: rgba(237, 74, 191, 0.14);
-	--accent-line: rgba(237, 74, 191, 0.35);
+	/* Accent: Nightglide sky indigo -> aqua cyan. Solid `--accent` for text/strokes, gradient for hero marks. */
+	--accent-a: #7c8bff;
+	--accent-b: #00dbe4;
+	--accent: #8b98ff;
+	--accent-soft: rgba(124, 139, 255, 0.16);
+	--accent-line: rgba(124, 139, 255, 0.4);
 	--accent-gradient: linear-gradient(100deg, var(--accent-a), var(--accent-b));
-	--focus: #5ad8e6;
+	--focus: #00dbe4;
 
 	/* Status. Live (real-time presence) is reserved for the live indicator. */
-	--ok: #3ecf8e;
-	--ok-soft: rgba(62, 207, 142, 0.13);
-	--warn: #f5a524;
-	--warn-soft: rgba(245, 165, 36, 0.13);
-	--bad: #ff6166;
-	--bad-soft: rgba(255, 97, 102, 0.13);
-	--live: #3ecf8e;
+	--ok: #2ee6a6;
+	--ok-soft: rgba(46, 230, 166, 0.14);
+	--warn: #ffd394;
+	--warn-soft: rgba(255, 211, 148, 0.14);
+	--bad: #ff6b7a;
+	--bad-soft: rgba(255, 107, 122, 0.14);
+	--live: #2ee6a6;
 
 	/* Charts. */
-	--chart-grid: rgba(255, 255, 255, 0.055);
-	--chart-axis: #5c5c64;
-	--chart-cursor: rgba(255, 255, 255, 0.05);
-	--chart-primary: #5ad8e6;
-	--chart-secondary: #ed4abf;
+	--chart-grid: rgba(165, 180, 214, 0.08);
+	--chart-axis: #6c7ba3;
+	--chart-cursor: rgba(124, 139, 255, 0.08);
+	--chart-primary: #00dbe4;
+	--chart-secondary: #7c8bff;
 
-	--shadow-1: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 1px 2px rgba(0, 0, 0, 0.5);
-	--shadow-2: 0 8px 24px rgba(0, 0, 0, 0.55), 0 1px 0 rgba(255, 255, 255, 0.05) inset;
-	--shadow-3: 0 24px 64px rgba(0, 0, 0, 0.7), 0 1px 0 rgba(255, 255, 255, 0.06) inset;
+	--shadow-1: 0 1px 0 rgba(181, 182, 255, 0.04) inset, 0 2px 6px rgba(2, 6, 20, 0.5);
+	--shadow-2: 0 10px 28px rgba(2, 6, 20, 0.62), 0 1px 0 rgba(181, 182, 255, 0.06) inset;
+	--shadow-3: 0 24px 64px rgba(2, 6, 20, 0.78), 0 1px 0 rgba(181, 182, 255, 0.08) inset;
 }
 
 [data-theme="light"] {
 	color-scheme: light;
 
-	--bg: #f2f2f3;
-	--panel: #ffffff;
+	/* Nightglide Cloudlight surface ramp. */
+	--bg: #eef2f8;
+	--panel: #f7f9fd;
 	--card: #ffffff;
-	--raised: #f6f6f7;
-	--overlay: rgba(255, 255, 255, 0.8);
-	--hover: rgba(0, 0, 0, 0.03);
-	--press: rgba(0, 0, 0, 0.05);
-	--selected: rgba(0, 0, 0, 0.06);
+	--raised: #eef3fb;
+	--overlay: rgba(247, 249, 253, 0.88);
+	--hover: rgba(22, 29, 49, 0.035);
+	--press: rgba(22, 29, 49, 0.06);
+	--selected: rgba(79, 103, 235, 0.1);
 
-	--line-1: rgba(0, 0, 0, 0.06);
-	--line-2: rgba(0, 0, 0, 0.09);
-	--line-3: rgba(0, 0, 0, 0.14);
-	--line-4: rgba(0, 0, 0, 0.22);
+	--line-1: rgba(22, 29, 49, 0.07);
+	--line-2: rgba(22, 29, 49, 0.11);
+	--line-3: rgba(22, 29, 49, 0.17);
+	--line-4: rgba(22, 29, 49, 0.26);
 
-	--ink-1: #151518;
-	--ink-2: #5a5a63;
-	--ink-3: #8b8b94;
-	--ink-4: #b9b9c0;
+	--ink-1: #161d31;
+	--ink-2: #4f5d7a;
+	--ink-3: #7f8da8;
+	--ink-4: #aeb9ce;
 	--ink-inverse: #ffffff;
 
-	--accent-a: #1fa9bb;
-	--accent-b: #d42ea3;
-	--accent: #c42596;
-	--accent-soft: rgba(212, 46, 163, 0.1);
-	--accent-line: rgba(212, 46, 163, 0.3);
-	--focus: #1fa9bb;
+	--accent-a: #4f67eb;
+	--accent-b: #0099b8;
+	--accent: #4f67eb;
+	--accent-soft: rgba(79, 103, 235, 0.11);
+	--accent-line: rgba(79, 103, 235, 0.32);
+	--focus: #4f67eb;
 
-	--ok: #12a36b;
-	--ok-soft: rgba(18, 163, 107, 0.11);
+	--ok: #0d9468;
+	--ok-soft: rgba(13, 148, 104, 0.11);
 	--warn: #c77c02;
 	--warn-soft: rgba(199, 124, 2, 0.11);
 	--bad: #dc3a40;
 	--bad-soft: rgba(220, 58, 64, 0.1);
-	--live: #12a36b;
+	--live: #0d9468;
 
-	--chart-grid: rgba(0, 0, 0, 0.06);
-	--chart-axis: #9a9aa2;
-	--chart-cursor: rgba(0, 0, 0, 0.04);
-	--chart-primary: #1fa9bb;
-	--chart-secondary: #d42ea3;
+	--chart-grid: rgba(22, 29, 49, 0.065);
+	--chart-axis: #7f8da8;
+	--chart-cursor: rgba(79, 103, 235, 0.055);
+	--chart-primary: #0099b8;
+	--chart-secondary: #4f67eb;
 
-	--shadow-1: 0 1px 2px rgba(0, 0, 0, 0.04);
-	--shadow-2: 0 8px 24px rgba(0, 0, 0, 0.1);
-	--shadow-3: 0 24px 64px rgba(0, 0, 0, 0.16);
+	--shadow-1: 0 1px 2px rgba(22, 29, 49, 0.05);
+	--shadow-2: 0 8px 24px rgba(22, 29, 49, 0.1);
+	--shadow-3: 0 24px 64px rgba(22, 29, 49, 0.16);
 }
 
 :root {
@@ -412,8 +413,9 @@ kbd {
 	pointer-events: none;
 	z-index: 0;
 	background:
-		radial-gradient(60rem 28rem at 12% -10%, color-mix(in srgb, var(--accent-a) 7%, transparent), transparent 70%),
-		radial-gradient(50rem 26rem at 95% -12%, color-mix(in srgb, var(--accent-b) 6%, transparent), transparent 70%);
+		radial-gradient(64rem 30rem at 10% -8%, color-mix(in srgb, var(--accent-a) 13%, transparent), transparent 68%),
+		radial-gradient(54rem 28rem at 92% -10%, color-mix(in srgb, var(--accent-b) 10%, transparent), transparent 68%),
+		radial-gradient(42rem 20rem at 52% 0%, color-mix(in srgb, var(--warn) 4%, transparent), transparent 72%);
 }
 
 .topbar {
@@ -472,6 +474,29 @@ kbd {
 	display: flex;
 	align-items: center;
 	gap: 8px;
+}
+
+.lang-pill {
+	border-radius: var(--r-pill);
+	padding: 0 9px;
+	gap: 4px;
+	font-size: 11.5px;
+	font-weight: 500;
+	background: var(--card);
+	border-color: var(--line-2);
+}
+
+.lang-pill [data-active="true"] {
+	color: var(--accent);
+	font-weight: 600;
+}
+
+.lang-pill [data-active="false"] {
+	color: var(--ink-3);
+}
+
+.lang-pill-sep {
+	color: var(--ink-4);
 }
 
 @media (min-width: 901px) {
@@ -966,8 +991,9 @@ kbd {
 .btn[data-variant="accent"] {
 	background: var(--accent-gradient);
 	background-origin: border-box;
-	color: #fff;
+	color: var(--ink-inverse);
 	border-color: transparent;
+	font-weight: 600;
 }
 
 .btn[data-variant="ghost"] {

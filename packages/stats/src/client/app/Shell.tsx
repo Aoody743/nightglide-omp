@@ -1,9 +1,10 @@
 import { Menu } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { rangeMeta, TIME_RANGES } from "../data/range";
 import { useLiveStatus } from "../data/live";
 import type { TimeRange } from "../types";
 import { Segmented } from "../ui";
+import { useWebLanguage } from "../webI18n";
 import { CloseButton } from "./CloseButton";
 import { isDialogOpen, isTypingTarget } from "./keys";
 import { LiveChip } from "./LiveChip";
@@ -18,12 +19,6 @@ export interface ShellProps {
 	children: ReactNode;
 }
 
-const RANGE_OPTIONS = TIME_RANGES.map((range, i) => ({
-	value: range,
-	label: rangeMeta(range).label,
-	title: `${rangeMeta(range).windowLabel} (${i + 1})`,
-}));
-
 /**
  * Fixed glass topbar + naked sidebar framing one inset content panel. Owns
  * the global keyboard shortcuts: `1`–`6` pick a range, `g` then a letter jumps
@@ -33,7 +28,21 @@ export function Shell({ section, onSectionChange, range, onRangeChange, children
 	const [menuOpen, setMenuOpen] = useState(false);
 	const scrolled = useScrolled();
 	const { sync } = useLiveStatus();
+	const { lang, toggleLang, t } = useWebLanguage();
 	useShortcuts(onSectionChange, onRangeChange);
+
+	const rangeOptions = useMemo(
+		() =>
+			TIME_RANGES.map((item, i) => {
+				const meta = rangeMeta(item, lang);
+				return {
+					value: item,
+					label: meta.label,
+					title: `${meta.windowLabel} (${i + 1})`,
+				};
+			}),
+		[lang],
+	);
 
 	const go = (next: DashboardSection) => {
 		onSectionChange(next);
@@ -53,31 +62,52 @@ export function Shell({ section, onSectionChange, range, onRangeChange, children
 					data-variant="ghost"
 					data-icon="true"
 					onClick={() => setMenuOpen(true)}
-					aria-label="Open navigation"
+					aria-label={t("topbar.openNav")}
 				>
 					<Menu size={16} />
 				</button>
 				<div className="topbar-brand">
 					<svg className="topbar-mark" viewBox="0 0 64 64" width="22" height="22" aria-hidden="true">
 						<defs>
-							<linearGradient id="omp-mark-grad" x1="0" y1="0" x2="1" y2="1">
-								<stop offset="0" stopColor="oklch(0.7 0.24 340)" />
-								<stop offset=".5" stopColor="oklch(0.62 0.21 295)" />
-								<stop offset="1" stopColor="oklch(0.81 0.14 200)" />
+							<linearGradient id="nightglide-mark-grad" x1="0" y1="0" x2="1" y2="1">
+								<stop offset="0" stopColor="#b5b6ff" />
+								<stop offset=".38" stopColor="#7c8bff" />
+								<stop offset=".78" stopColor="#00dbe4" />
+								<stop offset="1" stopColor="#ffd394" />
 							</linearGradient>
 						</defs>
-						<path fill="url(#omp-mark-grad)" d="M10 14h44v9H43v33h-9V23h-9v22h-9V23H10z" />
+						<path fill="url(#nightglide-mark-grad)" d="M10 52 16 12h9l15.1 26L44 12h9l-6 40h-9L22.9 26 19 52z" />
+						<path fill="#00dbe4" fillOpacity="0.38" d="M25 12l15.1 26-.8 5.2L24.1 17.5z" />
+						<polygon fill="#ffd394" points="54,7 57.5,10.5 54,14 50.5,10.5" />
 					</svg>
-					<span>omp</span>
+					<span>{t("brand.name")}</span>
 					<span className="topbar-slash">/</span>
-					<span className="topbar-title">stats</span>
+					<span className="topbar-title">{t("brand.stats")}</span>
 				</div>
 				<div className="topbar-spacer" />
 				<div className="topbar-actions">
 					<span className="topbar-hide-narrow">
 						<LiveChip />
 					</span>
-					<Segmented options={RANGE_OPTIONS} value={range} onChange={onRangeChange} aria-label="Time range" />
+					<Segmented
+						options={rangeOptions}
+						value={range}
+						onChange={onRangeChange}
+						aria-label={t("topbar.timeRange")}
+					/>
+					<button
+						type="button"
+						className="btn lang-pill"
+						data-variant="ghost"
+						data-size="sm"
+						onClick={toggleLang}
+						aria-label={t("topbar.switchLang")}
+						title={t("topbar.switchLang")}
+					>
+						<span data-active={lang === "zh"}>中</span>
+						<span className="lang-pill-sep">/</span>
+						<span data-active={lang === "en"}>EN</span>
+					</button>
 					<ThemeToggle />
 					<CloseButton />
 				</div>
@@ -93,10 +123,10 @@ export function Shell({ section, onSectionChange, range, onRangeChange, children
 			</header>
 
 			{menuOpen && <div className="drawer-scrim" onClick={() => setMenuOpen(false)} role="presentation" />}
-			<nav className="sidebar" data-open={menuOpen} aria-label="Pages">
+			<nav className="sidebar" data-open={menuOpen} aria-label={t("topbar.pages")}>
 				{NAV.map(group => (
 					<div key={group.heading} className="nav-group">
-						<div className="nav-heading">{group.heading}</div>
+						<div className="nav-heading">{t(group.headingKey)}</div>
 						{group.items.map(item => (
 							<button
 								key={item.id}
@@ -107,7 +137,7 @@ export function Shell({ section, onSectionChange, range, onRangeChange, children
 								onClick={() => go(item.id)}
 							>
 								<item.icon size={15} />
-								<span className="nav-row-label">{item.label}</span>
+								<span className="nav-row-label">{t(item.labelKey)}</span>
 								<kbd>G {item.hotkey.toUpperCase()}</kbd>
 							</button>
 						))}
@@ -115,10 +145,11 @@ export function Shell({ section, onSectionChange, range, onRangeChange, children
 				))}
 				<div className="sidebar-foot micro">
 					<span>
-						<span className="kbd">1</span>–<span className="kbd">6</span> range
+						<span className="kbd">1</span>–<span className="kbd">6</span> {t("sidebar.rangeHint")}
 					</span>
 					<span>
-						<span className="kbd">G</span> then letter to jump
+						<span className="kbd">G</span>
+						{lang === "zh" ? t("sidebar.jumpHint") : ` ${t("sidebar.jumpHint")}`}
 					</span>
 				</div>
 			</nav>

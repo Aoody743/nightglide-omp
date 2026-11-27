@@ -1,7 +1,7 @@
 import { centerLine } from "../../utils";
 import { padToWidth } from "../../render/utils";
-import { APP_NAME, CLI_NAME } from "@oh-my-pi/pi-utils";
-import { gradientLogo, PI_LOGO } from "../../prompt/welcome";
+import { CLI_NAME } from "@oh-my-pi/pi-utils";
+import { gradientLogo, NIGHTGLIDE_LOGO } from "../../prompt/welcome";
 import { theme } from "../../theme/theme";
 import { col, compact, keyed, node, span, text } from "../../native/describe";
 import type { NativeNode } from "../../native/node";
@@ -13,7 +13,7 @@ export const SETUP_OUTRO_MS = 1200;
 const outroMemo = new Memo();
 
 /**
- * Native outro, centered: the builtin `omp` mark, "You're all set", the
+ * Native outro, centered: the brand mark, "You're all set", the
  * default model now in effect (`model`, its display name, when there is
  * one), and an indeterminate progress bar standing in for the timed sweep.
  * A click sends the `continue` action.
@@ -23,7 +23,7 @@ export function describeSetupOutro(model: string | undefined): NativeNode {
 		col(
 			compact([
 				node("spacer", { grow: 1 }, undefined, "top"),
-				node("image", { builtin: "omp", alt: APP_NAME, w: 72, role: "omp.setup.outro.mark" }, undefined, "logo"),
+				node("image", { builtin: "omp", alt: CLI_NAME, w: 72, role: "omp.setup.outro.mark" }, undefined, "logo"),
 				keyed(text([span("You're all set", "strong")], { wrap: "none", role: "omp.setup.outro.title" }), "title"),
 				model !== undefined &&
 					keyed(
@@ -50,9 +50,9 @@ export function renderSetupOutro(width: number, height: number, elapsedMs: numbe
 	const frame = Math.floor(elapsedMs / SETUP_TICK_MS);
 	const lines = renderStarfield(width, height, frame + 1000);
 	const progress = Math.max(0, Math.min(1, elapsedMs / SETUP_OUTRO_MS));
-	const logo = gradientLogo(PI_LOGO, progress * 1.2, { pos: (progress * 2) % 1, strength: 1 - progress });
+	const logo = gradientLogo(NIGHTGLIDE_LOGO, progress * 1.2, { pos: (progress * 2) % 1, strength: 1 - progress });
 	const title = theme.bold(theme.fg("success", `${theme.status.success} Setup saved`));
-	const subtitle = theme.fg("muted", "Handing off to the normal CLI…");
+	const subtitle = theme.fg("muted", `Starting ${CLI_NAME}…`);
 	const sweepWidth = Math.max(1, Math.min(width - 8, Math.floor((width - 8) * progress)));
 	const sweep = `${theme.fg("accent", "━".repeat(sweepWidth))}${theme.fg("dim", "─".repeat(Math.max(0, width - 8 - sweepWidth)))}`;
 	const content = [...logo, "", title, subtitle, "", sweep];

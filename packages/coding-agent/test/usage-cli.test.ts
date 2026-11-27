@@ -2286,7 +2286,9 @@ describe("omp usage reset", () => {
 		await run;
 
 		expect(consumes()).toEqual([]);
-		expect(stripVTControlCharacters(stderr)).toContain("another Nightglide process spent a saved reset on this account");
+		expect(stripVTControlCharacters(stderr)).toContain(
+			"another Nightglide process spent a saved reset on this account",
+		);
 		expect(process.exitCode).toBe(1);
 	});
 

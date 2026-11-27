@@ -30,6 +30,7 @@ import {
 	Table,
 	TableSkeleton,
 } from "../ui";
+import { useWebLanguage } from "../webI18n";
 import "./errors.css";
 
 export interface ErrorsRouteProps {
@@ -50,7 +51,8 @@ export function ErrorsRoute({ active, range, onRequestClick }: ErrorsRouteProps)
 	const [selectedSignature, setSelectedSignature] = useState<string | null>(null);
 	const [selectedModel, setSelectedModel] = useState<string | null>(null);
 	const [search, setSearch] = useState("");
-	const meta = rangeMeta(range);
+	const { lang, t } = useWebLanguage();
+	const meta = rangeMeta(range, lang);
 
 	const view = useMemo(() => {
 		const rows = (errors.data ?? []).map(row => ({ row, signature: errorSignature(row.errorMessage) }));
@@ -122,10 +124,7 @@ export function ErrorsRoute({ active, range, onRequestClick }: ErrorsRouteProps)
 
 	return (
 		<div className="page">
-			<PageHeader
-				title="Errors"
-				description={`Failed model requests in ${meta.windowLabel}, grouped by error signature. Open a failure for its full payload.`}
-			/>
+			<PageHeader title={t("errors.title")} description={t("errors.desc", { window: meta.windowLabel })} />
 
 			<QueryView query={errors} skeleton={<Skeleton height={96} style={{ borderRadius: 12 }} />}>
 				{() => (
@@ -170,10 +169,7 @@ export function ErrorsRoute({ active, range, onRequestClick }: ErrorsRouteProps)
 						skeleton={<TableSkeleton rows={8} />}
 						isEmpty={rows => rows.length === 0}
 						empty={
-							<EmptyState
-								title={`No failures in ${meta.windowLabel}`}
-								hint="Every request succeeded or was aborted."
-							/>
+							<EmptyState title={t("errors.empty", { window: meta.windowLabel })} hint={t("errors.emptyHint")} />
 						}
 					>
 						{() => (
@@ -206,7 +202,7 @@ export function ErrorsRoute({ active, range, onRequestClick }: ErrorsRouteProps)
 						query={errors}
 						skeleton={<Skeleton height={180} />}
 						isEmpty={rows => rows.length === 0}
-						empty={<EmptyState title="No affected models" />}
+						empty={<EmptyState title={t("errors.emptyModels")} />}
 					>
 						{() => (
 							<BarList
@@ -272,7 +268,7 @@ export function ErrorsRoute({ active, range, onRequestClick }: ErrorsRouteProps)
 					query={errors}
 					skeleton={<TableSkeleton rows={10} />}
 					isEmpty={rows => rows.length === 0}
-					empty={<EmptyState title={`No failures in ${meta.windowLabel}`} />}
+					empty={<EmptyState title={t("errors.empty", { window: meta.windowLabel })} />}
 				>
 					{() => (
 						<Table
@@ -283,7 +279,7 @@ export function ErrorsRoute({ active, range, onRequestClick }: ErrorsRouteProps)
 							initialSort={{ key: "time", dir: "desc" }}
 							limit={50}
 							dense
-							empty={<EmptyState title="No failures match" hint="Clear the search or the selected filters." />}
+							empty={<EmptyState title={t("errors.emptyMatch")} hint={t("errors.emptyMatchHint")} />}
 						/>
 					)}
 				</QueryView>

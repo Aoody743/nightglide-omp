@@ -185,5 +185,6 @@ describe("HTML export Markdown", () => {
 		expect(document.querySelectorAll(".tree-node").length).toBe(1);
 		expect(document.querySelector(".tree-node.active")?.getAttribute("data-id")).toBe("message-0");
 		expect(document.querySelector("#messages")?.textContent).toContain("root");
+		expect(document.title).toEndWith("· Nightglide");
 	});
 });

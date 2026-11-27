@@ -371,6 +371,7 @@ function renderEditHeader(
 		renameLinkPath?: string;
 		statsSuffix?: string;
 		extraSuffix?: string;
+		reserveWidth?: number;
 		title?: string;
 	},
 ): string {
@@ -396,7 +397,8 @@ function renderEditHeader(
 		) + suffix;
 
 	const header = buildHeader(formatted.description);
-	const overflow = visibleWidth(header) - editHeaderLabelBudget(width, uiTheme);
+	const labelBudget = Math.max(0, editHeaderLabelBudget(width, uiTheme) - (options.reserveWidth ?? 0));
+	const overflow = visibleWidth(header) - labelBudget;
 	if (overflow <= 0 || formatted.pathWidth <= 1) return header;
 
 	const pathCount = Math.max(1, (options.rawPath ? 1 : 0) + (options.rename ? 1 : 0));
@@ -1063,24 +1065,23 @@ function wrapEditRendererLine(line: string, width: number): string[] {
 	const body = bodyWithReset.endsWith("\x1b[39m") ? bodyWithReset.slice(0, -"\x1b[39m".length) : bodyWithReset;
 	// Gutter shapes produced by formatCodeFrameLine: "-315│", " 313│", "+322│",
 	// plus the deduplicated forms "   +│" and "    │" whose repeated line number
-	// renderDiff blanked (single-line replacement pairs and insert-then-context
-	// runs) — all │-separated. ASCII "|" gutters may arrive from injected
-	// renderers that preserve raw canonical rows; those always carry a marker
-	// column ("+"/"-"/space) and a line number. So
-	// the number is optional for "│", while "|" requires the full canonical
-	// shape; anything else (a body line merely starting with "|", error text
-	// like "123|…") is not a diff row and wraps generically.
-	const diffMatch = /^(\s*[+-]?\s*\d*)([|│])(.*)$/s.exec(body);
+	// renderDiff blanked — all │-separated, optionally carrying per-segment ANSI
+	// foreground escapes around the gutter and rail. ASCII "|" gutters may
+	// arrive from injected renderers that preserve raw canonical rows; those
+	// always carry a marker column ("+"/"-"/space) and a line number.
+	const diffMatch = /^((?:\x1b\[[0-9;]*m)*\s*[+-]?\s*\d*(?:\x1b\[[0-9;]*m)*)([|│])(.*)$/s.exec(body);
+	const plainGutter = diffMatch ? diffMatch[1].replace(/\x1b\[[0-9;]*m/g, "") : "";
 
-	if (!diffMatch || diffMatch[1].length === 0 || (diffMatch[2] === "|" && !/^[+\-\s]\s*\d+$/.test(diffMatch[1]))) {
+	if (!diffMatch || plainGutter.length === 0 || (diffMatch[2] === "|" && !/^[+\-\s]\s*\d+$/.test(plainGutter))) {
 		return wrapTextWithAnsi(line, width);
 	}
 
-	const [, gutter, separator, content] = diffMatch;
-	const prefix = `${gutter}${separator}`;
-	const prefixWidth = visibleWidth(prefix);
+	const [, styledGutter, separator, content] = diffMatch;
+	const prefix = `${startAnsi}${styledGutter}${separator}`;
+	const prefixWidth = visibleWidth(plainGutter) + visibleWidth(separator);
 	const contentWidth = Math.max(1, width - prefixWidth);
-	const continuationPrefix = `${" ".repeat(Math.max(0, prefixWidth - 1))}${separator}`;
+	const railAnsi = styledGutter.match(/((?:\x1b\[[0-9;]*m)*)$/)?.[1] ?? "";
+	const continuationPrefix = `${" ".repeat(Math.max(0, prefixWidth - 1))}${railAnsi}${separator}`;
 	const wrappedContent = wrapTextWithAnsi(content ?? "", contentWidth);
 
 	// Each visual row is a standalone terminal line: wrapTextWithAnsi re-opens
@@ -1089,7 +1090,7 @@ function wrapEditRendererLine(line: string, width: number): string[] {
 	// alongside the foreground reset — otherwise the frame padding appended
 	// after the row is painted as an inverse block (default-foreground cells).
 	return wrappedContent.map(
-		(segment, index) => `${startAnsi}${index === 0 ? prefix : continuationPrefix}${segment}\x1b[27m\x1b[39m`,
+		(segment, index) => `${index === 0 ? prefix : continuationPrefix}${segment}\x1b[27m\x1b[39m`,
 	);
 }
 
@@ -1159,16 +1160,6 @@ export const editToolRenderer = {
 		return framedToolCard(
 			uiTheme,
 			({ width }) => {
-				// Only a live spinner fills the icon slot: a pending hourglass after it
-				// stops would read as a step backwards while the edit executes.
-				const header = renderEditHeader(width, uiTheme, {
-					icon: options.spinnerFrame === undefined ? undefined : "running",
-					spinnerFrame: options.spinnerFrame,
-					op,
-					rawPath,
-					rename,
-					extraSuffix: fileCount > 1 ? uiTheme.fg("dim", ` (+${fileCount - 1} more)`) : undefined,
-				});
 				const preview = getCallPreview(
 					editArgs,
 					rawPath,
@@ -1190,8 +1181,22 @@ export const editToolRenderer = {
 					(preview.footer === "streaming" && options.argsComplete)
 						? undefined
 						: preview.footer;
+				const hasDiffBadge = !applyPatchError && bodyLines.length > 0 && preview.footer !== "streaming";
+				const diffBadge = hasDiffBadge ? uiTheme.fg("accent", "diff") : undefined;
+				// Only a live spinner fills the icon slot: a pending hourglass after it
+				// stops would read as a step backwards while the edit executes.
+				const header = renderEditHeader(width, uiTheme, {
+					icon: options.spinnerFrame === undefined ? undefined : "running",
+					spinnerFrame: options.spinnerFrame,
+					op,
+					rawPath,
+					rename,
+					extraSuffix: fileCount > 1 ? uiTheme.fg("dim", ` (+${fileCount - 1} more)`) : undefined,
+					reserveWidth: hasDiffBadge ? visibleWidth(uiTheme.sep.dot) + 4 : undefined,
+				});
 				return {
 					header,
+					headerMeta: diffBadge,
 					footerMeta: footer ? uiTheme.fg("dim", footer) : undefined,
 					sections:
 						bodyLines.length > 0
@@ -1575,6 +1580,8 @@ function renderSingleFileResult(
 			// Change stats ride inline on the header bar next to the path.
 			const previewDiff = editDiffPreview && !("error" in editDiffPreview) ? editDiffPreview.diff : undefined;
 			const headerDiff = isError ? undefined : details?.diff || previewDiff;
+			const hasDiffBadge = !isError && Boolean(headerDiff);
+			const diffBadge = hasDiffBadge ? uiTheme.fg("accent", "diff") : undefined;
 			const statsSuffix = headerDiff
 				? cachedRenderedString(statsSuffixCache, uiTheme, false, "", headerDiff, () =>
 						formatDiffStatsSuffix(headerDiff, uiTheme),
@@ -1590,6 +1597,7 @@ function renderSingleFileResult(
 				linkPath,
 				renameLinkPath: rename ? (rawPaths.path ?? detailPath) : undefined,
 				statsSuffix,
+				reserveWidth: hasDiffBadge ? visibleWidth(uiTheme.sep.dot) + 4 : undefined,
 			});
 			const innerWidth = Math.max(1, width - 2);
 
@@ -1649,6 +1657,7 @@ function renderSingleFileResult(
 
 			return {
 				header,
+				headerMeta: diffBadge,
 				sections: bodyLines.length > 0 ? [{ content: bodyLines }] : [],
 				phase: isError ? "error" : options.isPartial ? "partial" : "success",
 				borderColor: isError ? "error" : "borderMuted",

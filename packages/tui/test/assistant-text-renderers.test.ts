@@ -54,6 +54,7 @@ function component(renderers: readonly AssistantTextRenderer[], contentOffset = 
 }
 
 const drawn = (target: AssistantMessageComponent) => Bun.stripANSI(target.render(80).join("\n"));
+const drawnBody = (target: AssistantMessageComponent) => Bun.stripANSI(target.render(80).slice(1).join("\n")).trim();
 
 describe("assistant text renderers", () => {
 	it("draws the renderer's markdown while the message keeps the text as written", () => {
@@ -127,10 +128,10 @@ describe("assistant text renderers", () => {
 		const shown: string[] = [];
 		for (const step of steps) {
 			target.updateContent(assistant([{ type: "text", text: step }]), { transient: true });
-			shown.push(drawn(target).trim());
+			shown.push(drawnBody(target));
 		}
 		target.updateContent(assistant([{ type: "text", text: steps[2]! }]));
-		shown.push(drawn(target).trim());
+		shown.push(drawnBody(target));
 
 		expect(calls.map(call => [call.text, call.streaming])).toEqual([
 			[steps[0], true],
@@ -157,7 +158,7 @@ describe("assistant text renderers", () => {
 		target.updateContent(sealed, { transient: true });
 
 		expect(streaming).toEqual([true, false]);
-		expect(drawn(target).trim()).toBe("final");
+		expect(drawnBody(target)).toBe("final");
 	});
 
 	it("reuses a sealed block's output across later updates until a redraw asks for it again", () => {
@@ -237,13 +238,13 @@ describe("assistant text renderers", () => {
 		// A segment after a tool call: its first block is block 2 of the reply.
 		const target = component([recording], 2);
 		target.updateContent(assistant([{ type: "text", text: "A {{short|long}} tail" }]), { transient: true });
-		expect(drawn(target).trim()).toBe("A short tail");
+		expect(drawnBody(target)).toBe("A short tail");
 
 		target.setTextRenderers([]);
-		expect(drawn(target).trim()).toBe("A {{short|long}} tail");
+		expect(drawnBody(target)).toBe("A {{short|long}} tail");
 		indexes.length = 0;
 		target.setTextRenderers([recording]);
-		expect(drawn(target).trim()).toBe("A short tail");
+		expect(drawnBody(target)).toBe("A short tail");
 		expect(new Set(indexes)).toEqual(new Set([2]));
 	});
 

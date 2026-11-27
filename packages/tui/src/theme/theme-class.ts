@@ -178,6 +178,17 @@ export function thinkingLevelToken(level: string): ThemeColor {
 	}
 }
 
+export interface ThemeExportColors {
+	pageBg?: string;
+	cardBg?: string;
+	infoBg?: string;
+}
+
+export interface ThemeSurfaceColors extends ThemeExportColors {
+	terminalBg?: string;
+	terminalFg?: string;
+}
+
 export class Theme {
 	#fgColors: Record<ThemeColor, string>;
 	#bgColors: Record<ThemeBg, string>;
@@ -193,6 +204,8 @@ export class Theme {
 	#sessionAccentInputs: SessionAccentTheme | undefined;
 	#symbols: SymbolMap;
 	#spinnerFramesOverrides: Partial<Record<SpinnerType, string[]>>;
+	readonly #surfaceColors: ThemeSurfaceColors;
+	readonly #hasStatusLineBg: boolean;
 	/**
 	 * Perceptual luma (0..1) of the status-line background — used to classify the
 	 * theme light/dark. Undefined when it can't be resolved. Classified against the
@@ -211,7 +224,10 @@ export class Theme {
 		symbolOverrides: Partial<Record<SymbolKey, string>>,
 		spinnerFramesOverrides: Partial<Record<SpinnerType, string[]>> = {},
 		ansiPalette: ReadonlyArray<string | number> = [],
+		surfaceColors: ThemeSurfaceColors = {},
 	) {
+		this.#surfaceColors = surfaceColors;
+		this.#hasStatusLineBg = bgColors.statusLineBg !== "";
 		this.statusLineLuminance = colorLuma(bgColors.statusLineBg);
 		this.#statusLineContrastLuminance = relativeLuminance(bgColors.statusLineBg);
 		const slIsLight = isLightLuma(this.statusLineLuminance);
@@ -258,6 +274,35 @@ export class Theme {
 	/** True when the active theme has a light status-line background. */
 	get isLight(): boolean {
 		return isLightLuma(this.statusLineLuminance);
+	}
+
+	/** Export surface colors (`pageBg`, `cardBg`, `infoBg`) declared by the theme JSON, when present. */
+	getExportColors(): ThemeExportColors {
+		const { pageBg, cardBg, infoBg } = this.#surfaceColors;
+		return { pageBg, cardBg, infoBg };
+	}
+
+	/** Resolved `terminal.background` hex if declared by the theme JSON. */
+	getTerminalBgHex(): string | undefined {
+		return this.#surfaceColors.terminalBg;
+	}
+
+	/** Resolved `terminal.foreground` hex if declared by the theme JSON. */
+	getTerminalFgHex(): string | undefined {
+		return this.#surfaceColors.terminalFg;
+	}
+
+	/** Resolved page background hex (`export.pageBg` -> `terminal.background` -> explicit `statusLineBg` -> surface default). */
+	getPageBgHex(): string {
+		const exportPage = this.#surfaceColors.pageBg;
+		if (exportPage?.startsWith("#")) return exportPage;
+		const terminalBg = this.#surfaceColors.terminalBg;
+		if (terminalBg?.startsWith("#")) return terminalBg;
+		if (this.#hasStatusLineBg) {
+			const statusLine = this.#hexBgColors.statusLineBg;
+			if (statusLine?.startsWith("#")) return statusLine;
+		}
+		return this.isLight ? "#f8faff" : "#0b1022";
 	}
 
 	/**

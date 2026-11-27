@@ -44,7 +44,7 @@ export const VERSION: string = version;
  * banner). `VERSION` stays the upstream OMP version: relay, plugin and
  * changelog compatibility checks compare against it.
  */
-export const PRODUCT_VERSION: string = "1.0.0-beta.1";
+export const PRODUCT_VERSION: string = "1.0.0";
 
 /** Default User-Agent header string (e.g. "omp/17.2.12") */
 export const USER_AGENT = `omp/${VERSION}`;

@@ -75,8 +75,8 @@ export function SpotlightHero({ stats, windowLabel, stale }: SpotlightHeroProps)
 				</div>
 				<div className="spot-hero-aside">
 					<p className="spot-hero-note">
-						Counted against what pi would have shown unshaped (<code>plain</code>) for the same call (its inline
-						cap and read page), with fetch-backs that held-out results show happen anyway added back.{" "}
+						Counted against what Nightglide would have shown unshaped (<code>plain</code>) for the same call (its
+						inline cap and read page), with fetch-backs that held-out results show happen anyway added back.{" "}
 						{gross.fullSavedTokens > gross.savedTokens && (
 							<>
 								Against the full output the shaping read, the cuts would claim{" "}
@@ -85,7 +85,7 @@ export function SpotlightHero({ stats, windowLabel, stale }: SpotlightHeroProps)
 							</>
 						)}
 						{gross.widerThanPlain > 0 &&
-							`${formatInteger(gross.widerThanPlain)} ${gross.widerThanPlain === 1 ? "result was" : "results were"} wider than plain would have shown: cuts shown that way count as losses, results pi capped at plain's text save nothing. `}
+							`${formatInteger(gross.widerThanPlain)} ${gross.widerThanPlain === 1 ? "result was" : "results were"} wider than plain would have shown: cuts shown that way count as losses, results Nightglide capped at plain's text save nothing. `}
 						{gross.estimatedPlain > 0 &&
 							`${formatInteger(gross.estimatedPlain)} older ${gross.estimatedPlain === 1 ? "result estimates" : "results estimate"} plain from the inline cap.`}
 					</p>

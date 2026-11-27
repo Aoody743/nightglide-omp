@@ -3,6 +3,7 @@ import type { SetupHost } from "./scenes/types";
 import { composerSetupScene } from "./scenes/composer";
 import { glyphSetupScene } from "./scenes/glyph";
 import { modelSetupScene } from "./scenes/model";
+import { routingSetupScene } from "./scenes/routing";
 import { providersSetupScene } from "./scenes/sign-in";
 import { themeSetupScene } from "./scenes/theme";
 import { updatesSetupScene } from "./scenes/updates";
@@ -18,6 +19,7 @@ export { CURRENT_SETUP_VERSION };
 export const ALL_SCENES = [
 	providersSetupScene,
 	modelSetupScene,
+	routingSetupScene,
 	glyphSetupScene,
 	composerSetupScene,
 	themeSetupScene,

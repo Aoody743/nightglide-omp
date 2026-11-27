@@ -101,6 +101,7 @@ import {
 	cfgNightglideCommonCommands,
 	cfgNightglideHiddenCommands,
 	cfgNightglideLanguage,
+	cfgNightglideRobotStyle,
 } from "../config/nightglide-menu";
 import { clearClaudePluginRootsCache } from "../discovery/helpers";
 import type {
@@ -192,6 +193,7 @@ import {
 } from "../session/session-worktree";
 import type { ShakeMode } from "../session/shake-types";
 import { BUILTIN_SLASH_COMMAND_RESERVED_NAMES, buildTuiBuiltinSlashCommands } from "../slash-commands/builtin-registry";
+import { openTaskSummaryOverlay } from "../slash-commands/builtin-summary";
 import { buildStaticInlineHint } from "../slash-commands/builtin-completions";
 import { formatCoarseDuration } from "@oh-my-pi/pi-tui/chrome/format";
 import { type DictationTarget, MicCursor, type SttCallbacks, STTController, type SttState } from "../stt";
@@ -1866,6 +1868,7 @@ export class InteractiveMode implements InteractiveModeContext {
 	#planReviewOverlay: PlanReviewOverlay | undefined;
 	#planReviewOverlayHandle: OverlayHandle | undefined;
 	#sessionInfoOverlayHandle: OverlayHandle | undefined;
+	#taskSummaryOverlayHandle: OverlayHandle | undefined;
 	#jobsSheetHandle: OverlayHandle | undefined;
 	#spotlightSheetHandle: OverlayHandle | undefined;
 	#glideShell: NightglideShell | undefined;
@@ -3012,6 +3015,11 @@ export class InteractiveMode implements InteractiveModeContext {
 			cfgNightglideLanguage.listen(this.settings, () => {
 				setLanguage(cfgNightglideLanguage.get(this.settings));
 				this.#rebuildSlashCommandAutocomplete(this.sessionManager.getCwd());
+				this.ui.requestRender();
+			}),
+		);
+		this.#eventBusUnsubscribers.push(
+			cfgNightglideRobotStyle.listen(this.settings, () => {
 				this.ui.requestRender();
 			}),
 		);
@@ -8333,6 +8341,7 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.#disposeImageBlobWriter?.();
 		this.#disposeImageBlobWriter = undefined;
 		this.#hideSessionInfo();
+		this.#hideTaskSummary();
 		if (this.#ownsStartedUi) {
 			this.ui.stop();
 			this.#ownsStartedUi = false;
@@ -8872,6 +8881,29 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.ui.requestRender();
 	}
 
+	#hideTaskSummary(): void {
+		const handle = this.#taskSummaryOverlayHandle;
+		this.#taskSummaryOverlayHandle = undefined;
+		if (!handle) return;
+		handle.hide();
+		this.#selectorController.focusActiveEditorArea();
+		this.ui.requestRender();
+	}
+
+	toggleNightglideSidebar(): void {
+		this.#glideShell?.toggleSidebar();
+	}
+
+	showTaskSummary(): void {
+		openTaskSummaryOverlay(this, this.#observerRegistry.getSessions(), {
+			get: () => this.#taskSummaryOverlayHandle,
+			set: handle => {
+				this.#taskSummaryOverlayHandle = handle;
+			},
+			onClosed: () => this.#selectorController.focusActiveEditorArea(),
+		});
+	}
+
 	/**
 	 * Preview the queued panels above the editor so a command answers straight
 	 * away, then clear at settle when the real panels enter the transcript.
@@ -8957,6 +8989,10 @@ export class InteractiveMode implements InteractiveModeContext {
 					label: s.label || s.agent || "agent",
 					status: s.status,
 					currentTool: s.progress?.currentTool,
+					agent: s.agent,
+					elapsedMs: s.progress?.durationMs,
+					toolCount: s.progress?.toolCount,
+					tokens: s.progress?.tokens,
 				}));
 		} catch {
 			// registry may not exist yet during early construction renders
@@ -8983,6 +9019,23 @@ export class InteractiveMode implements InteractiveModeContext {
 		} catch {
 			advisor = undefined;
 		}
+		let turnDone = false;
+		if (!this.session.isStreaming && this.pendingTools.size === 0) {
+			const messages = this.session.state.messages;
+			for (let i = messages.length - 1; i >= 0; i--) {
+				const msg = messages[i];
+				if (msg?.role === "assistant") {
+					turnDone = msg.stopReason !== "error" && msg.stopReason !== "aborted" && !this.session.state.error;
+					break;
+				}
+			}
+		}
+		let contextUsage: ReturnType<typeof this.session.getContextUsage>;
+		try {
+			contextUsage = this.session.getContextUsage();
+		} catch {
+			contextUsage = undefined;
+		}
 		return {
 			model: model?.name || model?.id || undefined,
 			provider: model?.provider,
@@ -8995,9 +9048,17 @@ export class InteractiveMode implements InteractiveModeContext {
 			// Auto only resolves for models with thinking control; others show "not supported".
 			autoPending:
 				Boolean(model?.thinking) && this.session.isAutoThinking && !this.session.autoResolvedThinkingLevel(),
+			routingMode: this.session.getNightglideRoutingMode?.(),
+			routingNonLocalDefault: this.session.getNightglideRoutingNonLocalDefault?.(),
+			cwd: shortenPath(this.sessionManager.getCwd()),
+			contextTokens: contextUsage?.tokens,
+			contextWindow: contextUsage?.contextWindow,
+			contextPercent: contextUsage?.percent ?? null,
+			robotStyle: cfgNightglideRobotStyle.get(this.settings),
 			subagents,
 			activeTools: this.pendingTools.size,
 			streaming: this.session.isStreaming,
+			turnDone,
 		};
 	}
 
@@ -9033,8 +9094,9 @@ export class InteractiveMode implements InteractiveModeContext {
 				dock: () => this.#glideDock(),
 				status: () => this.statusLine,
 				state: () => this.#nightglideState(),
-				// The column shows the model, so the status line drops its model chip while it is visible.
-				sidebarShown: shown => this.statusLine.setHostedElsewhere(shown ? ["model"] : []),
+				// The column hosts model and context telemetry when expanded.
+				sidebarShown: shown => this.statusLine.setHostedElsewhere(shown ? ["model", "context_pct"] : []),
+				onSummary: () => this.showTaskSummary(),
 				focusTargets: () => [this.editor],
 				rows: () => this.ui.terminal.rows,
 				requestRender: () => this.ui.requestRender(),

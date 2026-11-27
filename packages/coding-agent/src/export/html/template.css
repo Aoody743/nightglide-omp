@@ -26,6 +26,13 @@
       --ink-2: var(--muted);
       --ink-3: var(--dim);
       --ink-4: var(--dim);
+      --ink-inverse: var(--bg);
+      --bad: var(--err);
+      --bad-soft: color-mix(in srgb, var(--err) 14%, transparent);
+      --hover: var(--hover-wash);
+      --selected: var(--selectedBg);
+      --focus: var(--ring);
+      --chart-grid: var(--hairline-soft);
       --accent-a: var(--mdLink);
       --accent-b: var(--accent);
     }
@@ -55,8 +62,9 @@
     .skip-link:focus { top: 4px; }
 
     .topbar { height: 52px; display: flex; align-items: center; gap: 18px; padding: 0 20px; }
-    .brand { display: flex; align-items: center; gap: 16px; text-decoration: none; color: var(--muted); font-weight: 500; }
-    .brand-mark { font-size: 21px; font-weight: 800; letter-spacing: -1.5px; background: linear-gradient(100deg, var(--accent-a), var(--accent-b)); background-clip: text; color: transparent; }
+    .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--muted); font-weight: 500; }
+    .brand-logo { flex: none; display: block; }
+    .brand-mark { font-size: 16px; font-weight: 700; letter-spacing: -0.02em; background: linear-gradient(100deg, var(--accent-a), var(--accent-b)); -webkit-background-clip: text; background-clip: text; color: transparent; }
     .brand-divider { width: 1px; height: 16px; background: var(--hairline-strong); }
     .export-label { color: var(--dim); font-size: 11px; }
     .topbar-actions { display: flex; align-items: center; gap: 12px; margin-left: auto; }

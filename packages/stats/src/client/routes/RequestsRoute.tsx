@@ -32,6 +32,7 @@ import {
 	Table,
 	TableSkeleton,
 } from "../ui";
+import { useWebLanguage } from "../webI18n";
 
 export interface RequestsRouteProps {
 	active: boolean;
@@ -50,7 +51,8 @@ export function RequestsRoute({ active, range, onRequestClick }: RequestsRoutePr
 	const log = useQuery(["requests-log", limit], ({ signal }) => getRecentRequests(limit, signal), { enabled: active });
 	const [search, setSearch] = useState("");
 	const [status, setStatus] = useState<StatusFilter>("all");
-	const meta = rangeMeta(range);
+	const { lang, t } = useWebLanguage();
+	const meta = rangeMeta(range, lang);
 
 	const view = useMemo(() => {
 		const rows = log.data ?? [];
@@ -96,18 +98,39 @@ export function RequestsRoute({ active, range, onRequestClick }: RequestsRoutePr
 		value,
 		label: (
 			<>
-				{value === "all" ? "All" : REQUEST_STATUS[value].label}{" "}
+				{value === "all" ? t("range.all.label") : t(REQUEST_STATUS[value].labelKey)}{" "}
 				<span className="dim num">{formatCompact(counts[value])}</span>
 			</>
 		),
 	}));
 
+	const columns = useMemo<readonly Column<MessageStats>[]>(
+		() =>
+			REQUEST_COLUMNS.map(col =>
+				col.key === "status"
+					? {
+							...col,
+							render: row => {
+								const rowStatus = REQUEST_STATUS[requestStatus(row)];
+								return (
+									<span title={row.errorMessage ?? undefined}>
+										<LabelCell
+											lead={<Dot tone={rowStatus.tone} />}
+											primary={t(rowStatus.labelKey)}
+											secondary={<span className="mono">{row.stopReason}</span>}
+										/>
+									</span>
+								);
+							},
+						}
+					: col,
+			),
+		[lang],
+	);
+
 	return (
 		<div className="page">
-			<PageHeader
-				title="Requests"
-				description={`Every model call omp made in ${meta.windowLabel}, newest first. Open a row for its full payload.`}
-			/>
+			<PageHeader title={t("requests.title")} description={t("requests.desc", { window: meta.windowLabel })} />
 
 			<QueryView query={log} skeleton={<Skeleton height={96} style={{ borderRadius: 12 }} />}>
 				{() => (
@@ -196,14 +219,18 @@ export function RequestsRoute({ active, range, onRequestClick }: RequestsRoutePr
 							rows={filtered}
 							rowKey={row => row.id ?? `${row.sessionFile}:${row.entryId}`}
 							onRowClick={row => row.id !== undefined && onRequestClick(row.id)}
-							columns={REQUEST_COLUMNS}
+							columns={columns}
 							initialSort={{ key: "time", dir: "desc" }}
 							limit={100}
 							dense
 							empty={
 								<EmptyState
-									title={summary.requests === 0 ? `No requests in ${meta.windowLabel}` : "No requests match"}
-									hint={summary.requests === 0 ? undefined : "Clear the search or status filter."}
+									title={
+										summary.requests === 0
+											? t("requests.empty", { window: meta.windowLabel })
+											: t("requests.emptyMatch")
+									}
+									hint={summary.requests === 0 ? undefined : t("requests.emptyMatchHint")}
 								/>
 							}
 						/>

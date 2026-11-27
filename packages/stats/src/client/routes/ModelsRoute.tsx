@@ -43,6 +43,7 @@ import {
 	Table,
 	TableSkeleton,
 } from "../ui";
+import { useWebLanguage } from "../webI18n";
 
 export interface ModelsRouteProps {
 	active: boolean;
@@ -63,7 +64,8 @@ export function ModelsRoute({ active, range }: ModelsRouteProps) {
 	const query = useQuery(["models", range], ({ signal }) => getModelDashboardStats(range, signal), {
 		enabled: active,
 	});
-	const meta = rangeMeta(range);
+	const { lang, t } = useWebLanguage();
+	const meta = rangeMeta(range, lang);
 	const [mode, setMode] = useState<ShareMode>("share");
 	const [hidden, toggleSeries] = useHiddenSeries();
 	const [expandedKey, setExpandedKey] = useState<string | null>(null);
@@ -75,14 +77,11 @@ export function ModelsRoute({ active, range }: ModelsRouteProps) {
 		[view, expandedKey, bucketWord],
 	);
 	const isEmpty = (data: ModelDashboardStats) => data.byModel.length === 0;
-	const empty = <EmptyState title="No model usage in this range" hint="Pick a wider range in the top bar." />;
+	const empty = <EmptyState title={t("models.empty")} hint={t("models.emptyHint")} />;
 
 	return (
 		<div className="page">
-			<PageHeader
-				title="Models"
-				description={`Which models did the work in ${meta.windowLabel}, and how fast they answered.`}
-			/>
+			<PageHeader title={t("models.title")} description={t("models.desc", { window: meta.windowLabel })} />
 
 			<QueryView
 				query={query}

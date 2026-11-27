@@ -3,16 +3,24 @@ import * as path from "node:path";
 import { adjustHsv } from "@oh-my-pi/pi-utils/color";
 import { getCustomThemesDir } from "@oh-my-pi/pi-utils/dirs";
 import { isEnoent } from "@oh-my-pi/pi-utils/fs-error";
-import { detectColorMode, isLightSurface, mixThemeColors, resolveThemeColors, resolveVarRefs } from "./color";
-import nightglideFlightJson from "./nightglide-flight.json" with { type: "json" };
+import {
+	ansi256ToHex,
+	detectColorMode,
+	isLightSurface,
+	mixThemeColors,
+	resolveThemeColors,
+	resolveVarRefs,
+} from "./color";
 import nightglideAbyssJson from "./nightglide-abyss.json" with { type: "json" };
+import nightglideAbyssTrenchJson from "./nightglide-abyss-trench.json" with { type: "json" };
 import nightglideAuroraJson from "./nightglide-aurora.json" with { type: "json" };
 import nightglideCloudlightJson from "./nightglide-cloudlight.json" with { type: "json" };
 import nightglideDaybreakJson from "./nightglide-daybreak.json" with { type: "json" };
+import nightglideFlightJson from "./nightglide-flight.json" with { type: "json" };
 import nightglideIrisJson from "./nightglide-iris.json" with { type: "json" };
-import type { ColorMode, ThemeBg, ThemeColor, ThemeJson } from "./schema";
+import type { ColorMode, ColorValue, ThemeBg, ThemeColor, ThemeJson } from "./schema";
 import { normalizeSpinnerFramesOverride, type SymbolPreset } from "./symbols";
-import { Theme } from "./theme-class";
+import { Theme, type ThemeExportColors, type ThemeSurfaceColors } from "./theme-class";
 
 // ============================================================================
 // Theme Loading
@@ -27,6 +35,7 @@ const NIGHTGLIDE_THEMES: Record<string, ThemeJson> = {
 	"nightglide-flight": nightglideFlightJson as ThemeJson,
 	"nightglide-cloudlight": nightglideCloudlightJson as ThemeJson,
 	"nightglide-abyss": nightglideAbyssJson as ThemeJson,
+	"nightglide-abyss-trench": nightglideAbyssTrenchJson as ThemeJson,
 	"nightglide-daybreak": nightglideDaybreakJson as ThemeJson,
 	"nightglide-aurora": nightglideAuroraJson as ThemeJson,
 	"nightglide-iris": nightglideIrisJson as ThemeJson,
@@ -44,6 +53,8 @@ const THEME_ALIASES: Record<string, ThemeJson> = {
 	flight: nightglideFlightJson as ThemeJson,
 	cloudlight: nightglideCloudlightJson as ThemeJson,
 	abyss: nightglideAbyssJson as ThemeJson,
+	"abyss-trench": nightglideAbyssTrenchJson as ThemeJson,
+	trench: nightglideAbyssTrenchJson as ThemeJson,
 	daybreak: nightglideDaybreakJson as ThemeJson,
 	aurora: nightglideAuroraJson as ThemeJson,
 	iris: nightglideIrisJson as ThemeJson,
@@ -195,6 +206,50 @@ function intendedColor(
 	return color;
 }
 
+function resolveThemeOptionalColor(
+	value: ColorValue | undefined,
+	vars: Record<string, ColorValue>,
+	keepEmpty: boolean,
+): string | undefined {
+	if (value === undefined) return undefined;
+	if (typeof value === "number") return ansi256ToHex(value);
+	if (value === "") return keepEmpty ? "" : undefined;
+	if (value.startsWith("#")) return value;
+	const varName = value.startsWith("$") ? value.slice(1) : value;
+	if (varName in vars) {
+		const resolved = resolveVarRefs(varName, vars);
+		if (typeof resolved === "number") return ansi256ToHex(resolved);
+		if (resolved === "") return keepEmpty ? "" : undefined;
+		return resolved;
+	}
+	return keepEmpty ? value : undefined;
+}
+
+/** Resolve explicit `export` surface colors (`pageBg`, `cardBg`, `infoBg`) from a theme JSON. */
+export function resolveThemeExportColors(themeJson: ThemeJson): ThemeExportColors {
+	const exportSection = themeJson.export;
+	if (!exportSection) return {};
+	const vars = themeJson.vars ?? {};
+	return {
+		pageBg: resolveThemeOptionalColor(exportSection.pageBg, vars, true),
+		cardBg: resolveThemeOptionalColor(exportSection.cardBg, vars, true),
+		infoBg: resolveThemeOptionalColor(exportSection.infoBg, vars, true),
+	};
+}
+
+/** Resolve surface colors (`export` and `terminal.background`/`foreground`) for frame theming. */
+export function resolveThemeSurfaceColors(themeJson: ThemeJson): ThemeSurfaceColors {
+	const vars = themeJson.vars ?? {};
+	const exportColors = resolveThemeExportColors(themeJson);
+	return {
+		pageBg: exportColors.pageBg && exportColors.pageBg !== "" ? exportColors.pageBg : undefined,
+		cardBg: exportColors.cardBg && exportColors.cardBg !== "" ? exportColors.cardBg : undefined,
+		infoBg: exportColors.infoBg && exportColors.infoBg !== "" ? exportColors.infoBg : undefined,
+		terminalBg: resolveThemeOptionalColor(themeJson.terminal?.background, vars, false),
+		terminalFg: resolveThemeOptionalColor(themeJson.terminal?.foreground, vars, false),
+	};
+}
+
 export function createTheme(themeJson: ThemeJson, options: CreateThemeOptions = {}): Theme {
 	const { mode, symbolPresetOverride, colorBlindMode } = options;
 	const colorMode = mode ?? detectColorMode();
@@ -250,7 +305,16 @@ export function createTheme(themeJson: ThemeJson, options: CreateThemeOptions = 
 			if (spinnerFramesOverrides[kind]?.some(frame => !isPrintableAscii(frame))) delete spinnerFramesOverrides[kind];
 		}
 	}
-	return new Theme(fgColors, bgColors, colorMode, symbolPreset, symbolOverrides, spinnerFramesOverrides, ansiPalette);
+	return new Theme(
+		fgColors,
+		bgColors,
+		colorMode,
+		symbolPreset,
+		symbolOverrides,
+		spinnerFramesOverrides,
+		ansiPalette,
+		resolveThemeSurfaceColors(themeJson),
+	);
 }
 
 export async function loadTheme(name: string, options: CreateThemeOptions = {}): Promise<Theme> {

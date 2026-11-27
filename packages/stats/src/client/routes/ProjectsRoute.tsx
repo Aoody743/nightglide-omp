@@ -31,6 +31,7 @@ import {
 	Table,
 	TableSkeleton,
 } from "../ui";
+import { useWebLanguage } from "../webI18n";
 import "./projects.css";
 
 export interface ProjectsRouteProps {
@@ -48,7 +49,8 @@ export function ProjectsRoute({ active, range }: ProjectsRouteProps) {
 	// Benchmarks and scratch sessions can leave tens of thousands of one-off temp folders; hide them by default.
 	const [hideTemporary, setHideTemporary] = useState(true);
 	const query = useDeferredValue(search.trim().toLowerCase());
-	const meta = rangeMeta(range);
+	const { lang, t } = useWebLanguage();
+	const meta = rangeMeta(range, lang);
 
 	const view = useMemo(() => buildFolderRows(folders.data ?? []), [folders.data]);
 	const scoped = useMemo(
@@ -67,16 +69,14 @@ export function ProjectsRoute({ active, range }: ProjectsRouteProps) {
 		[scoped],
 	);
 	const topEmpty = (
-		<EmptyState
-			title={view.rows.length === 0 ? "No project folders in this range" : "Only temporary folders in this range"}
-		/>
+		<EmptyState title={view.rows.length === 0 ? t("projects.empty") : "Only temporary folders in this range"} />
 	);
 	// Meter scales follow the whole range so a bar's length does not change while filtering.
 	const columns = useMemo(() => folderColumns(view.maxRequests, view.maxCost), [view]);
 
 	return (
 		<div className="page">
-			<PageHeader title="Projects" description={`Usage by session folder in ${meta.windowLabel}.`} />
+			<PageHeader title={t("projects.title")} description={t("projects.desc", { window: meta.windowLabel })} />
 
 			<QueryView query={folders} skeleton={<ChartSkeleton height={96} />}>
 				{() => (
@@ -198,10 +198,10 @@ export function ProjectsRoute({ active, range }: ProjectsRouteProps) {
 							dense
 							empty={
 								<EmptyState
-									title={view.rows.length === 0 ? "No project folders in this range" : "No folders match"}
+									title={view.rows.length === 0 ? t("projects.empty") : t("projects.emptyMatch")}
 									hint={
 										view.rows.length === 0
-											? "Try a longer range."
+											? t("models.emptyHint")
 											: hideTemporary && view.temporaryCount > 0
 												? "Temporary folders are hidden."
 												: undefined

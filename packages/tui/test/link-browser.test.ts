@@ -63,10 +63,11 @@ function browse(
 	entries: SessionMessageEntryLike[],
 	textRenderers: readonly AssistantTextRenderer[] = [],
 	width = WIDTH,
+	height = HEIGHT,
 ): { browser: LinkBrowserComponent; activated: string[]; view: () => string[]; tags: () => string[] } {
 	const activated: string[] = [];
 	const ui = {
-		terminal: { rows: HEIGHT },
+		terminal: { rows: height },
 		requestRender: () => {},
 		requestComponentRender: () => {},
 	} as unknown as TUI;
@@ -197,6 +198,8 @@ describe("extension link browser", () => {
 				...Array.from({ length: 10 }, (_, index) => reply(`More filler ${index}.`, 500 + index)),
 			],
 			[longer],
+			WIDTH,
+			16,
 		);
 		view();
 		browser.handleInput(HOME);
@@ -214,11 +217,16 @@ describe("extension link browser", () => {
 	});
 
 	it("tags a label scrolling into view without taking or changing the tags already drawn", () => {
-		// Opened at the bottom, `sun` is in view and `sky` one row above it.
-		const { browser, activated, view, tags } = browse([
-			...linkReplies(["sky", "sun"], 4),
-			...Array.from({ length: 2 }, (_, index) => reply(`More filler ${index}.`, 500 + index)),
-		]);
+		// Opened at the bottom, `sun` is in view and `sky` one row above it (2 rows per reply).
+		const { browser, activated, view, tags } = browse(
+			[
+				...linkReplies(["sky", "sun"], 1),
+				...Array.from({ length: 2 }, (_, index) => reply(`More filler ${index}.`, 500 + index)),
+			],
+			[],
+			WIDTH,
+			13,
+		);
 		expect(view().some(row => row.includes("sky"))).toBe(false);
 		expect(tags()).toEqual(["s"]);
 		browser.handleInput(UP);

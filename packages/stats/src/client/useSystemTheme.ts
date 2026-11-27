@@ -3,12 +3,15 @@ import { useSyncExternalStore } from "react";
 export type SystemTheme = "light" | "dark";
 export type ThemePreference = "system" | "light" | "dark";
 
-const STORAGE_KEY = "omp-stats-theme";
+const STORAGE_KEY = "nightglide-stats-theme";
+const LEGACY_STORAGE_KEY = "omp-stats-theme";
 const DARK_SCHEME_QUERY = "(prefers-color-scheme: dark)";
 
-function readStoredPreference(): ThemePreference {
-	if (typeof localStorage === "undefined") return "system";
-	const stored = localStorage.getItem(STORAGE_KEY);
+export function readStoredThemePreference(
+	storage: Pick<Storage, "getItem"> | undefined = typeof localStorage !== "undefined" ? localStorage : undefined,
+): ThemePreference {
+	if (!storage) return "system";
+	const stored = storage.getItem(STORAGE_KEY) || storage.getItem(LEGACY_STORAGE_KEY);
 	return stored === "light" || stored === "dark" || stored === "system" ? stored : "system";
 }
 
@@ -19,7 +22,7 @@ function getSystemTheme(): SystemTheme {
 
 // Module-level store shared by the toggle (writer) and every chart (reader) so
 // an explicit override and the system default resolve through one source.
-let preference: ThemePreference = readStoredPreference();
+let preference: ThemePreference = readStoredThemePreference();
 let resolved: SystemTheme = preference === "system" ? getSystemTheme() : preference;
 const listeners = new Set<() => void>();
 
@@ -48,7 +51,10 @@ if (typeof window !== "undefined") {
 
 export function setThemePreference(next: ThemePreference): void {
 	preference = next;
-	if (typeof localStorage !== "undefined") localStorage.setItem(STORAGE_KEY, next);
+	if (typeof localStorage !== "undefined") {
+		localStorage.setItem(STORAGE_KEY, next);
+		localStorage.setItem(LEGACY_STORAGE_KEY, next);
+	}
 	applyResolvedTheme();
 	emit();
 }

@@ -256,6 +256,24 @@ export function renderDiff(diffText: string, options: RenderDiffOptions = {}): s
 		return formatCodeFrameLine(prefix, displayNum, content, lineNumberWidth);
 	};
 
+	const formatStyledLine = (
+		prefix: CodeFrameMarker,
+		lineNum: string,
+		content: string,
+		gutterColor: ThemeColor,
+		contentColor: ThemeColor,
+	): string => {
+		const formatted = formatLine(prefix, lineNum, content);
+		const sepIndex = formatted.indexOf("│");
+		if (sepIndex === -1) return renderTheme.fg(contentColor, formatted);
+		const gutter = formatted.slice(0, sepIndex);
+		const code = formatted.slice(sepIndex + 1);
+		// Keep `│` immediately followed by `contentColor` (no intermediate `\x1b[39m`) so
+		// line-wrapping preserves the gutter/content boundary invariant (`│\x1b[38;`).
+		const rail = `${renderTheme.getFgAnsi("statusLineSep")}│`;
+		return `${renderTheme.fg(gutterColor, gutter)}${rail}${renderTheme.fg(contentColor, code)}`;
+	};
+
 	let i = 0;
 	while (i < lines.length) {
 		const line = lines[i];
@@ -301,28 +319,50 @@ export function renderDiff(diffText: string, options: RenderDiffOptions = {}): s
 				);
 
 				result.push(
-					renderTheme.fg("toolDiffRemoved", formatLine("-", removed.lineNum, visualizeIndent(removedLine))),
+					formatStyledLine(
+						"-",
+						removed.lineNum,
+						visualizeIndent(removedLine),
+						"toolDiffRemoved",
+						"toolDiffRemoved",
+					),
 				);
-				result.push(renderTheme.fg("toolDiffAdded", formatLine("+", added.lineNum, visualizeIndent(addedLine))));
+				result.push(
+					formatStyledLine("+", added.lineNum, visualizeIndent(addedLine), "toolDiffAdded", "toolDiffAdded"),
+				);
 			} else {
 				for (const removed of removedLines) {
 					result.push(
-						renderTheme.fg("toolDiffRemoved", formatLine("-", removed.lineNum, visualizeIndent(removed.content))),
+						formatStyledLine(
+							"-",
+							removed.lineNum,
+							visualizeIndent(removed.content),
+							"toolDiffRemoved",
+							"toolDiffRemoved",
+						),
 					);
 				}
 				for (const added of addedLines) {
 					result.push(
-						renderTheme.fg("toolDiffAdded", formatLine("+", added.lineNum, visualizeIndent(added.content))),
+						formatStyledLine(
+							"+",
+							added.lineNum,
+							visualizeIndent(added.content),
+							"toolDiffAdded",
+							"toolDiffAdded",
+						),
 					);
 				}
 			}
 		} else if (parsed.prefix === "+") {
-			result.push(renderTheme.fg("toolDiffAdded", formatLine("+", parsed.lineNum, visualizeIndent(parsed.content))));
+			result.push(
+				formatStyledLine("+", parsed.lineNum, visualizeIndent(parsed.content), "toolDiffAdded", "toolDiffAdded"),
+			);
 			i++;
 		} else {
 			const highlighted = contextHighlights.get(i);
 			const content = highlighted !== undefined ? replaceTabs(highlighted) : visualizeIndent(parsed.content);
-			result.push(renderTheme.fg("toolDiffContext", formatLine(" ", parsed.lineNum, content)));
+			result.push(formatStyledLine(" ", parsed.lineNum, content, "dim", "toolDiffContext"));
 			i++;
 		}
 	}
@@ -404,8 +444,10 @@ function renderSideBySideDiff(diffText: string, options: RenderDiffOptions & { w
 
 	/** One column: colored gutter + rail + width-fitted content. */
 	const cell = (gutter: string, content: string, color: ThemeColor | null): string => {
-		const body = `${gutter}│${content}`;
-		return color ? renderTheme.fg(color, body) : body;
+		if (!color) return `${gutter}│${content}`;
+		const rail = renderTheme.fg("statusLineSep", "│");
+		const gutterColor: ThemeColor = color === "toolDiffContext" ? "dim" : color;
+		return `${renderTheme.fg(gutterColor, gutter)}${rail}${renderTheme.fg(color, content)}`;
 	};
 
 	const row = (

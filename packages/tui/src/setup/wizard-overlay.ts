@@ -5,8 +5,8 @@ import { matchesKey } from "../keys";
 import { centerLine, padding } from "../utils";
 import { padToWidth } from "../render/utils";
 import { routeSgrMouseInput, type SgrMouseEvent } from "../mouse";
-import { APP_NAME } from "@oh-my-pi/pi-utils";
-import { gradientLogo, PI_LOGO } from "../prompt/welcome";
+import { CLI_NAME } from "@oh-my-pi/pi-utils";
+import { gradientLogo, NIGHTGLIDE_LOGO } from "../prompt/welcome";
 import { theme } from "../theme/theme";
 import { col, keyed, node, row, span, text } from "../native/describe";
 import type { DescribeContext, NativeChild, NativeNode, NativeScreen, NativeUiEvent } from "../native/node";
@@ -305,7 +305,7 @@ export class SetupWizardComponent implements Component, OverlayFocusOwner {
 
 	/**
 	 * The setup header, a fixed-height row: the compact brand lockup (the
-	 * builtin `omp` mark and wordmark), the stepper of the applicable scenes
+	 * builtin mark and wordmark), the stepper of the applicable scenes
 	 * (done = check in the success tone, current = accent, upcoming = muted,
 	 * hairline connectors between), and a quiet Exit setup button (⌃C).
 	 */
@@ -336,12 +336,12 @@ export class SetupWizardComponent implements Component, OverlayFocusOwner {
 								[
 									node(
 										"image",
-										{ builtin: "omp", alt: APP_NAME, w: 22, role: "omp.setup.mark" },
+										{ builtin: "omp", alt: CLI_NAME, w: 22, role: "omp.setup.mark" },
 										undefined,
 										"logo",
 									),
 									keyed(
-										text([span(APP_NAME, "strong")], { wrap: "none", role: "omp.setup.brand.name" }),
+										text([span(CLI_NAME, "strong")], { wrap: "none", role: "omp.setup.brand.name" }),
 										"name",
 									),
 									keyed(
@@ -405,11 +405,11 @@ export class SetupWizardComponent implements Component, OverlayFocusOwner {
 		const subtitle = this.#activeScene?.subtitle;
 		const { scenes: steps, current } = this.#steps();
 		const contentWidth = Math.max(MIN_CONTENT_WIDTH, width - SCENE_MARGIN_X * 2);
-		const logo = gradientLogo(PI_LOGO, 0);
+		const logo = gradientLogo(NIGHTGLIDE_LOGO, 0);
 		const header = [
 			"",
 			...logo.map(line => centerLine(line, width)),
-			centerLine(theme.bold(theme.fg("accent", APP_NAME)), width),
+			centerLine(theme.bold(theme.fg("accent", CLI_NAME)), width),
 			centerLine(theme.fg("muted", `Setup step ${current + 1} of ${steps.length}`), width),
 			"",
 			indentLine(theme.bold(title), width, SCENE_MARGIN_X),

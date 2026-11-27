@@ -1,4 +1,5 @@
 import { popLoopPhase, pushLoopPhase } from "@oh-my-pi/pi-utils";
+import { t } from "../i18n";
 import { Input } from "./input";
 import { getMenuWindow, MenuSelection } from "./menu-selection";
 import { getKeybindings } from "../keybindings";
@@ -307,8 +308,8 @@ export class SelectList implements Component, MouseRoutable {
 			filter: this.#nativeMark === undefined ? query.trim() || undefined : undefined,
 			empty:
 				query.trim().length > 0
-					? (this.layout.noMatchText ?? "No matching items")
-					: (this.layout.emptyText ?? "No items"),
+					? (this.layout.noMatchText ?? t("list.noMatch"))
+					: (this.layout.emptyText ?? t("list.empty")),
 			max:
 				typeof cachedMax === "object" && cachedMax.lines === this.#maxVisible
 					? cachedMax
@@ -397,8 +398,8 @@ export class SelectList implements Component, MouseRoutable {
 			}
 			const message =
 				this.#selection.query.trim().length > 0
-					? (this.layout.noMatchText ?? "No matching items")
-					: (this.layout.emptyText ?? "No items");
+					? (this.layout.noMatchText ?? t("list.noMatch"))
+					: (this.layout.emptyText ?? t("list.empty"));
 			lines.push(this.theme.noMatch(`  ${message}`));
 			return lines;
 		}
@@ -713,7 +714,7 @@ export class SelectList implements Component, MouseRoutable {
 			this.#selection.pendingKey === undefined &&
 			this.#selection.query.length > 0
 		) {
-			const label = truncateToWidth("  Search: ", avail, Ellipsis.Omit);
+			const label = truncateToWidth(t("list.searchPrefix"), avail, Ellipsis.Omit);
 			const fieldWidth = avail - visibleWidth(label);
 			const styled = this.theme.scrollInfo(label);
 			return fieldWidth > 0 ? styled + this.#search.render(fieldWidth)[0].trimEnd() : styled;
@@ -737,7 +738,7 @@ export class SelectList implements Component, MouseRoutable {
 		return this.layout.statusText !== undefined
 			? (custom ?? "")
 			: (pendingItem?.confirmation ??
-					(query ? `  Search: ${query}` : this.#canEditSearch() ? "  Type to search" : ""));
+					(query ? t("list.searchQuery", { query }) : this.#canEditSearch() ? t("list.typeToSearch") : ""));
 	}
 
 	#shouldRenderSearchStatus(): boolean {

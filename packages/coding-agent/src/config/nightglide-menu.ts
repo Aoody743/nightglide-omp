@@ -32,6 +32,7 @@ export const NIGHTGLIDE_COMMANDS: readonly NightglideCommandEntry[] = [
 	{ name: "compact", tier: "common", group: "session" },
 	{ name: "export", tier: "common", group: "session" },
 	{ name: "copy", tier: "common", group: "session" },
+	{ name: "summary", tier: "common", group: "session" },
 	{ name: "model", tier: "common", group: "model" },
 	{ name: "effort", tier: "common", group: "model" },
 	{ name: "setup", tier: "common", group: "model" },
@@ -317,6 +318,28 @@ export const cfgNightglideLanguage = register({
 			{ value: "zh", label: "中文", description: "Chinese (default)" },
 			{ value: "en", label: "English", description: "English" },
 			{ value: "auto", label: "Auto", description: "Follow the system locale" },
+		],
+	},
+});
+
+/** Pixel companion mascot avatar shown in the Glide sidebar (`auto` matches active theme family). */
+export const cfgNightglideRobotStyle = register({
+	id: "nightglide.robotStyle",
+	type: "enum",
+	values: ["auto", "glider", "cat", "owl", "diver", "prism"] as const,
+	default: "auto",
+	ui: {
+		tab: "appearance",
+		group: "Theme",
+		label: "Companion look",
+		description: "Select the pixel companion sprite shown in the Glide sidebar (or auto to match the theme).",
+		options: [
+			{ value: "auto", label: "Auto", description: "Match active theme family (default)" },
+			{ value: "glider", label: "Sky Glider", description: "Sleek aero-visor pilot" },
+			{ value: "cat", label: "Nebula Cat", description: "Cyber-cat with pointed ears and tail" },
+			{ value: "owl", label: "Night Owl", description: "Cosmic night owl with wide eyes" },
+			{ value: "diver", label: "Deep Diver", description: "Bathysphere dome diver" },
+			{ value: "prism", label: "Aurora Sprite", description: "Floating halo crystal sprite" },
 		],
 	},
 });

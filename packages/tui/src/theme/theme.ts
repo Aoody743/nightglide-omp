@@ -7,12 +7,25 @@ import * as logger from "@oh-my-pi/pi-utils/logger";
 import { isTerminalBackgroundQueryTrusted } from "../terminal-multiplexer";
 import { setActiveSymbolTheme } from "./active-symbols";
 import { ansi256ToHex, isLightSurface, resolveThemeColors, resolveVarRefs } from "./color";
-import { type CreateThemeOptions, getBuiltinThemes, loadTheme, loadThemeJson, loadThemeSync } from "./loader";
+import {
+	type CreateThemeOptions,
+	getBuiltinThemes,
+	loadTheme,
+	loadThemeJson,
+	loadThemeSync,
+	resolveThemeExportColors,
+} from "./loader";
 import { type ThemeColor, type ThemeJson } from "./schema";
 import type { SymbolPreset } from "./symbols";
-import type { Theme } from "./theme-class";
+import type { Theme, ThemeExportColors } from "./theme-class";
 
-export { getAvailableThemes, getAvailableThemesWithPaths, getThemeByName, type ThemeInfo } from "./loader";
+export {
+	getAvailableThemes,
+	getAvailableThemesWithPaths,
+	getThemeByName,
+	resolveThemeExportColors,
+	type ThemeInfo,
+} from "./loader";
 export { isValidThemeColor, type ThemeBg, type ThemeColor } from "./schema";
 export {
 	getAvailableSymbolPresets,
@@ -21,7 +34,7 @@ export {
 	type SymbolKey,
 	type SymbolPreset,
 } from "./symbols";
-export { Theme } from "./theme-class";
+export { Theme, type ThemeExportColors, type ThemeSurfaceColors } from "./theme-class";
 export {
 	createHighlightStream,
 	getEditorTheme,
@@ -768,34 +781,6 @@ function getHtmlDefaultTextForSurface(surface: string | number | undefined): str
 	return isLightSurface(surface) ? "#000000" : "#e5e5e7";
 }
 
-function resolveThemeExportColors(themeJson: ThemeJson): {
-	pageBg?: string;
-	cardBg?: string;
-	infoBg?: string;
-} {
-	const exportSection = themeJson.export;
-	if (!exportSection) return {};
-
-	const vars = themeJson.vars ?? {};
-	const resolve = (value: string | number | undefined): string | undefined => {
-		if (value === undefined) return undefined;
-		if (typeof value === "number") return ansi256ToHex(value);
-		if (value === "" || value.startsWith("#")) return value;
-		const varName = value.startsWith("$") ? value.slice(1) : value;
-		if (varName in vars) {
-			const resolved = resolveVarRefs(varName, vars);
-			return typeof resolved === "number" ? ansi256ToHex(resolved) : resolved;
-		}
-		return value;
-	};
-
-	return {
-		pageBg: resolve(exportSection.pageBg),
-		cardBg: resolve(exportSection.cardBg),
-		infoBg: resolve(exportSection.infoBg),
-	};
-}
-
 /**
  * Get resolved theme colors as CSS-compatible hex strings.
  * Used by HTML export to generate CSS custom properties.
@@ -849,6 +834,16 @@ export function isLightTheme(themeName?: string): boolean {
 		}
 	}
 	return isLightThemeJson(themeJson);
+}
+
+/** Get the active theme's resolved `export` surface colors (`pageBg`, `cardBg`, `infoBg`). */
+export function getActiveThemeExportColors(): ThemeExportColors {
+	return typeof theme === "undefined" ? {} : theme.getExportColors();
+}
+
+/** Get the active theme's resolved page background hex (`export.pageBg` -> `terminal.background` -> `statusLineBg`). */
+export function getActiveThemePageBgHex(): string {
+	return typeof theme === "undefined" ? "#101329" : theme.getPageBgHex();
 }
 
 /**

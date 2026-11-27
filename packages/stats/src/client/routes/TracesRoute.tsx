@@ -27,6 +27,7 @@ import {
 	Table,
 	TableSkeleton,
 } from "../ui";
+import { useWebLanguage } from "../webI18n";
 import "../traces/traces.css";
 
 export interface TracesRouteProps {
@@ -49,6 +50,7 @@ function ModelList({ models }: { models: string[] }) {
 
 export function TracesRoute({ active, session, onOpenSession }: TracesRouteProps) {
 	const [filter, setFilter] = useState("");
+	const { t } = useWebLanguage();
 	const sessions = useQuery(
 		["sessions", SESSION_LIMIT],
 		({ signal }) => getSessions(SESSION_LIMIT, undefined, signal),
@@ -160,12 +162,9 @@ export function TracesRoute({ active, session, onOpenSession }: TracesRouteProps
 	const total = sessions.data?.length ?? 0;
 	return (
 		<div className="stack traces-page">
-			<PageHeader
-				title="Traces"
-				description="Recent sessions with subagent activity folded in. Open one to inspect its timeline."
-			/>
+			<PageHeader title={t("traces.title")} description={t("traces.desc")} />
 			<Card
-				title="Sessions"
+				title={t("traces.sessions")}
 				description={
 					sessions.data
 						? filter.trim()
@@ -177,7 +176,7 @@ export function TracesRoute({ active, session, onOpenSession }: TracesRouteProps
 					<SearchInput
 						value={filter}
 						onChange={setFilter}
-						placeholder="Filter by title, project, model…"
+						placeholder={t("traces.searchPlaceholder")}
 						width={260}
 					/>
 				}
@@ -189,7 +188,7 @@ export function TracesRoute({ active, session, onOpenSession }: TracesRouteProps
 					query={sessions}
 					skeleton={<TableSkeleton rows={10} />}
 					isEmpty={rows => rows.length === 0}
-					empty={<EmptyState title="No sessions found" hint="Run a sync to index recent activity." />}
+					empty={<EmptyState title={t("traces.empty")} hint={t("traces.emptyHint")} />}
 				>
 					{() => (
 						<Table
@@ -199,7 +198,7 @@ export function TracesRoute({ active, session, onOpenSession }: TracesRouteProps
 							onRowClick={row => onOpenSession(row.file)}
 							initialSort={{ key: "started", dir: "desc" }}
 							limit={50}
-							empty={<EmptyState title="No matching sessions" hint="Try a different filter." />}
+							empty={<EmptyState title={t("traces.emptyMatch")} hint={t("traces.emptyMatchHint")} />}
 						/>
 					)}
 				</QueryView>

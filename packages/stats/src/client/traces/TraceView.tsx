@@ -10,6 +10,7 @@ import { getSessionTrace } from "../api";
 import { useQuery } from "../data/query";
 import type { SessionTrace, TraceSpan, TraceSpanKind, TraceTrack } from "../types";
 import { Card, ChartSkeleton, PageHeader, QueryView, SearchInput, Segmented } from "../ui";
+import { useWebLanguage } from "../webI18n";
 import { AggregatesPanel } from "./AggregatesPanel";
 import { Minimap } from "./Minimap";
 import { SpanDrawer, type TraceEntryLoader } from "./SpanDrawer";
@@ -40,6 +41,7 @@ const LEGEND: Array<{ kind: TraceSpanKind; label: string }> = [
 ];
 
 export function TraceView({ file, active, onBack }: TraceViewProps) {
+	const { t } = useWebLanguage();
 	const query = useQuery<SessionTrace>(
 		["trace", file],
 		({ signal }, previous) => getSessionTrace(file, signal, previous),
@@ -53,7 +55,7 @@ export function TraceView({ file, active, onBack }: TraceViewProps) {
 			<div>
 				<button type="button" className="btn" data-variant="ghost" data-size="sm" onClick={onBack}>
 					<ArrowLeft size={14} aria-hidden="true" />
-					Sessions
+					{t("traceView.back")}
 				</button>
 			</div>
 			<PageHeader
@@ -66,8 +68,8 @@ export function TraceView({ file, active, onBack }: TraceViewProps) {
 						data-variant="ghost"
 						data-icon="true"
 						onClick={query.refetch}
-						aria-label="Refresh trace"
-						title="Refresh trace"
+						aria-label={t("traceView.refresh")}
+						title={t("traceView.refresh")}
 					>
 						<RefreshCw size={14} className={query.refreshing ? "traces-spin" : undefined} />
 					</button>

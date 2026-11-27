@@ -17,6 +17,7 @@ import { Steps } from "../spotlight/Steps";
 import { TimeCost } from "../spotlight/TimeCost";
 import type { SpotlightAgentScope, TimeRange } from "../types";
 import { Card, ChartSkeleton, PageHeader, QueryView, Segmented } from "../ui";
+import { useWebLanguage } from "../webI18n";
 import "../spotlight/spotlight.css";
 
 export interface SpotlightRouteProps {
@@ -51,14 +52,15 @@ export function SpotlightRoute({ active, range }: SpotlightRouteProps) {
 		({ signal }) => getSpotlightDashboardStats(range, agent, signal),
 		{ enabled: active },
 	);
-	const meta = rangeMeta(range);
+	const { lang, t } = useWebLanguage();
+	const meta = rangeMeta(range, lang);
 	const experimentStart = stats.data?.experimentStart ?? null;
 
 	return (
 		<div className="page spot-page">
 			<PageHeader
-				title="Spotlight"
-				description={`What shaping tool output saved in ${meta.windowLabel} against what pi would have shown unshaped, after taking back what the agent fetched again because of a cut.`}
+				title={t("spotlight.title")}
+				description={t("spotlight.desc", { window: meta.windowLabel })}
 				actions={<Segmented aria-label="Sessions" options={AGENT_OPTIONS} value={agent} onChange={setAgent} />}
 			/>
 

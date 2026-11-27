@@ -15,15 +15,30 @@
  * the real editor / HUD components, and the information column reads live
  * session state through an injected accessor (no fabricated values).
  */
+import { formatDuration, formatNumber } from "@oh-my-pi/pi-utils";
 import { effortLadderGlyph, effortLadderToken, effortRung } from "../chat/effort-ladder";
 import { t } from "../i18n";
+import { formatKeyHints } from "../key-hint-format";
+import { getKeybindings } from "../keybindings";
 import type { AnimationFrame, TranscriptContainer } from "../chrome/transcript-container";
 import { motionEffectsEnabled, onMotionEffectsChange } from "../motion-effects";
 import { bgAnsi, fgAnsi } from "../theme/color";
 import { getCurrentThemeName, theme } from "../theme/theme";
 import type { Component, OverlayFocusOwner } from "../tui";
 import { truncateToWidth, visibleWidth } from "../utils";
-import { type PixelEncoder, type PixelPalette, renderPixelScene, type SceneKind } from "./nightglide-pixel-scene";
+import { type PixelEncoder, renderPixelScene, type SceneKind } from "./nightglide-pixel-scene";
+import { type Family, familyFor } from "./nightglide-theme-families";
+
+export { type Family, familyFor };
+import {
+	deriveRobotState,
+	renderNightglideRobot,
+	renderNightglideRobotCompact,
+	ROBOT_ROWS,
+	ROBOT_WIDTH,
+	type RobotState,
+	type RobotStyleSetting,
+} from "./nightglide-robot";
 
 /** A subagent row in the information column, read from the live registry. */
 export interface NightglideShellSubagent {
@@ -32,6 +47,14 @@ export interface NightglideShellSubagent {
 	status: string;
 	/** The tool the agent is running right now, when known. */
 	currentTool?: string;
+	/** Agent template/role name when available. */
+	agent?: string;
+	/** Elapsed duration in milliseconds when reported by progress. */
+	elapsedMs?: number;
+	/** Number of tool calls completed/started when reported. */
+	toolCount?: number;
+	/** Cumulative token count when reported. */
+	tokens?: number;
 }
 
 /** Live session facts the information column shows; nothing here is invented. */
@@ -53,11 +76,29 @@ export interface NightglideShellState {
 	thinkingLevel: string | undefined;
 	/** Auto effort that resolves on the next turn. */
 	autoPending?: boolean;
+	/** Applied Nightglide routing mode for this session, when available. */
+	routingMode?: "manual" | "local" | "balanced" | "performance";
+	/** Explicit non-local default selector retained under `local` routing. */
+	routingNonLocalDefault?: string;
+	/** Abbreviated workspace path (shown inside the collapsible sidebar). */
+	cwd?: string;
+	/** Current session context token count (shown cleanly when window is known). */
+	contextTokens?: number;
+	/** Active model context window size; omitted/zero renders `—` cleanly instead of `/?`. */
+	contextWindow?: number;
+	/** Current context usage percentage when available. */
+	contextPercent?: number | null;
+	/** Selected pixel companion avatar style (`auto` matches the theme family). */
+	robotStyle?: RobotStyleSetting;
 	subagents: NightglideShellSubagent[];
 	/** Main-session tools currently executing. */
 	activeTools?: number;
 	/** True while the main session is streaming a response. */
 	streaming: boolean;
+	/** True when the latest turn finished cleanly and the session is idle. */
+	turnDone?: boolean;
+	/** Explicit robot state override (primarily for deterministic testing). */
+	robotState?: RobotState;
 }
 
 export interface NightglideShellDeps {
@@ -68,240 +109,16 @@ export interface NightglideShellDeps {
 	status: () => Component | undefined;
 	/** Live session facts for the information column. */
 	state: () => NightglideShellState;
-	/** Told whenever the information column appears or disappears (narrow windows drop it). */
+	/** Told whenever the information column appears or disappears (collapsed or narrow). */
 	sidebarShown?: (shown: boolean) => void;
+	/** Triggered when the user clicks the task summary pill in the sidebar. */
+	onSummary?: () => void;
+	/** Render monochrome without ANSI color codes (test seam); defaults to `NO_COLOR`. */
+	plain?: boolean;
 	/** Components (the editor) whose hardware cursor this shell owns. */
 	focusTargets: () => readonly Component[];
 	rows: () => number;
 	requestRender: () => void;
-}
-
-interface Family {
-	label: string;
-	/** Scene the bands draw. */
-	kind: SceneKind;
-	/** Frame lines around panels. */
-	border: string;
-	/** Panel titles. */
-	title: string;
-	/** Primary readable text on the page. */
-	text: string;
-	/** Secondary text: still readable, never faint. */
-	soft: string;
-	accent: string;
-	warm: string;
-	/** Truecolor scene palette. */
-	scene: PixelPalette;
-	/** Override for 256-color terminals, picked from colors that exist on the 256 grid. */
-	scene256?: PixelPalette;
-}
-
-/** Surfaces per theme family; tuned to survive 256-color quantization. Shared with the
- * settings page's theme cards (nightglide-settings.ts). */
-export function familyFor(name: string | undefined): Family {
-	switch (name) {
-		case "nightglide-iris":
-			return {
-				label: "IRIS LIGHT",
-				kind: "flight",
-				border: "#c3d2e2",
-				title: "#3c7dbb",
-				text: "#2f3640",
-				soft: "#4a5568",
-				accent: "#6aa3d7",
-				warm: "#d18b3b",
-				// 彩虹穿云：sky-blue ramp over cirrus layers tinted faintly spectral —
-				// far→near clouds in pale violet, pink and mint, golden sun.
-				scene: {
-					page: "#eef2f7",
-					ramp: ["#dbe9f6", "#b9d4ec", "#8fb8dd", "#6aa3d7", "#3c7dbb"],
-					clouds: ["#e6e2ff", "#ffe1ea", "#e0f5ea"],
-					shade: "#c4d2e2",
-					rim: "#ffffff",
-					wisp: "#e3e0f6",
-					accent: "#ffd166",
-					spark: "#ffffff",
-				},
-				scene256: {
-					page: "#ffffff",
-					ramp: ["#d7d7ff", "#afd7ff", "#87afd7"],
-					clouds: ["#d7d7ff", "#ffd7d7", "#d7ffd7"],
-					shade: "#afafd7",
-					rim: "#ffffff",
-					wisp: "#eeeeee",
-					accent: "#ffd787",
-					spark: "#ffffff",
-					quantized: true,
-				},
-			};
-		case "nightglide-cloudlight":
-			return {
-				label: "FLIGHT LIGHT",
-				kind: "flight",
-				border: "#7d9fe0",
-				title: "#1d4fbf",
-				text: "#14213d",
-				soft: "#46557a",
-				accent: "#1f6fe0",
-				warm: "#d97a00",
-				scene: {
-					page: "#f5f8ff",
-					ramp: ["#d7d7ff", "#afd7ff", "#87afff", "#5f87d7", "#005fd7"],
-					// Cloud sea far → near, undersides, sunlit rims; a sun; no stars by day.
-					clouds: ["#e3ebfa", "#d2def6", "#fbfdff"],
-					shade: "#b9caee",
-					rim: "#ffffff",
-					wisp: "#dde7fb",
-					accent: "#ffb547",
-					spark: "#f5f8ff",
-				},
-				scene256: {
-					page: "#ffffff",
-					ramp: ["#d7d7ff", "#afd7ff", "#87afff", "#5f87d7", "#005fd7"],
-					clouds: ["#e4e4e4", "#d7d7ff", "#d7ffff"],
-					shade: "#afafd7",
-					rim: "#ffffff",
-					wisp: "#eeeeee",
-					accent: "#ffaf00",
-					spark: "#ffffff",
-					quantized: true,
-				},
-			};
-		case "nightglide-abyss":
-			return {
-				label: "DIVE DARK",
-				kind: "dive",
-				border: "#1e7a78",
-				title: "#5fe0c8",
-				text: "#e3f6f2",
-				soft: "#9cc9c1",
-				accent: "#3fe0c0",
-				warm: "#ff8a5c",
-				scene: {
-					page: "#041519",
-					ramp: ["#005f5f", "#008787", "#00afaf", "#5fd7d7"],
-					accent: "#ff875f",
-					spark: "#afffff",
-					plants: ["#00875f", "#00af87", "#5fd787"],
-					// Rock, lit rock edge, sand; light from the surface and its caustics.
-					ground: ["#0c3c42", "#22777a", "#3a6458"],
-					surface: "#5fd7d7",
-					caustic: "#9ff5ec",
-				},
-				scene256: {
-					page: "#121212",
-					ramp: ["#005f5f", "#008787", "#00afaf", "#5fd7d7"],
-					accent: "#ff875f",
-					spark: "#afffff",
-					plants: ["#00875f", "#00af87", "#5fd787"],
-					ground: ["#1c1c1c", "#005f5f", "#3a3a3a"],
-					surface: "#5fd7d7",
-					caustic: "#87d7d7",
-					blends: { mote: "#5f8787" },
-					quantized: true,
-				},
-			};
-		case "nightglide-daybreak":
-			return {
-				label: "DIVE LIGHT",
-				kind: "dive",
-				border: "#5fb8a8",
-				title: "#0b7a6c",
-				text: "#0f2e2a",
-				soft: "#3f6a63",
-				accent: "#0e9c88",
-				warm: "#f0623f",
-				scene: {
-					page: "#f2fbf9",
-					ramp: ["#d7ffff", "#afd7d7", "#87d7d7", "#5fafaf"],
-					accent: "#ff5f5f",
-					spark: "#ffffff",
-					plants: ["#5faf87", "#00875f", "#005f5f"],
-					ground: ["#7fb0a6", "#a8d4ca", "#efe3c4"],
-					surface: "#ffffff",
-					caustic: "#9fd8d0",
-				},
-				scene256: {
-					page: "#ffffff",
-					ramp: ["#d7ffff", "#afd7d7", "#87d7d7", "#5fafaf"],
-					accent: "#ff5f5f",
-					spark: "#d7ffff",
-					plants: ["#5faf87", "#00875f", "#005f5f"],
-					ground: ["#87afaf", "#afd7d7", "#ffffd7"],
-					surface: "#ffffff",
-					caustic: "#afd7d7",
-					blends: { mote: "#87d7d7" },
-					quantized: true,
-				},
-			};
-		case "nightglide-aurora":
-			return {
-				label: "AURORA",
-				kind: "aurora",
-				border: "#35276b",
-				title: "#d5a6ff",
-				text: "#ece6ff",
-				soft: "#b8aad6",
-				accent: "#78e5d8",
-				warm: "#f2c98a",
-				scene: {
-					page: "#0b0819",
-					// Curtain light, faint → the bright lower edge.
-					ramp: ["#123f3a", "#1c8a6c", "#34d399", "#c4ffe6"],
-					// Upper rays, faint → bright.
-					upper: ["#24194f", "#4b3596", "#8c6ee0"],
-					// Near range, far range, lit far crest.
-					ground: ["#050409", "#17122f", "#3a2f6e"],
-					accent: "#f2c98a",
-					spark: "#d9d0ff",
-				},
-				scene256: {
-					page: "#080808",
-					// Few, dark-leaning grid steps: the 256-color version stays calm rather than busy.
-					ramp: ["#005f5f", "#00875f", "#5fd7af"],
-					// Grid violets: off-grid ones round to grays on 256-color terminals.
-					upper: ["#00005f", "#5f5faf"],
-					ground: ["#000000", "#1c1c1c", "#5f5f87"],
-					accent: "#ffd787",
-					spark: "#d7d7ff",
-					quantized: true,
-				},
-			};
-		default:
-			return {
-				label: "FLIGHT DARK",
-				kind: "flight",
-				border: "#2f5f95",
-				title: "#6fd6ea",
-				text: "#e8ecfa",
-				soft: "#a7b3d6",
-				accent: "#6fd6ea",
-				warm: "#f5b94c",
-				scene: {
-					page: "#0b1022",
-					ramp: ["#18244e", "#22417e", "#2f6daf", "#5fb0dc", "#b8ecf7"],
-					// Cloud sea far → near, undersides, moonlit rims; a moon; high wisps.
-					clouds: ["#1b2955", "#2a4a88", "#4677bd"],
-					shade: "#152048",
-					rim: "#cdeeff",
-					wisp: "#2a3b74",
-					accent: "#f5d58c",
-					spark: "#b4bfe8",
-				},
-				scene256: {
-					page: "#121212",
-					ramp: ["#303030", "#005f87", "#5f87af", "#87afd7", "#d7ffff"],
-					// Dark grid blues and a soft rim: brighter steps turn the band into a solid strip.
-					clouds: ["#00005f", "#00005f", "#005f87"],
-					shade: "#00005f",
-					rim: "#5f87af",
-					wisp: "#262626",
-					accent: "#ffd787",
-					spark: "#8787af",
-					quantized: true,
-				},
-			};
-	}
 }
 
 const SGR = /\x1b\[([0-9;:]*)m/g;
@@ -346,8 +163,8 @@ export function sceneIntensity(level: string | undefined): number {
 	const rung = effortRung(level);
 	return rung ? (SCENE_INTENSITY[rung] ?? 0) : 0;
 }
-const EFFORT_CELLS = 12;
-const SIDE_WIDTH = 30;
+const EFFORT_SCALE = 12;
+const SIDE_WIDTH = 32;
 /** Narrowest window that still shows the information column. */
 const SIDE_MIN_WIDTH = 100;
 const WHEEL_LINES = 3;
@@ -378,6 +195,104 @@ function captureAnchor(view: readonly string[]): { rows: readonly string[]; offs
 	return undefined;
 }
 
+const LOCAL_PROVIDER_IDS = new Set([
+	"omlx",
+	"ollama",
+	"lm-studio",
+	"lmstudio",
+	"vllm",
+	"llamacpp",
+	"llama.cpp",
+	"jan",
+	"gpustack",
+	"localai",
+]);
+
+/** Safe symbolic glyph paired with explicit provider text (never the sole cue). */
+function providerGlyph(provider: string | undefined, ascii: boolean): string {
+	const id = provider?.toLowerCase() ?? "";
+	if (ascii) {
+		return LOCAL_PROVIDER_IDS.has(id) ? "[L]" : "[M]";
+	}
+	if (LOCAL_PROVIDER_IDS.has(id)) return "◈";
+	if (id.includes("anthropic")) return "✦";
+	if (id.includes("openai")) return "◎";
+	if (id.includes("google") || id.includes("gemini")) return "◇";
+	return theme.icon.model || "⬢";
+}
+
+function routingBadgeText(
+	mode: NonNullable<NightglideShellState["routingMode"]>,
+	nonLocalDefault: string | undefined,
+): string {
+	const modeLabel = t(`shell.routeMode.${mode}`);
+	const base = t("shell.route", { mode: modeLabel });
+	return nonLocalDefault ? `${base}${t("shell.routeExplicit")}` : base;
+}
+
+function robotStateLabel(state: RobotState): string {
+	return t(`shell.robot.${state}`);
+}
+
+function sidebarToggleText(open: boolean, ascii: boolean, compact: boolean): string {
+	if (compact) {
+		if (ascii) return open ? "[-]" : "[+]";
+		return open ? "[ ▾ ]" : "[ ▸ ]";
+	}
+	if (open) {
+		return t(ascii ? "shell.sidebarHideAscii" : "shell.sidebarHide");
+	}
+	const keys = getKeybindings().getKeys("app.sidebar.toggle");
+	const keyLabel = formatKeyHints(keys.length > 0 ? keys : ["ctrl+n"]);
+	return t(ascii ? "shell.sidebarShowAscii" : "shell.sidebarShow", { key: keyLabel });
+}
+
+function summaryPillText(ascii: boolean): string {
+	return t(ascii ? "shell.summaryPillAscii" : "shell.summaryPill");
+}
+
+/** Preserve the directory tail when a workspace path is wider than `maxWidth`. */
+function shortenPathTail(path: string, maxWidth: number): string {
+	if (visibleWidth(path) <= maxWidth) return path;
+	if (maxWidth <= 2) return truncateToWidth(path, maxWidth, "");
+	const chars = Array.from(path);
+	let tail = "";
+	for (let i = chars.length - 1; i >= 0; i--) {
+		const candidate = `…${chars[i]}${tail}`;
+		if (visibleWidth(candidate) > maxWidth) break;
+		tail = `${chars[i]}${tail}`;
+	}
+	return tail ? `…${tail}` : truncateToWidth(path, maxWidth, "");
+}
+
+/** Format context usage for the sidebar (`% · window` when known, `—` when unset). */
+function formatSidebarContext(
+	st: NightglideShellState,
+	maxWidth: number,
+	ascii: boolean,
+): { text: string; warn: boolean } {
+	const window = st.contextWindow;
+	if (!window || !Number.isFinite(window) || window <= 0) {
+		return { text: ascii ? "-" : "—", warn: false };
+	}
+	const pct = st.contextPercent;
+	if (pct === undefined || pct === null || !Number.isFinite(pct)) {
+		return { text: formatNumber(window), warn: false };
+	}
+	const pctRounded = `${Math.round(pct)}%`;
+	const warn = pct >= 70;
+	const full = `${pctRounded} · ${formatNumber(st.contextTokens ?? 0)}/${formatNumber(window)}`;
+	if (visibleWidth(full) <= maxWidth) return { text: full, warn };
+	const compact = `${pctRounded} · ${formatNumber(window)}`;
+	return { text: visibleWidth(compact) <= maxWidth ? compact : pctRounded, warn };
+}
+
+interface HitRect {
+	row: number;
+	from: number;
+	to: number;
+}
+
 export class NightglideShell implements Component, OverlayFocusOwner {
 	#deps: NightglideShellDeps;
 	#phase = 0;
@@ -390,6 +305,10 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 	#unsubscribe: () => void;
 	/** Rows scrolled back from the transcript tail (0 = following). */
 	#scroll = 0;
+	/** Collapsible sidebar preference (defaults to collapsed). */
+	#sidebarOpen = false;
+	/** Expandable subagent details toggle inside the sidebar. */
+	#subagentDetailsOpen = false;
 	/** Last information-column visibility reported to the host. */
 	#sideShown: boolean | undefined;
 	/**
@@ -401,6 +320,12 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 	#lastBodyRows = 10;
 	/** Screen row of the conversation panel's top border in the last frame. */
 	#bodyTop = -1;
+	/** Width of the conversation panel in the last frame. */
+	#mainWidth = 0;
+	/** Click hit targets from the last rendered frame. */
+	#toggleHit: HitRect | undefined;
+	#summaryHit: HitRect | undefined;
+	#agentsHit: { rowFrom: number; rowTo: number; colFrom: number; colTo: number } | undefined;
 
 	constructor(deps: NightglideShellDeps) {
 		this.#deps = deps;
@@ -410,6 +335,34 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 
 	ownsOverlayFocusTarget(component: Component): boolean {
 		return this.#deps.focusTargets().includes(component);
+	}
+
+	/** Whether the user has expanded the information sidebar (independent of terminal width). */
+	isSidebarOpen(): boolean {
+		return this.#sidebarOpen;
+	}
+
+	/** Expand or collapse the information sidebar. */
+	setSidebarOpen(open: boolean): void {
+		if (open === this.#sidebarOpen) return;
+		this.#sidebarOpen = open;
+		this.#deps.requestRender();
+	}
+
+	/** Toggle the information sidebar open/closed. */
+	toggleSidebar(): void {
+		this.setSidebarOpen(!this.#sidebarOpen);
+	}
+
+	/** Whether subagent detail lines are expanded in the sidebar. */
+	isSubagentDetailsOpen(): boolean {
+		return this.#subagentDetailsOpen;
+	}
+
+	/** Toggle detailed subagent metrics in the sidebar. */
+	toggleSubagentDetails(): void {
+		this.#subagentDetailsOpen = !this.#subagentDetailsOpen;
+		this.#deps.requestRender();
 	}
 
 	/** Scroll the conversation by lines (+ = back in time). */
@@ -447,14 +400,39 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 	}
 
 	/**
-	 * Left click at a 0-based screen cell. Clicking the conversation panel's top
-	 * border while scrolled back (where the "回看中" label sits) returns to the
-	 * live tail. Returns whether the click was used.
+	 * Left click at a 0-based screen cell. Handles the sidebar toggle pill on the
+	 * conversation top border, the scrollback return label, the summary pill in
+	 * the sidebar, and clicking the subagents section to expand/collapse details.
 	 */
-	click(row: number, _col: number): boolean {
-		if (this.#scroll === 0 || row !== this.#bodyTop) return false;
-		this.scrollToBottom();
-		return true;
+	click(row: number, col: number): boolean {
+		if (this.#toggleHit && row === this.#toggleHit.row && col >= this.#toggleHit.from && col < this.#toggleHit.to) {
+			this.toggleSidebar();
+			return true;
+		}
+		if (
+			this.#summaryHit &&
+			row === this.#summaryHit.row &&
+			col >= this.#summaryHit.from &&
+			col < this.#summaryHit.to
+		) {
+			this.#deps.onSummary?.();
+			return true;
+		}
+		if (
+			this.#agentsHit &&
+			row >= this.#agentsHit.rowFrom &&
+			row < this.#agentsHit.rowTo &&
+			col >= this.#agentsHit.colFrom &&
+			col < this.#agentsHit.colTo
+		) {
+			this.toggleSubagentDetails();
+			return true;
+		}
+		if (this.#scroll > 0 && row === this.#bodyTop && col >= 0 && col < this.#mainWidth) {
+			this.scrollToBottom();
+			return true;
+		}
+		return false;
 	}
 
 	#syncTimer(): void {
@@ -485,15 +463,24 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 		const height = this.#deps.rows();
 		const fam = familyFor(getCurrentThemeName());
 		const mode = theme.getColorMode();
-		const enc: PixelEncoder = { fg: hex => fgAnsi(hex, mode), bg: hex => bgAnsi(hex, mode) };
+		const ascii = theme.getSymbolPreset() === "ascii";
+		const rawNoColor = Bun.env.NO_COLOR;
+		const plain = this.#deps.plain ?? (rawNoColor !== undefined && rawNoColor !== "");
+		const enc: PixelEncoder = plain
+			? { fg: () => "", bg: () => "" }
+			: { fg: hex => fgAnsi(hex, mode), bg: hex => bgAnsi(hex, mode) };
 		const scene = mode === "truecolor" ? fam.scene : (fam.scene256 ?? fam.scene);
-		const page = enc.bg(scene.page);
-		const c = (hex: string, s: string) => `${enc.fg(hex)}${s}\x1b[39m`;
-		const border = enc.fg(fam.border);
+		const page = plain ? "" : enc.bg(scene.page);
+		const c = (hex: string, s: string) => (plain ? s : `${enc.fg(hex)}${s}\x1b[39m`);
+		const border = plain ? "" : enc.fg(fam.border);
 		const W = Math.max(20, width);
 
+		this.#toggleHit = undefined;
+		this.#summaryHit = undefined;
+		this.#agentsHit = undefined;
+
 		// The information column decides what the status line repeats, so settle it first.
-		const showSide = W >= SIDE_MIN_WIDTH;
+		const showSide = this.#sidebarOpen && W >= SIDE_MIN_WIDTH;
 		if (showSide !== this.#sideShown) {
 			this.#sideShown = showSide;
 			this.#deps.sidebarShown?.(showSide);
@@ -530,34 +517,82 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 		};
 
 		const out: string[] = [];
-		if (sceneTop > 0) out.push(...renderPixelScene(W, sceneTop, fam.kind, "top", scene, enc, sceneOpts));
+		if (sceneTop > 0 && !plain) {
+			out.push(...renderPixelScene(W, sceneTop, fam.kind, "top", scene, enc, sceneOpts));
+		} else if (sceneTop > 0) {
+			for (let i = 0; i < sceneTop; i++) out.push(onBg("", W, page));
+		}
 		this.#bodyTop = out.length;
 
 		// --- body: conversation panel + information column --------------------
 		const sideW = showSide ? SIDE_WIDTH : 0;
 		const mainW = W - sideW - (showSide ? 1 : 0);
+		this.#mainWidth = mainW;
 		const mainInner = mainW - 4;
-		const convo = this.#conversation(mainInner, bodyRows - 2, c, fam);
-		const side = showSide ? this.#sidebar(sideW - 4, bodyRows - 2, c, fam) : [];
-		const label = this.#scroll > 0 ? c(fam.warm, t("shell.scrollback")) : "";
+		const convo = this.#conversation(mainInner, bodyRows - 2, c, fam, plain);
+		const sideStartCol = mainW + 1;
+		const side = showSide
+			? this.#sidebar(sideW - 4, bodyRows - 2, c, fam, {
+					ascii,
+					plain,
+					motion,
+					mode,
+					light: theme.isLight || fam.label.includes("LIGHT"),
+					pageBg: scene.page,
+					sideStartCol,
+				})
+			: [];
+
+		const leftLabel = this.#scroll > 0 ? c(fam.warm, t("shell.scrollback")) : "";
+		let rightPill = "";
+		if (W >= SIDE_MIN_WIDTH) {
+			const fullPill = sidebarToggleText(showSide, ascii, false);
+			const shortPill = sidebarToggleText(showSide, ascii, true);
+			const innerTop = mainW - 2;
+			const leftW = visibleWidth(leftLabel);
+			const chosen =
+				leftW + visibleWidth(fullPill) + 2 <= innerTop
+					? fullPill
+					: leftW + visibleWidth(shortPill) + 2 <= innerTop
+						? shortPill
+						: "";
+			if (chosen) {
+				rightPill = c(showSide ? fam.title : fam.accent, chosen);
+			}
+		}
+
 		for (let r = 0; r < bodyRows; r++) {
-			let line = this.#panelRow(r, bodyRows, mainW, convo, border, page, label);
-			if (showSide)
+			let line: string;
+			if (r === 0) {
+				line = this.#mainTopBorder(mainW, border, page, leftLabel, rightPill);
+			} else {
+				line = this.#panelRow(r, bodyRows, mainW, convo, border, page, "", ascii);
+			}
+			if (showSide) {
 				line +=
 					onBg(" ", 1, page) +
-					this.#panelRow(r, bodyRows, sideW, side, border, page, c(fam.title, t("shell.panelTitle")));
+					this.#panelRow(r, bodyRows, sideW, side, border, page, c(fam.title, t("shell.panelTitle")), ascii);
+			}
 			out.push(line);
 		}
 
 		// --- composer card + status line --------------------------------------
-		out.push(onBg(`${border}╭${"─".repeat(W - 2)}╮`, W, page));
+		const tl = ascii ? "+" : "╭";
+		const tr = ascii ? "+" : "╮";
+		const bl = ascii ? "+" : "╰";
+		const br = ascii ? "+" : "╯";
+		const hz = ascii ? "-" : "─";
+		const vt = ascii ? "|" : "│";
+		out.push(onBg(`${border}${tl}${hz.repeat(W - 2)}${tr}`, W, page));
 		for (const row of dockRows)
-			out.push(onBg(`${border}│\x1b[39m ${onBg(row, W - 4, page)}${page}${border} │`, W, page));
-		out.push(onBg(`${border}╰${"─".repeat(W - 2)}╯`, W, page));
+			out.push(
+				onBg(`${border}${vt}${plain ? "" : "\x1b[39m"} ${onBg(row, W - 4, page)}${page}${border} ${vt}`, W, page),
+			);
+		out.push(onBg(`${border}${bl}${hz.repeat(W - 2)}${br}`, W, page));
 		for (const row of statusRows) out.push(onBg(` ${row}`, W, page));
 
 		const room = height - out.length;
-		if (sceneBottom > 0 && room > 0) {
+		if (sceneBottom > 0 && room > 0 && !plain) {
 			out.push(
 				...renderPixelScene(W, Math.min(room, sceneBottom), fam.kind, "bottom", scene, enc, {
 					...sceneOpts,
@@ -569,6 +604,29 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 		return out.slice(0, height);
 	}
 
+	#mainTopBorder(width: number, border: string, page: string, leftLabel: string, rightPill: string): string {
+		const ascii = theme.getSymbolPreset() === "ascii";
+		const tl = ascii ? "+" : "╭";
+		const tr = ascii ? "+" : "╮";
+		const hz = ascii ? "-" : "─";
+		const inner = Math.max(0, width - 2);
+		const leftW = visibleWidth(leftLabel);
+		const pillW = visibleWidth(rightPill);
+		if (pillW > 0 && leftW + pillW + 1 <= inner) {
+			const trail = leftW + pillW + 2 <= inner ? 1 : 0;
+			const mid = Math.max(0, inner - leftW - pillW - trail);
+			const from = 1 + leftW + mid;
+			this.#toggleHit = { row: this.#bodyTop, from, to: from + pillW };
+			return onBg(
+				`${border}${tl}${leftLabel}${border}${hz.repeat(mid)}${rightPill}${border}${hz.repeat(trail)}${tr}`,
+				width,
+				page,
+			);
+		}
+		const rest = Math.max(0, inner - leftW);
+		return onBg(`${border}${tl}${leftLabel}${border}${hz.repeat(rest)}${tr}`, width, page);
+	}
+
 	#panelRow(
 		r: number,
 		rows: number,
@@ -577,13 +635,24 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 		border: string,
 		page: string,
 		label: string,
+		ascii = false,
 	): string {
+		const tl = ascii ? "+" : "╭";
+		const tr = ascii ? "+" : "╮";
+		const bl = ascii ? "+" : "╰";
+		const br = ascii ? "+" : "╯";
+		const hz = ascii ? "-" : "─";
+		const vt = ascii ? "|" : "│";
 		if (r === 0) {
 			const rest = width - 2 - visibleWidth(label);
-			return onBg(`${border}╭${label}${border}${"─".repeat(Math.max(0, rest))}╮`, width, page);
+			return onBg(`${border}${tl}${label}${border}${hz.repeat(Math.max(0, rest))}${tr}`, width, page);
 		}
-		if (r === rows - 1) return onBg(`${border}╰${"─".repeat(width - 2)}╯`, width, page);
-		return onBg(`${border}│\x1b[39m ${onBg(content[r - 1] ?? "", width - 4, page)}${page}${border} │`, width, page);
+		if (r === rows - 1) return onBg(`${border}${bl}${hz.repeat(width - 2)}${br}`, width, page);
+		return onBg(
+			`${border}${vt}${border ? "\x1b[39m" : ""} ${onBg(content[r - 1] ?? "", width - 4, page)}${page}${border} ${vt}`,
+			width,
+			page,
+		);
 	}
 
 	#renderDock(width: number): string[] {
@@ -595,7 +664,13 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 		return rows;
 	}
 
-	#conversation(width: number, rows: number, c: (hex: string, s: string) => string, fam: Family): string[] {
+	#conversation(
+		width: number,
+		rows: number,
+		c: (hex: string, s: string) => string,
+		fam: Family,
+		plain: boolean,
+	): string[] {
 		if (rows <= 0) return [];
 		const now = performance.now();
 		const frame: AnimationFrame = { now, tick: Math.floor(now / FRAME_TICK_MS) };
@@ -603,7 +678,7 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 		const tail = this.#deps.transcript.renderTail(width, rows + this.#scroll + slack, frame);
 		if (tail.length === 0) {
 			this.#anchor = undefined;
-			return this.#emptyState(width, rows, c, fam);
+			return this.#emptyState(width, rows, c, fam, plain);
 		}
 		if (this.#anchor && this.#scroll > 0) {
 			const expected = tail.length - this.#scroll - rows + this.#anchor.offset;
@@ -621,9 +696,16 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 		return [...pad, ...view];
 	}
 
-	#emptyState(width: number, rows: number, c: (hex: string, s: string) => string, fam: Family): string[] {
+	#emptyState(
+		width: number,
+		rows: number,
+		c: (hex: string, s: string) => string,
+		fam: Family,
+		plain: boolean,
+	): string[] {
+		const title = c(fam.text, t("shell.welcomeTitle"));
 		const lines = [
-			theme.bold(c(fam.text, t("shell.welcomeTitle"))),
+			plain ? title : theme.bold(title),
 			c(fam.soft, t("shell.welcomeInput")),
 			c(fam.soft, t("shell.welcomeKeys")),
 		];
@@ -637,21 +719,75 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 		return out;
 	}
 
-	#sidebar(width: number, rows: number, c: (hex: string, s: string) => string, fam: Family): string[] {
+	#sidebar(
+		width: number,
+		rows: number,
+		c: (hex: string, s: string) => string,
+		fam: Family,
+		opts: {
+			ascii: boolean;
+			plain: boolean;
+			motion: boolean;
+			mode: "truecolor" | "256color";
+			light: boolean;
+			pageBg: string;
+			sideStartCol: number;
+		},
+	): string[] {
+		if (rows <= 0) return [];
 		const st = this.#deps.state();
+		const { ascii, plain, motion, mode, light, pageBg, sideStartCol } = opts;
 		const fit = (line: string) => truncateToWidth(line, width);
-		const sections: string[][] = [];
-		/** Section heading: glyph, title, then a rule to the column edge. */
-		const head = (glyph: string, title: string, hex = fam.accent) => {
-			const lead = `${c(hex, glyph)} ${theme.bold(c(fam.title, title))} `;
-			return fit(lead + c(fam.border, "─".repeat(Math.max(0, width - visibleWidth(lead)))));
+		const bold = (s: string) => (plain ? s : theme.bold(s));
+		const ruleChar = ascii ? "-" : "─";
+		const hairline = c(fam.border, ruleChar.repeat(Math.max(1, width)));
+		const indent = (line: string) => fit(`  ${line}`);
+		const fgToken = (token: Parameters<typeof theme.fg>[0], text: string) => (plain ? text : theme.fg(token, text));
+		const kvRows = (glyph: string, label: string, value: string, glyphHex = fam.accent): string[] => {
+			const left = `${glyph ? `${c(glyphHex, glyph)} ` : ""}${c(fam.soft, label)}`;
+			const gapCols = width - visibleWidth(left) - visibleWidth(value);
+			if (gapCols >= 1) return [fit(`${left}${" ".repeat(gapCols)}${value}`)];
+			return [fit(left), indent(value)];
 		};
-		const body = (line: string) => fit(`  ${line}`);
 
-		// Model: name, provider, and anything that changes who is answering.
-		const model: string[] = [head("✦", t("shell.model"))];
+		const robotState =
+			st.robotState ??
+			deriveRobotState({
+				streaming: st.streaming,
+				activeTools: st.activeTools,
+				turnDone: st.turnDone,
+			});
+
+		// Unified live session status pill shown inside the Hero Companion header.
+		const spinFrames = ascii ? "-\\|/" : "◜◝◞◟";
+		let statusMark: string;
+		let statusHex: string;
+		let statusLabel: string;
+		if (st.activeTools && st.activeTools > 0) {
+			statusMark = ascii ? "~" : "◌";
+			statusHex = fam.warm;
+			statusLabel = t("shell.toolsRunning", { count: st.activeTools });
+		} else if (st.streaming) {
+			statusMark = motion ? spinFrames[this.#phase % spinFrames.length]! : ascii ? "o" : "◌";
+			statusHex = fam.warm;
+			statusLabel = robotStateLabel("thinking");
+		} else if (st.turnDone) {
+			statusMark = ascii ? "+" : "✓";
+			statusHex = fam.accent;
+			statusLabel = robotStateLabel("done");
+		} else {
+			statusMark = ascii ? "*" : "●";
+			statusHex = fam.soft;
+			statusLabel = robotStateLabel("idle");
+		}
+
+		// Model section: clean single inline row when unset, rich hierarchy when active.
+		const model: string[] = [];
+		const modelGlyph = providerGlyph(st.provider, ascii);
 		if (st.model) {
-			const badges = `${st.fast ? c(fam.warm, " ⚡") : ""}${
+			const fastMark = ascii ? " >>" : " ⚡";
+			const advMark = ascii ? " (*)" : " ◉";
+			const badges = `${st.fast ? c(fam.warm, fastMark) : ""}${
 				st.advisor
 					? c(
 							st.advisor === "error" || st.advisor === "quota"
@@ -659,91 +795,275 @@ export class NightglideShell implements Component, OverlayFocusOwner {
 								: st.advisor === "running"
 									? fam.accent
 									: fam.soft,
-							" ◉",
+							advMark,
 						)
 					: ""
 			}`;
-			model.push(body(`${theme.bold(c(fam.text, st.model))}${badges}`));
-			if (st.provider) model.push(body(c(fam.soft, st.provider)));
-			if (st.fallback) model.push(body(c(fam.warm, t("shell.fallback", { model: st.fallback }))));
-			if (st.notice) model.push(body(c(fam.warm, st.notice)));
+			model.push(fit(`${c(fam.accent, modelGlyph)} ${c(fam.soft, t("shell.model"))}`));
+			model.push(indent(`${bold(c(fam.text, st.model))}${badges}`));
+			if (st.provider && st.routingMode) {
+				const routeText = routingBadgeText(st.routingMode, st.routingNonLocalDefault);
+				const routeHex = st.routingMode === "manual" ? fam.soft : fam.accent;
+				const combined = `${st.provider} · ${routeText}`;
+				if (visibleWidth(combined) <= width - 2) {
+					model.push(indent(`${c(fam.soft, `${st.provider} · `)}${c(routeHex, routeText)}`));
+				} else {
+					model.push(indent(c(fam.soft, st.provider)), indent(c(routeHex, routeText)));
+				}
+			} else if (st.provider) {
+				model.push(indent(c(fam.soft, st.provider)));
+			} else if (st.routingMode) {
+				const routeHex = st.routingMode === "manual" ? fam.soft : fam.accent;
+				model.push(indent(c(routeHex, routingBadgeText(st.routingMode, st.routingNonLocalDefault))));
+			}
+			if (st.fallback) model.push(indent(c(fam.warm, t("shell.fallback", { model: st.fallback }))));
+			if (st.notice) model.push(indent(c(fam.warm, st.notice)));
 		} else {
-			model.push(body(c(fam.warm, t("shell.noModel"))));
+			model.push(...kvRows(modelGlyph, t("shell.model"), c(fam.soft, t("shell.noModel"))));
 		}
-		sections.push(model);
 
-		// Effort: the level the session actually uses, never a configured wish.
+		// Effort row: inline segmented meter beside label when space allows.
 		const level = st.thinkingLevel;
 		const rung = effortRung(level);
-		const effort: string[] = [head(rung ? effortLadderGlyph(level) : "○", t("shell.effort"))];
+		const effortGlyph = rung ? (ascii ? "*" : effortLadderGlyph(level)) : ascii ? "o" : "○";
+		const fillOn = ascii ? "=" : "▰";
+		const fillOff = ascii ? "-" : "▱";
+		let effortValue: string;
 		if (level && rung && EFFORT_FILL[level] !== undefined) {
 			const filled = EFFORT_FILL[level]!;
 			const token = effortLadderToken(level) ?? "accent";
-			const cells = Math.max(6, Math.min(EFFORT_CELLS, width - 2 - visibleWidth(level) - 1));
-			const on = Math.round((filled / EFFORT_CELLS) * cells);
-			effort.push(
-				body(
-					`${theme.fg(token, "▰".repeat(on))}${c(fam.border, "▱".repeat(cells - on))} ${theme.fg(token, level)}`,
-				),
-			);
+			const labelCols = visibleWidth(t("shell.effort")) + 2;
+			const maxInlineCells = Math.max(5, Math.min(8, width - labelCols - visibleWidth(level) - 2));
+			const on = Math.round((filled / EFFORT_SCALE) * maxInlineCells);
+			effortValue = `${fgToken(token, fillOn.repeat(on))}${c(fam.border, fillOff.repeat(maxInlineCells - on))} ${fgToken(token, level)}`;
 		} else if (st.autoPending) {
-			effort.push(body(c(fam.soft, t("shell.effortAutoPending"))));
+			effortValue = c(fam.soft, t("shell.effortAutoPending"));
 		} else if (!st.model || st.thinkingSupported === false) {
-			effort.push(body(c(fam.soft, st.model ? t("shell.effortUnsupported") : "—")));
+			effortValue = c(fam.soft, st.model ? t("shell.effortUnsupported") : ascii ? "-" : "—");
 		} else {
-			effort.push(body(c(fam.soft, level ?? t("shell.unknown"))));
+			effortValue = c(fam.soft, level ?? t("shell.unknown"));
 		}
-		sections.push(effort);
+		const effort = kvRows(effortGlyph, t("shell.effort"), effortValue);
 
-		// Subagents: real registry entries only.
-		const running = st.subagents.filter(a => a.status !== "completed" && a.status !== "failed").length;
-		const agents: string[] = [
-			head(
-				"◇",
-				st.subagents.length > 0
-					? t("shell.subagentsCount", { running, total: st.subagents.length })
-					: t("shell.subagents"),
-			),
-		];
-		if (st.subagents.length === 0) agents.push(body(c(fam.soft, t("shell.none"))));
-		for (const agent of st.subagents) {
-			const failed = agent.status === "failed";
-			const done = agent.status === "completed";
-			const mark = failed ? c(fam.warm, "✕") : done ? c(fam.soft, "✓") : c(fam.accent, "●");
-			const name = truncateToWidth(agent.label, Math.max(4, width - 6 - visibleWidth(agent.status)));
-			const gap = " ".repeat(Math.max(1, width - 4 - visibleWidth(name) - visibleWidth(agent.status)));
-			agents.push(
-				body(
-					`${mark} ${c(done ? fam.soft : fam.text, name)}${gap}${c(failed ? fam.warm : fam.soft, agent.status)}`,
-				),
-			);
-			if (agent.currentTool) agents.push(body(c(fam.soft, `  ↳ ${agent.currentTool}`)));
-		}
-		sections.push(agents);
+		// Context usage row: percent & window when known, calm dash when unset (never `/?`).
+		const contextLabelWidth = visibleWidth(t("shell.context")) + 3;
+		const ctxFmt = formatSidebarContext(st, Math.max(4, width - contextLabelWidth), ascii);
+		const context = kvRows(
+			ascii ? "%" : "◔",
+			t("shell.context"),
+			c(ctxFmt.warn ? fam.warm : st.contextWindow ? fam.text : fam.soft, ctxFmt.text),
+		);
 
-		// Status of the main session.
-		const status: string[] = [];
-		if (st.activeTools && st.activeTools > 0) {
-			status.push(
-				head("◌", t("shell.status"), fam.warm),
-				body(c(fam.warm, t("shell.toolsRunning", { count: st.activeTools }))),
-			);
-		} else if (st.streaming) {
-			const spin = motionEffectsEnabled() ? "◜◝◞◟"[this.#phase % 4]! : "◌";
-			status.push(head(spin, t("shell.status"), fam.warm), body(c(fam.warm, t("shell.thinking"))));
+		// Workspace directory (tail-preserving so folder name stays legible).
+		const workspace: string[] = st.cwd
+			? [
+					fit(`${c(fam.accent, ascii ? ">" : "▸")} ${c(fam.soft, t("shell.workspace"))}`),
+					indent(c(fam.soft, shortenPathTail(st.cwd, Math.max(4, width - 2)))),
+				]
+			: [];
+
+		// Bottom summary pill button.
+		const rawSummary = summaryPillText(ascii);
+		const pillInner = fit(ascii ? rawSummary : ` ${rawSummary} `);
+		const pillPadLeft = Math.max(0, Math.floor((width - visibleWidth(pillInner)) / 2));
+		const pillBg = plain || ascii ? "" : bgAnsi(fam.scene.ramp[0] ?? pageBg, mode);
+		const pageRestoreBg = plain || ascii ? "" : bgAnsi(pageBg, mode);
+		const summaryRendered = pillBg
+			? `${" ".repeat(pillPadLeft)}${pillBg}${c(fam.title, pillInner)}${pageRestoreBg}`
+			: `${" ".repeat(pillPadLeft)}${c(fam.accent, pillInner)}`;
+
+		// Subagents section: sleek single line when none, expandable list when active.
+		const buildSubagents = (maxAgentRows: number): string[] => {
+			const running = st.subagents.filter(
+				a => a.status !== "completed" && a.status !== "failed" && a.status !== "aborted",
+			).length;
+			if (st.subagents.length === 0) {
+				return kvRows(ascii ? "<>" : "◇", t("shell.subagents"), c(fam.soft, t("shell.none")));
+			}
+			const cue = this.#subagentDetailsOpen ? (ascii ? "[-]" : "▾") : ascii ? "[+]" : "▸";
+			const titleText = t("shell.subagentsCount", { running, total: st.subagents.length });
+			const headerLeft = `${c(fam.accent, ascii ? "<>" : "◇")} ${bold(c(fam.title, titleText))}`;
+			const headerRight = c(fam.soft, cue);
+			const headerGap = Math.max(1, width - visibleWidth(headerLeft) - visibleWidth(headerRight));
+			const agents: string[] = [fit(`${headerLeft}${" ".repeat(headerGap)}${headerRight}`)];
+
+			let used = 0;
+			let shownAgents = 0;
+			for (const agent of st.subagents) {
+				const extraLines: string[] = [];
+				if (agent.currentTool) {
+					extraLines.push(indent(c(fam.soft, `  ${ascii ? "->" : "↳"} ${agent.currentTool}`)));
+				}
+				if (this.#subagentDetailsOpen) {
+					const parts: string[] = [];
+					if (agent.agent && agent.agent !== agent.label) parts.push(agent.agent);
+					if (agent.elapsedMs !== undefined && agent.elapsedMs >= 0) parts.push(formatDuration(agent.elapsedMs));
+					if (agent.toolCount !== undefined) {
+						parts.push(t("shell.agentTools", { count: agent.toolCount }));
+					}
+					if (agent.tokens !== undefined && agent.tokens > 0) {
+						parts.push(`${formatNumber(agent.tokens)} tok`);
+					}
+					if (parts.length > 0) {
+						const maxPartWidth = Math.max(8, width - 4);
+						let currentLine = "";
+						for (const part of parts) {
+							if (!currentLine) {
+								currentLine = part;
+								continue;
+							}
+							const candidate = `${currentLine} · ${part}`;
+							if (visibleWidth(candidate) <= maxPartWidth) {
+								currentLine = candidate;
+							} else {
+								extraLines.push(indent(c(fam.soft, `  ${currentLine}`)));
+								currentLine = part;
+							}
+						}
+						if (currentLine) {
+							extraLines.push(indent(c(fam.soft, `  ${currentLine}`)));
+						}
+					}
+				}
+				const neededForAgent = 1 + extraLines.length;
+				const remainingAgents = st.subagents.length - shownAgents;
+				const reserveMore = remainingAgents > 1 ? 1 : 0;
+				if (used + neededForAgent + reserveMore > maxAgentRows && shownAgents > 0) {
+					const hidden = st.subagents.length - shownAgents;
+					agents.push(indent(c(fam.soft, t("shell.agentsMore", { count: hidden }))));
+					break;
+				}
+				const failed = agent.status === "failed" || agent.status === "aborted";
+				const done = agent.status === "completed";
+				const mark = failed
+					? c(fam.warm, ascii ? "x" : "✕")
+					: done
+						? c(fam.soft, ascii ? "+" : "✓")
+						: c(fam.accent, ascii ? "*" : "●");
+				const name = truncateToWidth(agent.label, Math.max(4, width - 6 - visibleWidth(agent.status)));
+				const gap = " ".repeat(Math.max(1, width - 4 - visibleWidth(name) - visibleWidth(agent.status)));
+				agents.push(
+					indent(
+						`${mark} ${c(done ? fam.soft : fam.text, name)}${gap}${c(failed ? fam.warm : fam.soft, agent.status)}`,
+					),
+				);
+				for (const extra of extraLines) agents.push(extra);
+				used += neededForAgent;
+				shownAgents++;
+			}
+			return agents;
+		};
+
+		// Hero companion block: 10x5 sprite paired with Nightglide identity, live status, and theme family.
+		const spriteRows = renderNightglideRobot({
+			kind: fam.kind,
+			style: st.robotStyle,
+			light,
+			state: robotState,
+			phase: this.#phase,
+			motion,
+			cellPixels: sceneCellPixels(),
+			colorMode: mode,
+			plain,
+			ascii,
+			pageBg,
+		});
+		const robotCaption1 = `${c(fam.accent, ascii ? "*" : "✦")} ${bold(c(fam.title, "Nightglide"))}`;
+		const robotCaption2 = `${c(statusHex === fam.soft ? fam.accent : statusHex, statusMark)} ${c(statusHex, statusLabel)}`;
+		const robotCaption3 = c(fam.soft, fam.label);
+		const robotFullBlock = spriteRows.map((spriteLine, idx) => {
+			if (width < ROBOT_WIDTH + 4) return fit(spriteLine);
+			const caption = idx === 1 ? robotCaption1 : idx === 2 ? robotCaption2 : idx === 3 ? robotCaption3 : "";
+			return caption ? fit(`${spriteLine}  ${caption}`) : fit(spriteLine);
+		});
+		const compactBadge = renderNightglideRobotCompact({
+			kind: fam.kind,
+			style: st.robotStyle,
+			light,
+			state: robotState,
+			phase: this.#phase,
+			motion,
+			colorMode: mode,
+			plain,
+			ascii,
+		});
+		const robotCompactBlock = [fit(`${compactBadge} ${c(fam.title, "Nightglide")} · ${c(statusHex, statusLabel)}`)];
+
+		// Vertical budget: calm dividers when breathing room permits, tight compact fallback when short.
+		const specsLines = model.length + effort.length + context.length + workspace.length;
+		const collapsedAgentRows =
+			st.subagents.length === 0
+				? 1
+				: 1 + st.subagents.slice(0, 2).reduce((sum, a) => sum + 1 + (a.currentTool ? 1 : 0), 0);
+		// Airy layout: 1 blank + hero + divider + specs + divider + agents + bottom divider + summary (with breathing gaps).
+		const dividerRows = 3;
+		const blankGapRows = 3;
+		const withSpacious = ROBOT_ROWS + specsLines + collapsedAgentRows + dividerRows + blankGapRows + 1;
+		const withHairlines = ROBOT_ROWS + specsLines + collapsedAgentRows + dividerRows + 1;
+		const withFullTight = ROBOT_ROWS + specsLines + collapsedAgentRows + 1;
+
+		let robotSec: string[];
+		let useHairlines = false;
+		let useSpacious = false;
+		if (withSpacious <= rows) {
+			robotSec = robotFullBlock;
+			useHairlines = true;
+			useSpacious = true;
+		} else if (withHairlines <= rows) {
+			robotSec = robotFullBlock;
+			useHairlines = true;
+		} else if (withFullTight <= rows) {
+			robotSec = robotFullBlock;
 		} else {
-			status.push(head("●", t("shell.status")), body(c(fam.soft, t("shell.idle"))));
+			const remainingForCompactAndAgents = rows - specsLines - 1;
+			robotSec = remainingForCompactAndAgents >= 2 ? robotCompactBlock : [];
 		}
-		sections.push(status);
 
-		// A blank row under the frame and between sections when the column has room for them.
-		const needed = sections.reduce((n, sec) => n + sec.length, 0);
-		const gap = needed + sections.length <= rows;
-		const out: string[] = gap ? [""] : [];
-		for (const sec of sections) {
-			if (out.length > 1 && gap) out.push("");
-			out.push(...sec);
+		const chromeOverhead = (useHairlines ? dividerRows : 0) + (useSpacious ? 2 : 0) + 1;
+		const maxAgentRows = Math.max(1, rows - robotSec.length - specsLines - chromeOverhead - 1);
+		const agents = buildSubagents(maxAgentRows);
+
+		const out: string[] = [];
+		const specsGap = useSpacious && model.length + effort.length + context.length + workspace.length > 0;
+		if (useSpacious) out.push("");
+		out.push(...robotSec);
+		if (useHairlines) out.push(hairline);
+		out.push(...model);
+		if (specsGap) out.push("");
+		out.push(...effort, ...context, ...workspace);
+		if (useHairlines) out.push(hairline);
+		const agentsStart = out.length;
+		out.push(...agents);
+		const agentsEnd = out.length;
+
+		const sideInnerCol = sideStartCol + 2;
+		if (agentsEnd > agentsStart && agentsStart < rows) {
+			this.#agentsHit = {
+				rowFrom: this.#bodyTop + 1 + agentsStart,
+				rowTo: this.#bodyTop + 1 + Math.min(rows, agentsEnd),
+				colFrom: sideInnerCol,
+				colTo: sideInnerCol + width,
+			};
 		}
+
+		// Pin subtle hairline + summary button at bottom cleanly.
+		if (rows >= 2) {
+			const reserveBottom = useHairlines && out.length + 2 <= rows ? 2 : 1;
+			while (out.length < rows - reserveBottom) out.push("");
+			if (reserveBottom === 2 && out.length < rows - 1) out.push(hairline);
+			const summaryIdx = Math.min(out.length, rows - 1);
+			if (out.length < rows) {
+				out.push(summaryRendered);
+			} else {
+				out[rows - 1] = summaryRendered;
+			}
+			this.#summaryHit = {
+				row: this.#bodyTop + 1 + summaryIdx,
+				from: sideInnerCol + pillPadLeft,
+				to: sideInnerCol + pillPadLeft + visibleWidth(pillInner),
+			};
+		}
+
 		return out.slice(0, rows);
 	}
 }

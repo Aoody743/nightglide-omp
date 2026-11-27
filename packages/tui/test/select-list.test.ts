@@ -1,8 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "bun:test";
 import { SelectList, type SelectListTheme } from "@oh-my-pi/pi-tui/components/select-list";
+import { setLanguage } from "@oh-my-pi/pi-tui/i18n";
 import { KeybindingsManager, setKeybindings, TUI_KEYBINDINGS } from "@oh-my-pi/pi-tui/keybindings";
 import type { SgrMouseEvent } from "@oh-my-pi/pi-tui/mouse";
 import { visibleWidth } from "@oh-my-pi/pi-tui/utils";
+
+// Upstream assertions read English interface text (Nightglide defaults to Chinese).
+beforeAll(() => setLanguage("en"));
+afterAll(() => setLanguage("zh"));
 
 const testTheme = {
 	selectedPrefix: (text: string) => text,
@@ -553,5 +558,33 @@ describe("SelectList.routeMouse", () => {
 		list.routeMouse({ ...baseEvent, leftClick: true }, 2, 0);
 
 		expect(selected).toBe("c");
+	});
+});
+
+describe("SelectList localization", () => {
+	afterEach(() => setLanguage("en"));
+
+	it("renders search prompts and empty states in Chinese and English", () => {
+		const items = [
+			{ value: "alpha", label: "Alpha" },
+			{ value: "beta", label: "Beta" },
+			{ value: "gamma", label: "Gamma" },
+		];
+		const list = new SelectList(items, 2, testTheme);
+
+		setLanguage("zh");
+		expect(list.render(80).join("\n")).toContain("  输入文字搜索");
+		list.handleInput("a");
+		expect(list.render(80).join("\n")).toContain("  搜索：a");
+		list.setFilter("zzzzzz");
+		expect(list.render(80).join("\n")).toContain("没有匹配项");
+
+		setLanguage("en");
+		list.setFilter("");
+		expect(list.render(80).join("\n")).toContain("  Type to search");
+		list.handleInput("a");
+		expect(list.render(80).join("\n")).toContain("  Search: a");
+		list.setFilter("zzzzzz");
+		expect(list.render(80).join("\n")).toContain("No matching items");
 	});
 });

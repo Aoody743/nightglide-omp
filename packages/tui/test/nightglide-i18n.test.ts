@@ -46,9 +46,13 @@ describe("Nightglide language", () => {
 
 	it("switches text at once and fills placeholders", () => {
 		expect(t("shell.model")).toBe("模型");
+		expect(t("list.typeToSearch")).toBe("  输入文字搜索");
+		expect(t("list.searchQuery", { query: "git" })).toBe("  搜索：git");
 		setLanguage("en");
 		expect(getLanguage()).toBe("en");
 		expect(t("shell.model")).toBe("Model");
+		expect(t("list.typeToSearch")).toBe("  Type to search");
+		expect(t("list.searchQuery", { query: "git" })).toBe("  Search: git");
 		expect(t("toast.fallback", { model: "omlx/endless" })).toBe("Fell back to omlx/endless");
 	});
 

@@ -39,6 +39,7 @@ const DEFAULTS: Record<string, unknown> = {
 	"tui.motion": "full",
 	symbolPreset: "unicode",
 	"composer.shape": "nightglide",
+	"nightglide.robotStyle": "auto",
 	defaultThinkingLevel: "high",
 	"nightglide.routingMode": "manual",
 	hideThinkingBlock: false,
@@ -86,6 +87,13 @@ const ENTRIES: SettingsDisplayEntry[] = [
 		type: "string",
 		defaultValue: "nightglide",
 		ui: { tab: "appearance", group: "Composer", label: "Composer Shape", description: "d", options: "runtime" },
+	},
+	{
+		path: "nightglide.robotStyle",
+		type: "enum",
+		defaultValue: "auto",
+		enumValues: ["auto", "glider", "cat", "owl", "diver", "prism"],
+		ui: { tab: "appearance", group: "Theme", label: "Companion Look", description: "d", options: [] },
 	},
 	{
 		path: "defaultThinkingLevel",

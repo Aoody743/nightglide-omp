@@ -42,6 +42,7 @@ import {
 	Table,
 	TableSkeleton,
 } from "../ui";
+import { useWebLanguage } from "../webI18n";
 import "./providers.css";
 
 export interface ProvidersRouteProps {
@@ -61,13 +62,14 @@ const BURN_OPTIONS = [
 const TOP_PROVIDERS = 6;
 
 const TOKEN_MIX = [
-	{ key: "input", label: "Uncached input", color: "#5b8cff" },
+	{ key: "input", label: "Uncached input", color: "#4f9cf9" },
 	{ key: "cacheRead", label: "Cache read", color: "var(--chart-primary)" },
-	{ key: "cacheWrite", label: "Cache write", color: "#f5b54a" },
+	{ key: "cacheWrite", label: "Cache write", color: "var(--warn)" },
 	{ key: "output", label: "Output", color: "var(--chart-secondary)" },
 ] as const;
 
-const SNAPSHOT_HINT = "Usage snapshots accumulate whenever usage limits are fetched (TUI footer, /usage, omp usage).";
+const SNAPSHOT_HINT =
+	"Usage snapshots accumulate whenever usage limits are fetched (TUI footer, /usage, nightglide usage).";
 
 interface WindowRef {
 	provider: string;
@@ -80,7 +82,8 @@ export function ProvidersRoute({ active, range }: ProvidersRouteProps) {
 	});
 	const [metric, setMetric] = useState<BurnMetric>("tokens");
 	const [hidden, toggleHidden] = useHiddenSeries();
-	const meta = rangeMeta(range);
+	const { lang, t } = useWebLanguage();
+	const meta = rangeMeta(range, lang);
 
 	// Subscription windows load independently: insights for every provider
 	// first, then utilization series for the one provider being charted.
@@ -141,14 +144,11 @@ export function ProvidersRoute({ active, range }: ProvidersRouteProps) {
 
 	const burnSeries = view.burn[metric];
 	const burnFormat = metric === "cost" ? (v: number) => formatCost(v) : formatCompact;
-	const t = view.totals;
+	const totals = view.totals;
 
 	return (
 		<div className="page">
-			<PageHeader
-				title="Providers"
-				description={`Burn, reliability and subscription headroom per provider over ${meta.windowLabel}.`}
-			/>
+			<PageHeader title={t("providers.title")} description={t("providers.desc", { window: meta.windowLabel })} />
 
 			<QueryView query={stats} skeleton={<ChartSkeleton height={112} />}>
 				{({ providers }) => (
@@ -161,28 +161,28 @@ export function ProvidersRoute({ active, range }: ProvidersRouteProps) {
 							/>
 							<Stat
 								label="Requests"
-								value={formatInteger(t.requests)}
-								hint={`${formatInteger(t.failed)} failed`}
+								value={formatInteger(totals.requests)}
+								hint={`${formatInteger(totals.failed)} failed`}
 								spark={view.spark.requests}
 							/>
 							<Stat
 								label="Tokens"
 								title="Uncached input + cache reads + cache writes + output"
-								value={formatCompact(t.tokens)}
+								value={formatCompact(totals.tokens)}
 								spark={view.spark.tokens}
 							/>
 							<Stat
 								label="API-equivalent cost"
 								title="What this usage would cost at public API rates"
-								value={formatEstimatedCost(t.cost, t.unpriced)}
-								hint={t.unpriced > 0 ? `${formatInteger(t.unpriced)} unpriced` : undefined}
+								value={formatEstimatedCost(totals.cost, totals.unpriced)}
+								hint={totals.unpriced > 0 ? `${formatInteger(totals.unpriced)} unpriced` : undefined}
 								spark={view.spark.cost}
 								sparkColor="var(--chart-secondary)"
 							/>
 							<Stat
 								label="Error rate"
-								value={formatErrorRate(t.requests > 0 ? t.failed / t.requests : 0)}
-								hint={`${formatInteger(t.requests - t.failed)} succeeded`}
+								value={formatErrorRate(totals.requests > 0 ? totals.failed / totals.requests : 0)}
+								hint={`${formatInteger(totals.requests - totals.failed)} succeeded`}
 							/>
 						</StatGrid>
 					</div>
@@ -193,8 +193,8 @@ export function ProvidersRoute({ active, range }: ProvidersRouteProps) {
 				index={1}
 				title="Provider totals"
 				description={
-					t.unpriced > 0
-						? `Cost is an API-equivalent estimate and excludes ${formatInteger(t.unpriced)} unpriced subscription request${t.unpriced === 1 ? "" : "s"}. Select a row for its token mix.`
+					totals.unpriced > 0
+						? `Cost is an API-equivalent estimate and excludes ${formatInteger(totals.unpriced)} unpriced subscription request${totals.unpriced === 1 ? "" : "s"}. Select a row for its token mix.`
 						: "Cost is an API-equivalent estimate. Select a row for its token mix."
 				}
 				flush
@@ -210,7 +210,7 @@ export function ProvidersRoute({ active, range }: ProvidersRouteProps) {
 					index={2}
 					title="Burn by provider"
 					description={
-						metric === "cost" && t.unpriced > 0
+						metric === "cost" && totals.unpriced > 0
 							? `API-equivalent estimate per ${meta.bucketMs < 86_400_000 ? "hour" : "day"}; excludes unpriced subscription requests`
 							: `Per ${meta.bucketMs < 3_600_000 ? "5 minutes" : meta.bucketMs < 86_400_000 ? "hour" : "day"}, top ${TOP_PROVIDERS} providers stacked`
 					}
@@ -299,6 +299,7 @@ function ProviderTotalsTable({
 	providers: ProviderAggregate[];
 	colors: ReadonlyMap<string, string>;
 }) {
+	const { t } = useWebLanguage();
 	const [open, setOpen] = useState<string | null>(null);
 	const columns = useMemo<Column<ProviderAggregate>[]>(() => {
 		let maxRequests = 0;
@@ -428,7 +429,7 @@ function ProviderTotalsTable({
 			selectedKey={open}
 			onRowClick={p => setOpen(prev => (prev === p.provider ? null : p.provider))}
 			expanded={p => (p.provider === open ? <TokenMix provider={p} /> : null)}
-			empty={<EmptyState title="No requests in this range" />}
+			empty={<EmptyState title={t("providers.empty")} />}
 		/>
 	);
 }

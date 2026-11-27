@@ -1,5 +1,6 @@
 import { Check, ChevronDown, ChevronRight, Copy } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useWebLanguage } from "../webI18n";
 
 export interface JsonBlockProps {
 	data: unknown;
@@ -12,6 +13,7 @@ export function JsonBlock({ data, title = "JSON", initialCollapsed = false }: Js
 	const [collapsed, setCollapsed] = useState(initialCollapsed);
 	const [copied, setCopied] = useState(false);
 	const copyResetRef = useRef<number>(0);
+	const { t } = useWebLanguage();
 	const json = JSON.stringify(data, null, 2);
 
 	// Clear the pending "Copied" reset if the block unmounts (e.g. drawer close).
@@ -44,7 +46,7 @@ export function JsonBlock({ data, title = "JSON", initialCollapsed = false }: Js
 				</button>
 				<button type="button" className="btn" data-variant="ghost" data-size="sm" onClick={copy}>
 					{copied ? <Check size={13} /> : <Copy size={13} />}
-					{copied ? "Copied" : "Copy"}
+					{copied ? t("ui.copied") : t("ui.copy")}
 				</button>
 			</div>
 			{!collapsed && (

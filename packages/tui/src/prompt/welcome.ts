@@ -562,11 +562,13 @@ export const NIGHTGLIDE_LOGO = ["████    ████", "█████
 
 export const NIGHTGLIDE_LOGO_WIDTH = Math.max(...NIGHTGLIDE_LOGO.map(row => row.length));
 
-/** Nightglide wordmark in half-blocks. */
+/** Nightglide wordmark in solid block capitals (46x5 for crisp splash & lockup legibility). */
 export const NIGHTGLIDE_WORDMARK = [
-	"█▀▀▄ ▄ ▄▀▀█ █    █  ▄▀▀█ █ ▄    █ ▄▀▀▄",
-	"█  █ █ █▄▄█ █▀▀▄ █▄ █▄▄█ █ █ ▄▀▀█ █▄▄▀",
-	"       ▄▄▄▀          ▄▄▄▀              ",
+	"█   █ ███ ████ █  █ ███ ████ █   ███ ███  ████",
+	"██  █  █  █    █  █  █  █    █    █  █  █ █   ",
+	"█ █ █  █  █ ██ ████  █  █ ██ █    █  █  █ ███ ",
+	"█  ██  █  █  █ █  █  █  █  █ █    █  █  █ █   ",
+	"█   █ ███ ████ █  █  █  ████ ███ ███ ███  ████",
 ];
 
 export const NIGHTGLIDE_WORDMARK_WIDTH = Math.max(...NIGHTGLIDE_WORDMARK.map(row => row.length));
@@ -748,8 +750,17 @@ function lockup(
 			versionLine = `${padding(Math.max(0, wordWidth - visibleWidth(version)))}${version}`;
 		}
 	}
-	const beside = ["", ...wordmark.map(row => theme.bold(theme.fg("text", row))), versionLine];
-	return logo.map((row, index) => `${row}${padding(LOCKUP_GAP)}${beside[index] ?? ""}`);
+	const leftWidth = logo.reduce((max, row) => Math.max(max, visibleWidth(row)), 0);
+	const wordLines = wordmark.map(row => theme.bold(theme.fg("text", row)));
+	const beside = wordLines.length <= 3 ? ["", ...wordLines, versionLine] : [...wordLines, versionLine];
+	const totalRows = Math.max(logo.length, beside.length);
+	const out: string[] = [];
+	for (let index = 0; index < totalRows; index++) {
+		const left = logo[index] ?? padding(leftWidth);
+		const right = beside[index] ?? "";
+		out.push(right ? `${left}${padding(LOCKUP_GAP)}${right}` : left);
+	}
+	return out;
 }
 
 /**
@@ -776,6 +787,13 @@ const ABYSS_STOPS: ReadonlyArray<readonly [number, number, number]> = [
 	[145, 184, 188], // #91B8BC - Soft mist cyan
 ];
 
+const ABYSS_TRENCH_STOPS: ReadonlyArray<readonly [number, number, number]> = [
+	[0, 240, 255], // #00F0FF - Bioluminescent sonar cyan
+	[0, 229, 163], // #00E5A3 - Depth gauge emerald
+	[56, 189, 248], // #38BDF8 - Abyssal telemetry blue
+	[127, 161, 196], // #7FA1C4 - Titanium mist
+];
+
 const AURORA_STOPS: ReadonlyArray<readonly [number, number, number]> = [
 	[213, 166, 255], // #d5a6ff - Aurora violet (accent)
 	[126, 112, 165], // #7e70a5 - Twilight violet (dimGray)
@@ -800,6 +818,13 @@ const DAYBREAK_STOPS: ReadonlyArray<readonly [number, number, number]> = [
 	[176, 101, 72], // #B06548 - Soft terracotta
 ];
 
+const IRIS_STOPS: ReadonlyArray<readonly [number, number, number]> = [
+	[60, 125, 187], // #3C7DBB - Iris sky blue
+	[142, 87, 165], // #8E57A5 - Iris violet
+	[184, 78, 124], // #B84E7C - Cirrus rose
+	[37, 145, 98], // #259162 - Mint horizon
+];
+
 const UPSTREAM_STOPS: ReadonlyArray<readonly [number, number, number]> = [
 	[248, 79, 204], // oklch(0.7 0.24 340)
 	[147, 98, 244], // oklch(0.62 0.21 295)
@@ -811,9 +836,11 @@ export const GRADIENT_STOPS: ReadonlyArray<readonly [number, number, number]> = 
 
 /** 256-color ramp fallback when truecolor isn't available. */
 const GRADIENT_RAMP_256 = [206, 170, 134, 99, 69, 74, 44];
+const ABYSS_TRENCH_RAMP_256 = [51, 45, 49, 43, 39, 75, 117];
 /** 256-color ramps for light themes: deep anchors fading lighter across bright surfaces. */
 const CLOUDLIGHT_RAMP_256 = [61, 25, 24, 67, 74, 110, 152];
 const DAYBREAK_RAMP_256 = [131, 167, 138, 174, 181, 217, 224];
+const IRIS_RAMP_256 = [68, 97, 132, 133, 66, 36, 73];
 
 /**
  * True when the active theme paints a light background, so the glow trail must
@@ -853,12 +880,16 @@ export function gradientEscape(t: number, shine?: ShineConfig): string {
 			: isLightGlowTheme()
 				? currentTheme?.includes("daybreak")
 					? DAYBREAK_STOPS
-					: CLOUDLIGHT_STOPS
-				: currentTheme?.includes("aurora")
-					? AURORA_STOPS
-					: currentTheme?.includes("abyss")
-						? ABYSS_STOPS
-						: FLIGHT_STOPS;
+					: currentTheme?.includes("iris")
+						? IRIS_STOPS
+						: CLOUDLIGHT_STOPS
+				: currentTheme?.includes("trench")
+					? ABYSS_TRENCH_STOPS
+					: currentTheme?.includes("aurora")
+						? AURORA_STOPS
+						: currentTheme?.includes("abyss")
+							? ABYSS_STOPS
+							: FLIGHT_STOPS;
 		const seg = t * (stops.length - 1);
 		const i = Math.min(stops.length - 2, Math.floor(seg));
 		const f = seg - i;
@@ -878,11 +909,16 @@ export function gradientEscape(t: number, shine?: ShineConfig): string {
 		}
 		return `\x1b[38;2;${Math.round(r)};${Math.round(g)};${Math.round(bl)}m`;
 	}
+	const currentTheme = getCurrentThemeName();
 	const ramp = isLightGlowTheme()
-		? getCurrentThemeName()?.includes("daybreak")
+		? currentTheme?.includes("daybreak")
 			? DAYBREAK_RAMP_256
-			: CLOUDLIGHT_RAMP_256
-		: GRADIENT_RAMP_256;
+			: currentTheme?.includes("iris")
+				? IRIS_RAMP_256
+				: CLOUDLIGHT_RAMP_256
+		: currentTheme?.includes("trench")
+			? ABYSS_TRENCH_RAMP_256
+			: GRADIENT_RAMP_256;
 	let idx = Math.min(ramp.length - 1, Math.max(0, Math.floor(t * (ramp.length - 1) + 0.5)));
 	if (shineStrength > 0) {
 		const dist = Math.abs(t - shinePos);

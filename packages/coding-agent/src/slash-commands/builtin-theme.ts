@@ -8,6 +8,7 @@ const BUILTIN_THEMES: ReadonlyArray<SubcommandDef> = [
 	{ name: "flight", description: "Flight · dark" },
 	{ name: "cloudlight", description: "Flight · light" },
 	{ name: "abyss", description: "Dive · dark" },
+	{ name: "abyss-trench", description: "Dive · deep trench" },
 	{ name: "daybreak", description: "Dive · light" },
 	{ name: "aurora", description: "Aurora · dark" },
 	{ name: "iris", description: "Iris · light (rainbow clouds)" },
@@ -18,7 +19,11 @@ export function resolveThemeName(input: string, available: readonly string[]): s
 	const name = input.trim();
 	if (!name) return undefined;
 	if (available.includes(name)) return name;
-	const prefixed = `nightglide-${name.toLowerCase()}`;
+	const lower = name.toLowerCase();
+	if (lower === "trench" && available.includes("nightglide-abyss-trench")) {
+		return "nightglide-abyss-trench";
+	}
+	const prefixed = `nightglide-${lower}`;
 	return available.includes(prefixed) ? prefixed : undefined;
 }
 

@@ -24,17 +24,20 @@ import {
 	type SetupSceneHost,
 	type StyledLine,
 } from "./types";
+import { CustomProviderDialog, type CustomProviderDialogResult } from "./custom-provider";
 
 const SCENE_TITLE = "Sign in to your providers";
 /** Login dialog rows kept above a cut on short screens: top border, spacer, first sign-in link row. */
 const DIALOG_HEAD_ROWS = 3;
-const LIST_LEAD = "Pick a provider to sign in — you can connect more than one.";
+const CUSTOM_PROVIDER_ROW_ID = "nightglide:custom-provider";
+const LIST_LEAD = "Sign in to an account or add a custom Base URL provider (oMLX, Ollama, relays).";
 /** The provider sheet's subtitle: its title and rows already say "pick a provider". */
-const SHEET_LEAD = "You can connect more than one.";
+const SHEET_LEAD = "Connect an account or add a custom Base URL provider.";
 
 /** The last finished sign-in (`provider` is the display name): shown on the provider sheet (natively) or under the list (ANSI). */
 type SignInOutcome =
-	| { readonly kind: "success"; readonly provider: string }
+	| { readonly kind: "success"; readonly provider: string; readonly detail?: string }
+	| { readonly kind: "info"; readonly message: string }
 	| { readonly kind: "error"; readonly provider: string; readonly message: string };
 
 /**
@@ -57,6 +60,8 @@ export class SignInScene implements SetupSceneController {
 	#selector: OAuthSelectorComponent;
 	/** The login flow on screen; undefined while picking. */
 	#dialog: LoginDialogComponent | undefined;
+	/** The custom provider flow on screen; undefined while picking. */
+	#customDialog: CustomProviderDialog | undefined;
 	#outcome: SignInOutcome | undefined;
 	/** A sign-in succeeded in this scene: leaving the step reads "Continue". */
 	#signedIn = false;
@@ -70,10 +75,18 @@ export class SignInScene implements SetupSceneController {
 	constructor(host: SetupSceneHost) {
 		this.#host = host;
 		this.#authStorage = host.ctx.authStorage;
+		const leadingItems =
+			typeof host.ctx.saveCustomProvider === "function"
+				? [{ id: CUSTOM_PROVIDER_ROW_ID, name: "＋ Add custom provider (Base URL + key)", available: true }]
+				: undefined;
 		this.#selector = new OAuthSelectorComponent(
 			"login",
 			this.#authStorage,
 			providerId => {
+				if (providerId === CUSTOM_PROVIDER_ROW_ID) {
+					this.#openCustomProvider();
+					return;
+				}
 				void this.#login(providerId);
 			},
 			() => this.#host.finish(this.#signedIn ? "done" : "skipped"),
@@ -81,6 +94,7 @@ export class SignInScene implements SetupSceneController {
 				requestRender: () => this.#host.requestRender(),
 				disabledProviders: this.#host.ctx.disabledProviders,
 				sheet: this.#sheet(),
+				leadingItems,
 			},
 		);
 	}
@@ -89,6 +103,8 @@ export class SignInScene implements SetupSceneController {
 		this.#lifetime.abort();
 		this.#selector.stopValidation();
 		this.#dialog = undefined;
+		this.#customDialog?.dispose();
+		this.#customDialog = undefined;
 	}
 
 	invalidate(): void {
@@ -96,6 +112,7 @@ export class SignInScene implements SetupSceneController {
 		this.#step?.invalidate();
 		this.#selector.invalidate();
 		this.#dialog?.invalidate();
+		this.#customDialog?.invalidate();
 	}
 
 	handleInput(data: string): void {
@@ -103,16 +120,27 @@ export class SignInScene implements SetupSceneController {
 			this.#dialog.handleInput(data);
 			return;
 		}
+		if (this.#customDialog) {
+			this.#customDialog.handleInput(data);
+			return;
+		}
 		this.#selector.handleInput(data);
 	}
 
-	/** Forward mouse to the provider selector; the login dialog takes keys only. */
+	/** Forward mouse to the active selector or custom provider dialog; the login dialog takes keys only. */
 	routeMouse(event: SgrMouseEvent, line: number, col: number): void {
 		if (this.#dialog) return;
+		if (this.#customDialog) {
+			this.#customDialog.routeMouse(event, line, col);
+			return;
+		}
 		this.#step?.routeMouse(event, line, col);
 	}
 
 	render(width: number, maxLines?: number): readonly string[] {
+		if (this.#customDialog) {
+			return this.#customDialog.render(width, maxLines);
+		}
 		const dialog = this.#dialog;
 		if (dialog) {
 			// Short screens cut the middle: the head keeps the title and the first link row (every
@@ -158,10 +186,12 @@ export class SignInScene implements SetupSceneController {
 	 */
 	describe(cx: DescribeContext): NativeNode {
 		const dialog = this.#dialog;
+		const customDialog = this.#customDialog;
 		const sheet = cx.supports("picker");
 		const outcome = this.#outcome;
-		return this.#native.get([dialog, sheet, outcome, this.#selector], () => {
+		return this.#native.get([dialog, customDialog, sheet, outcome, this.#selector], () => {
 			if (dialog) return col([dialog]);
+			if (customDialog) return col([customDialog]);
 			if (sheet) return col([this.#selector]);
 			const children: NativeChild[] = [
 				node("text", { spans: [span(LIST_LEAD, "muted")] }, undefined, "intro"),
@@ -179,10 +209,12 @@ export class SignInScene implements SetupSceneController {
 		const outcome = this.#outcome;
 		let status: TspText | undefined;
 		if (outcome?.kind === "success") {
-			status = [
-				span(`Signed in to ${outcome.provider}.`, "success"),
-				span(" Add another provider or continue.", "muted"),
-			];
+			const headline = outcome.detail
+				? `Configured ${outcome.provider} (${outcome.detail}).`
+				: `Signed in to ${outcome.provider}.`;
+			status = [span(headline, "success"), span(" Add another provider or continue.", "muted")];
+		} else if (outcome?.kind === "info") {
+			status = [span(outcome.message, "muted")];
 		} else if (outcome?.kind === "error") {
 			status = [span(`Couldn't sign in to ${outcome.provider}: ${outcome.message}`, "error")];
 		}
@@ -201,10 +233,22 @@ export class SignInScene implements SetupSceneController {
 		const outcome = this.#outcome;
 		if (!outcome) return [];
 		if (outcome.kind === "success") {
+			if (outcome.detail) {
+				return [
+					{
+						text: `${theme.status.success} Configured ${outcome.provider} (${outcome.detail})`,
+						color: "success",
+					},
+					{ text: `Pick another provider or press ${editorKey("tui.select.cancel")} to continue.`, color: "dim" },
+				];
+			}
 			return [
 				{ text: `${theme.status.success} Signed in to ${outcome.provider}`, color: "success" },
 				{ text: `Credentials saved to ${getAgentDbPath()}`, color: "dim" },
 			];
+		}
+		if (outcome.kind === "info") {
+			return [{ text: outcome.message, color: "muted" }];
 		}
 		return [
 			{ text: `Login failed: ${outcome.message}`, color: "error" },
@@ -219,6 +263,34 @@ export class SignInScene implements SetupSceneController {
 		this.#outcome = outcome;
 		if (outcome?.kind === "success") this.#signedIn = true;
 		this.#selector.setSheet(this.#sheet());
+	}
+
+	#openCustomProvider(): void {
+		if (this.#dialog || this.#customDialog || this.#lifetime.signal.aborted) return;
+		const dialog = new CustomProviderDialog({
+			host: this.#host.ctx,
+			requestRender: () => this.#host.requestRender(),
+			onDone: result => this.#closeCustomProvider(dialog, result),
+			onCancel: () => this.#closeCustomProvider(dialog, undefined),
+		});
+		this.#customDialog = dialog;
+		this.#setOutcome(undefined);
+		this.#host.setFocus(dialog);
+		this.#host.requestRender();
+	}
+
+	#closeCustomProvider(dialog: CustomProviderDialog, result: CustomProviderDialogResult | undefined): void {
+		if (this.#customDialog !== dialog) return;
+		dialog.dispose();
+		this.#customDialog = undefined;
+		if (result?.kind === "saved") {
+			const detail = result.modelCount === 1 ? "1 model discovered" : `${result.modelCount} models discovered`;
+			this.#setOutcome({ kind: "success", provider: result.provider, detail });
+		} else if (result?.kind === "deleted") {
+			this.#setOutcome({ kind: "info", message: `Removed custom provider ${result.provider}.` });
+		}
+		this.#host.restoreFocus();
+		this.#host.requestRender();
 	}
 
 	/** Back to the provider list (Esc in the dialog, or the flow settled). */

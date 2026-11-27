@@ -1,9 +1,17 @@
 import { centerLine, visibleWidth } from "../../utils";
 import { padToWidth } from "../../render/utils";
-import { APP_NAME, VERSION } from "@oh-my-pi/pi-utils";
-import { gradientEscape, gradientLogo, lockupNode, PI_LOGO, type ShineConfig } from "../../prompt/welcome";
+import { CLI_NAME, VERSION } from "@oh-my-pi/pi-utils";
+import type { TspSpan } from "@oh-my-pi/pi-wire";
+import {
+	gradientEscape,
+	gradientLogo,
+	NIGHTGLIDE_LOGO,
+	NIGHTGLIDE_WORDMARK,
+	NIGHTGLIDE_WORDMARK_WIDTH,
+	type ShineConfig,
+} from "../../prompt/welcome";
+import { t } from "../../i18n";
 import { theme } from "../../theme/theme";
-import { formatKeyHint } from "../../app-keybindings";
 import { col, kbd, keyed, node, row, span, text } from "../../native/describe";
 import type { NativeNode } from "../../native/node";
 
@@ -11,7 +19,7 @@ export const SETUP_SPLASH_MS = 2600;
 export const SETUP_TICK_MS = 33;
 
 /** Brand mark at 2x: every glyph doubled horizontally, every row doubled vertically. */
-const LARGE_LOGO = PI_LOGO.flatMap(line => {
+const LARGE_LOGO = NIGHTGLIDE_LOGO.flatMap(line => {
 	let wide = "";
 	for (const char of line) {
 		wide += char === " " ? "  " : `${char}${char}`;
@@ -20,15 +28,16 @@ const LARGE_LOGO = PI_LOGO.flatMap(line => {
 });
 const LOGO_WIDTH = Math.max(...LARGE_LOGO.map(line => visibleWidth(line)));
 const LOGO_HEIGHT = LARGE_LOGO.length;
+const WORDMARK_HEIGHT = NIGHTGLIDE_WORDMARK.length;
 const RESET = "\x1b[0m";
 
 /** Full scene needs comfortable room; below this we drop to a centered mark. */
 const MIN_SCENE_WIDTH = 56;
 const MIN_SCENE_HEIGHT = 22;
 
-/** Skip affordance; built at render time so it follows the live symbol preset. */
+/** Skip affordance; localized and spelled in ASCII key text so terminal fallback fonts stay evenly spaced. */
 function skipHint(): string {
-	return `press ${formatKeyHint("enter")} to skip`;
+	return t("setup.skipHint", { key: "Enter" });
 }
 
 function starAt(x: number, y: number, frame: number): string {
@@ -158,11 +167,9 @@ function resetCells(width: number, height: number): string[][] {
 let diagonalEscapes: (string | undefined)[] = [];
 
 /**
- * Animated setup splash, in the spirit of the omp landing page: the brand π
- * mark rendered with the live diagonal gradient + shine sweep, rising out of a
- * rippling, gradient-lit water surface, under a faint twinkling starfield. The
- * mark and water share one continuous gradient so the sweep reads across the
- * whole scene; the water surface drifts each frame.
+ * Animated setup splash: Nightglide's delta mark and wordmark rendered with
+ * the live diagonal gradient + shine sweep, rising out of a rippling,
+ * gradient-lit water surface, under a faint twinkling starfield.
  */
 export function renderSetupSplash(width: number, height: number, elapsedMs: number): string[] {
 	const w = Math.max(1, width);
@@ -198,8 +205,11 @@ export function renderSetupSplash(width: number, height: number, elapsedMs: numb
 	};
 
 	const hx = Math.floor((w - LOGO_WIDTH) / 2);
-	const hy = Math.max(2, Math.floor(h * 0.16));
-	const waterTop = hy + LOGO_HEIGHT;
+	const hy = Math.max(1, Math.floor(h * 0.12));
+	const gap = h >= 30 ? 2 : 1;
+	const wy = hy + LOGO_HEIGHT + gap;
+	const wx = Math.floor((w - NIGHTGLIDE_WORDMARK_WIDTH) / 2);
+	const waterTop = wy + WORDMARK_HEIGHT + gap;
 
 	// 1. rippling water surface (shares the screen-wide gradient with the mark)
 	const field = getWaterField(w, h, cx, waterTop);
@@ -226,12 +236,22 @@ export function renderSetupSplash(width: number, height: number, elapsedMs: numb
 			if (star) put(x, y, star);
 		}
 	}
-	// 3. hero — the brand mark with the live gradient + shine sweep
+	// 3. hero — Nightglide delta mark and half-block wordmark with the live gradient + shine sweep
 	LARGE_LOGO.forEach((line, row) => {
 		let col = 0;
 		for (const ch of line) {
 			const x = hx + col;
 			const y = hy + row;
+			if (ch !== " " && y >= 0 && y < h && x >= 0 && x < w) cells[y][x] = gradient(x, y) + ch + RESET;
+			col++;
+		}
+	});
+	NIGHTGLIDE_WORDMARK.forEach((line, row) => {
+		const y = wy + row;
+		for (let x = wx - 1; x <= wx + NIGHTGLIDE_WORDMARK_WIDTH; x++) put(x, y, " ");
+		let col = 0;
+		for (const ch of line) {
+			const x = wx + col;
 			if (ch !== " " && y >= 0 && y < h && x >= 0 && x < w) cells[y][x] = gradient(x, y) + ch + RESET;
 			col++;
 		}
@@ -250,17 +270,42 @@ export function renderSetupSplash(width: number, height: number, elapsedMs: numb
 
 let splashNode: NativeNode | undefined;
 
+/** Nightglide native lockup for the TSP splash. */
+function nightglideSplashLockup(version: string): NativeNode {
+	const art = (spans: readonly TspSpan[], role: string): NativeNode =>
+		keyed(text(spans, { wrap: "none", role }), role);
+	return keyed(
+		row(
+			[
+				node("image", { builtin: "omp", alt: CLI_NAME, w: 128, role: "omp.welcome.logo" }, undefined, "logo"),
+				keyed(
+					col(
+						[
+							art([span(CLI_NAME, "strong")], "omp.welcome.wordmark"),
+							art([span(`v${version}`, "dim mono")], "omp.welcome.version"),
+						],
+						{ role: "omp.welcome.mark" },
+					),
+					"mark",
+				),
+			],
+			{ align: "center", gap: "md", role: "omp.welcome.lockup" },
+		),
+		"lockup",
+	);
+}
+
 /**
- * Native splash: omp's lockup as the welcome draws it (the builtin mark
- * drawing on beside the wordmark and version), centered, and a quiet Enter
- * hint pinned to the bottom. The water and starfield are cell paintings with
- * no semantic counterpart. A click anywhere sends `skip`.
+ * Native splash: Nightglide's lockup (the builtin mark drawing on beside the
+ * wordmark and version), centered, and a quiet Enter hint pinned to the bottom.
+ * The water and starfield are cell paintings with no semantic counterpart.
+ * A click anywhere sends `skip`.
  */
 export function describeSetupSplash(): NativeNode {
 	splashNode ??= col(
 		[
 			node("spacer", { grow: 1 }, undefined, "top"),
-			lockupNode(VERSION),
+			nightglideSplashLockup(VERSION),
 			node("spacer", { grow: 1 }, undefined, "bottom"),
 			keyed(
 				row([text([span("Press", "muted")]), kbd("enter"), text([span("to begin", "muted")])], {
@@ -278,8 +323,12 @@ export function describeSetupSplash(): NativeNode {
 
 /** Centered fallback for windows too small to hold the full scene. */
 function renderCompactSplash(width: number, height: number, phase: number, shine: ShineConfig): string[] {
-	const art = height >= 14 ? LARGE_LOGO : PI_LOGO;
-	const content = [...gradientLogo(art, phase, shine), "", theme.bold(APP_NAME)];
+	const art = height >= 14 ? LARGE_LOGO : NIGHTGLIDE_LOGO;
+	const wordmark =
+		width >= NIGHTGLIDE_WORDMARK_WIDTH + 2 && height >= 18
+			? gradientLogo(NIGHTGLIDE_WORDMARK, phase, shine)
+			: [theme.bold(CLI_NAME)];
+	const content = [...gradientLogo(art, phase, shine), "", ...wordmark];
 	const start = Math.max(0, Math.floor((height - content.length) / 2));
 	const lines: string[] = [];
 	for (let y = 0; y < height; y++) {

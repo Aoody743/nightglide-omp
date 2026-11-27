@@ -1025,7 +1025,8 @@ describe("composer inline shrink (#11007)", () => {
 	});
 
 	it("parks a collapsing block's slack below the reply instead of banding its history", async () => {
-		const rows = 50;
+		// 51 rows (instead of 50) keeps the 1-row Nightglide reply header on even block-pair scrollback parity.
+		const rows = 51;
 		const h = makeHarness(107, rows, 10);
 		const card = new InlineWidget();
 		card.rows = 25;

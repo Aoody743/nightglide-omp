@@ -1,8 +1,14 @@
+import * as fs from "node:fs/promises";
+import * as os from "node:os";
+import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, mock, vi } from "bun:test";
+import { YAML } from "bun";
 import type { Model } from "@oh-my-pi/pi-ai";
 import { buildModel } from "@oh-my-pi/pi-catalog/build";
 import * as updateCli from "@oh-my-pi/pi-coding-agent/cli/update-cli";
 import { runOnboardingSetup } from "@oh-my-pi/pi-coding-agent/commands/setup";
+import * as customProviders from "@oh-my-pi/pi-coding-agent/config/nightglide-custom-providers";
+import { cfgNightglideLocalModel, cfgNightglideRoutingMode } from "@oh-my-pi/pi-coding-agent/config/nightglide-routing";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import {
 	ALL_SCENES,
@@ -14,8 +20,12 @@ import {
 	type SetupSceneHost,
 	selectSetupScenes,
 } from "@oh-my-pi/pi-coding-agent/modes/setup";
+import { NIGHTGLIDE_WORDMARK } from "@oh-my-pi/pi-tui/prompt/welcome";
+import { describeSetupOutro, renderSetupOutro } from "@oh-my-pi/pi-tui/setup/scenes/outro";
 import { providersSetupScene } from "@oh-my-pi/pi-tui/setup/scenes/sign-in";
+import { describeSetupSplash, renderSetupSplash } from "@oh-my-pi/pi-tui/setup/scenes/splash";
 import { themeSetupScene } from "@oh-my-pi/pi-tui/setup/scenes/theme";
+import { updatesSetupScene } from "@oh-my-pi/pi-tui/setup/scenes/updates";
 import { SetupWizardComponent } from "@oh-my-pi/pi-tui/setup/wizard-overlay";
 import { setTerminalGlyphProtocol } from "@oh-my-pi/pi-tui/terminal-capabilities";
 import { initTheme, theme } from "@oh-my-pi/pi-tui/theme";
@@ -560,5 +570,504 @@ describe("omp setup onboarding trigger", () => {
 		).rejects.toThrow("exit");
 		expect(exitCode).toBe(1);
 		expect(stderr).toContain("interactive TTY");
+	});
+});
+
+describe("setup wizard Nightglide branding", () => {
+	it("uses Nightglide branding across splash, outro, updates, and header", async () => {
+		await initTheme(false, "unicode", false, "nightglide-flight", "nightglide-cloudlight");
+
+		const fullSplash = renderSetupSplash(80, 26, 0)
+			.map(line => Bun.stripANSI(line))
+			.join("\n");
+		expect(fullSplash).toContain(NIGHTGLIDE_WORDMARK[0]!.trim());
+		expect(fullSplash.toLowerCase()).not.toContain("omp");
+
+		const compactSplash = renderSetupSplash(40, 12, 0)
+			.map(line => Bun.stripANSI(line))
+			.join("\n");
+		expect(compactSplash).toContain("nightglide");
+		expect(compactSplash.toLowerCase()).not.toContain("omp");
+
+		expect(JSON.stringify(describeSetupSplash())).toContain("nightglide");
+
+		const ansiOutro = renderSetupOutro(80, 24, 0)
+			.map(line => Bun.stripANSI(line))
+			.join("\n");
+		expect(ansiOutro).toContain("Starting nightglide…");
+		expect(ansiOutro.toLowerCase()).not.toContain("omp");
+		expect(JSON.stringify(describeSetupOutro("omlx/qwen3"))).toContain("Starting nightglide…");
+
+		const updatesController = updatesSetupScene.mount({
+			ctx: { autoUpdate: false } as unknown as SetupSceneHost["ctx"],
+			requestRender: () => {},
+			finish: () => {},
+			setFocus: () => {},
+			restoreFocus: () => {},
+		});
+		const updatesFrame = updatesController
+			.render(80)
+			.map(line => Bun.stripANSI(line))
+			.join("\n");
+		expect(updatesSetupScene.title).toBe("Keep nightglide up to date");
+		expect(updatesFrame).toContain("whatever installed nightglide");
+		expect(updatesFrame.toLowerCase()).not.toContain("omp");
+
+		const component = new SetupWizardComponent(
+			createSetupHost({
+				settings: Settings.isolated(),
+				ui: { terminal: { rows: 24 }, setFocus: () => {}, requestRender: () => {} },
+			} as unknown as InteractiveModeContext),
+			[updatesSetupScene],
+		);
+		try {
+			void component.run();
+			component.handleInput("\r");
+			const realNow = performance.now.bind(performance);
+			vi.spyOn(performance, "now").mockImplementation(() => realNow() + 1_000);
+			const sceneFrame = component
+				.render(80)
+				.map(line => Bun.stripANSI(line))
+				.join("\n");
+			expect(sceneFrame).toContain("nightglide");
+			expect(sceneFrame).not.toMatch(/\bomp\b/i);
+		} finally {
+			vi.restoreAllMocks();
+			component.dispose();
+		}
+	});
+});
+
+describe("setup wizard routing scene", () => {
+	const LOCAL_MODEL: Model = buildModel({
+		id: "qwen3-local",
+		name: "Qwen3 Local",
+		api: "openai-completions",
+		provider: "omlx",
+		baseUrl: "http://127.0.0.1:8000/v1",
+		reasoning: false,
+		input: ["text"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 32_000,
+		maxTokens: 4_096,
+	});
+	const CLOUD_MODEL: Model = buildModel({
+		id: "claude-sonnet-4-5",
+		name: "Claude Sonnet 4.5",
+		api: "anthropic-messages",
+		provider: "anthropic",
+		baseUrl: "https://api.anthropic.com",
+		reasoning: true,
+		input: ["text"],
+		cost: { input: 3, output: 15, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 200_000,
+		maxTokens: 8_192,
+	});
+
+	function mountRouting(settings: Settings, available: Model[], current?: Model) {
+		const finished: string[] = [];
+		const host = bindSceneHost({
+			ctx: {
+				settings,
+				session: {
+					model: current,
+					modelRegistry: {
+						getAvailable: () => available,
+						getAll: () => available,
+					},
+					effectiveServiceTier: () => undefined,
+				},
+				ui: { terminal: { rows: 30 } },
+			},
+			requestRender: () => {},
+			finish: (next: string) => finished.push(next),
+			setFocus: () => {},
+			restoreFocus: () => {},
+		} as unknown as SetupApplicationSceneHost);
+		const scene = ALL_SCENES.find(candidate => candidate.id === "routing");
+		expect(scene).toBeDefined();
+		return { controller: scene!.mount(host), finished };
+	}
+
+	it("selects the routing scene for users upgrading from setupVersion 3", async () => {
+		vi.spyOn(updateCli, "canSelfUpdate").mockResolvedValue(false);
+		try {
+			const selected = await selectSetupScenes(3, ALL_SCENES, fakeContextWithConfiguredModel(), { isTTY: true });
+			expect(selected.map(scene => scene.id)).toEqual(["routing"]);
+		} finally {
+			vi.restoreAllMocks();
+		}
+	});
+
+	it("shows cloud vs local disclosure and persists explicit localModel pin and auto-detect reset", async () => {
+		await initTheme(false, "unicode", false, "nightglide-flight", "nightglide-cloudlight");
+		const settings = Settings.isolated();
+		cfgNightglideLocalModel.set(settings, "omlx/stale");
+		const { controller, finished } = mountRouting(settings, [CLOUD_MODEL, LOCAL_MODEL], CLOUD_MODEL);
+
+		// Quick key "2" highlights Local and updates the cloud vs local disclosure without committing.
+		controller.handleInput?.("2");
+		const disclosure = controller
+			.render(100, 24)
+			.map(line => Bun.stripANSI(line))
+			.join("\n");
+		expect(disclosure).toContain("Where requests go (cloud vs local):");
+		expect(disclosure).toContain("1 local chat model detected");
+		expect(cfgNightglideRoutingMode.get(settings)).toBe("manual");
+
+		// Enter enters the optional localModel step; Esc returns to mode selection without saving.
+		controller.handleInput?.("\r");
+		const localStep = controller
+			.render(100, 24)
+			.map(line => Bun.stripANSI(line))
+			.join("\n");
+		expect(localStep).toContain("Auto-detect local model");
+		expect(localStep).toContain("omlx/qwen3-local");
+		controller.handleInput?.("\x1b");
+		expect(finished).toEqual([]);
+
+		// Enter Local again, pick "omlx/qwen3-local", and verify both settings persist.
+		controller.handleInput?.("\r");
+		controller.handleInput?.("\x1b[B");
+		controller.handleInput?.("\r");
+		await Bun.sleep(10);
+		expect(finished).toEqual(["done"]);
+		expect(cfgNightglideRoutingMode.get(settings)).toBe("local");
+		expect(cfgNightglideLocalModel.get(settings)).toBe("omlx/qwen3-local");
+
+		// Choosing Auto-detect clears an explicit nightglide.localModel pin (the existing pin starts preselected).
+		const next = mountRouting(settings, [LOCAL_MODEL]);
+		next.controller.handleInput?.("\r"); // Local is preselected -> opens localModel list
+		next.controller.handleInput?.("\x1b[A"); // Move up from preselected omlx/qwen3-local to Auto-detect
+		next.controller.handleInput?.("\r");
+		await Bun.sleep(10);
+		expect(next.finished).toEqual(["done"]);
+		expect(cfgNightglideLocalModel.get(settings)).toBeUndefined();
+	});
+
+	it("warns when Local is chosen without local models and persists balanced/performance directly", async () => {
+		await initTheme(false, "unicode", false, "nightglide-flight", "nightglide-cloudlight");
+		const settings = Settings.isolated();
+		const { controller, finished } = mountRouting(settings, [CLOUD_MODEL], CLOUD_MODEL);
+
+		controller.handleInput?.("2");
+		controller.handleInput?.("\r");
+		const warningFrame = controller
+			.render(100, 24)
+			.map(line => Bun.stripANSI(line))
+			.join("\n");
+		expect(warningFrame).toContain("No local model is currently reachable");
+		expect(warningFrame).toContain("Choose another routing mode");
+
+		// Go back to mode list via the second option, then pick Balanced ("3").
+		controller.handleInput?.("\x1b[B");
+		controller.handleInput?.("\r");
+		controller.handleInput?.("3");
+		controller.handleInput?.("\r");
+		await Bun.sleep(10);
+		expect(finished).toEqual(["done"]);
+		expect(cfgNightglideRoutingMode.get(settings)).toBe("balanced");
+	});
+
+	it("skips without persisting when Esc is pressed on mode selection and warns when overridden", async () => {
+		await initTheme(false, "unicode", false, "nightglide-flight", "nightglide-cloudlight");
+		const settings = Settings.isolated({ "nightglide.routingMode": "performance" });
+		const { controller, finished } = mountRouting(settings, [CLOUD_MODEL]);
+
+		const frame = controller
+			.render(100, 24)
+			.map(line => Bun.stripANSI(line))
+			.join("\n");
+		expect(frame).toContain("runtime config currently overrides nightglide.routingMode");
+
+		const globalOnly = Settings.isolated();
+		cfgNightglideRoutingMode.set(globalOnly, "performance");
+		const next = mountRouting(globalOnly, [CLOUD_MODEL]);
+		next.controller.handleInput?.("1");
+		next.controller.handleInput?.("\x1b");
+		expect(next.finished).toEqual(["skipped"]);
+		expect(cfgNightglideRoutingMode.get(globalOnly)).toBe("performance");
+		expect(finished).toEqual([]);
+	});
+});
+
+describe("setup wizard custom provider sign-in", () => {
+	let tempDir: string;
+
+	beforeEach(async () => {
+		tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "ng-setup-custom-provider-"));
+	});
+
+	afterEach(async () => {
+		vi.restoreAllMocks();
+		await fs.rm(tempDir, { recursive: true, force: true });
+	});
+
+	function mountSignInWithTempRegistry(
+		options: {
+			onRefresh?: (modelsMap: Map<string, Model[]>, discoveryErrors: Map<string, string>) => void;
+		} = {},
+	) {
+		const storedKeys = new Map<string, unknown>();
+		const modelsByProvider = new Map<string, Model[]>();
+		const discoveryErrors = new Map<string, string>();
+		const origList = customProviders.listCustomProviders;
+		const origSave = customProviders.saveCustomProvider;
+		const origRemove = customProviders.removeCustomProvider;
+		vi.spyOn(customProviders, "listCustomProviders").mockImplementation(() => origList(tempDir));
+		vi.spyOn(customProviders, "saveCustomProvider").mockImplementation(input => origSave(input, tempDir));
+		vi.spyOn(customProviders, "removeCustomProvider").mockImplementation(id => origRemove(id, tempDir));
+
+		const state = {
+			focus: undefined as { handleInput?(data: string): void; pasteText?(text: string): void } | undefined,
+			finished: [] as string[],
+		};
+		const ctx = {
+			settings: Settings.isolated(),
+			ui: { terminal: { rows: 30 }, setFocus: () => {}, requestRender: () => {} },
+			session: {
+				effectiveServiceTier: () => undefined,
+				refreshScopedModels: async () => {},
+				modelRegistry: {
+					authStorage: {
+						credentials: {
+							has: (id: string) => storedKeys.has(id),
+							set: async (id: string, cred: unknown) => {
+								storedKeys.set(id, cred);
+							},
+							remove: async (id: string) => {
+								storedKeys.delete(id);
+							},
+						},
+						keys: { source: () => undefined },
+					},
+					getAvailable: () => [...modelsByProvider.values()].flat(),
+					getAll: () => [...modelsByProvider.values()].flat(),
+					refresh: async () => {
+						options.onRefresh?.(modelsByProvider, discoveryErrors);
+					},
+					getProviderDiscoveryState: (id: string) => {
+						const err = discoveryErrors.get(id);
+						return err ? { provider: id, status: "unavailable", error: err } : undefined;
+					},
+				},
+			},
+		} as unknown as InteractiveModeContext;
+
+		const scene = providersSetupScene.mount({
+			ctx: createSetupHost(ctx),
+			requestRender: () => {},
+			finish: res => state.finished.push(res),
+			setFocus: component => {
+				state.focus = component ?? undefined;
+			},
+			restoreFocus: () => {
+				state.focus = undefined;
+			},
+		});
+		return { scene, state, storedKeys };
+	}
+
+	async function flushAsync() {
+		for (let i = 0; i < 6; i++) await Bun.sleep(5);
+	}
+
+	it("adds a custom provider with masked key, writes models.yml, stores key, and reports discovered models", async () => {
+		await initTheme(false, "unicode", false, "nightglide-flight", "nightglide-cloudlight");
+		const secret = `sk-test-${crypto.randomUUID()}`;
+		const { scene, state, storedKeys } = mountSignInWithTempRegistry({
+			onRefresh: modelsMap => {
+				modelsMap.set("my-relay", [
+					buildModel({
+						id: "qwen3-coder",
+						name: "Qwen3 Coder",
+						api: "openai-completions",
+						provider: "my-relay",
+						baseUrl: "http://127.0.0.1:8000/v1",
+						reasoning: false,
+						input: ["text"],
+						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+						contextWindow: 64_000,
+						maxTokens: 8_192,
+					}),
+				]);
+			},
+		});
+		try {
+			// Leading item is "+ Add custom provider (Base URL + key)".
+			expect(
+				scene
+					.render(100)
+					.map(l => Bun.stripANSI(l))
+					.join("\n"),
+			).toContain("Add custom provider");
+			scene.handleInput?.("\r");
+			await flushAsync();
+
+			// Step 1: provider name
+			state.focus?.pasteText?.("my-relay");
+			scene.handleInput?.("\r");
+			// Step 2: Base URL
+			state.focus?.pasteText?.("http://127.0.0.1:8000/v1");
+			scene.handleInput?.("\r");
+			// Step 3: API type (default OpenAI-compatible)
+			scene.handleInput?.("\r");
+			// Step 4: masked API key — secret must never render in plaintext
+			state.focus?.pasteText?.(secret);
+			const keyFrame = scene
+				.render(100)
+				.map(l => Bun.stripANSI(l))
+				.join("\n");
+			expect(keyFrame).not.toContain(secret);
+			scene.handleInput?.("\r");
+			await flushAsync();
+
+			const yml = YAML.parse(await Bun.file(path.join(tempDir, "models.yml")).text()) as Record<
+				string,
+				Record<string, unknown>
+			>;
+			expect(yml.providers["my-relay"]).toEqual({
+				baseUrl: "http://127.0.0.1:8000/v1",
+				api: "openai-completions",
+				discovery: { type: "openai-models-list" },
+			});
+			expect(storedKeys.get("my-relay")).toEqual({ type: "api_key", key: secret });
+			const backFrame = scene
+				.render(100)
+				.map(l => Bun.stripANSI(l))
+				.join("\n");
+			expect(backFrame).toContain("Configured my-relay (1 model discovered)");
+			scene.handleInput?.("\x1b");
+			expect(state.finished).toEqual(["done"]);
+		} finally {
+			scene.dispose?.();
+		}
+	});
+
+	it("redacts keys on discovery failure and lets the user edit settings and retry", async () => {
+		await initTheme(false, "unicode", false, "nightglide-flight", "nightglide-cloudlight");
+		const secret = `sk-leak-${crypto.randomUUID()}`;
+		let attempt = 0;
+		const { scene, state } = mountSignInWithTempRegistry({
+			onRefresh: (modelsMap, errors) => {
+				attempt++;
+				if (attempt === 1) {
+					errors.set("relay-fail", `401 invalid bearer ${secret}`);
+				} else {
+					errors.delete("relay-fail");
+					modelsMap.set("relay-fail", [
+						buildModel({
+							id: "m1",
+							name: "M1",
+							api: "openai-completions",
+							provider: "relay-fail",
+							baseUrl: "http://127.0.0.1:9000/v1",
+							reasoning: false,
+							input: ["text"],
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+							contextWindow: 32_000,
+							maxTokens: 4_096,
+						}),
+					]);
+				}
+			},
+		});
+		try {
+			scene.handleInput?.("\r");
+			await flushAsync();
+			state.focus?.pasteText?.("relay-fail");
+			scene.handleInput?.("\r");
+			state.focus?.pasteText?.("http://127.0.0.1:9999/v1");
+			scene.handleInput?.("\r");
+			scene.handleInput?.("\r");
+			state.focus?.pasteText?.(secret);
+			scene.handleInput?.("\r");
+			await flushAsync();
+
+			const errorFrame = scene
+				.render(100)
+				.map(l => Bun.stripANSI(l))
+				.join("\n");
+			expect(errorFrame).toContain("model discovery failed");
+			expect(errorFrame).toContain("[redacted]");
+			expect(errorFrame).not.toContain(secret);
+
+			// Choose "Edit settings & retry" and update URL
+			scene.handleInput?.("\r");
+			expect(
+				scene
+					.render(100)
+					.map(l => Bun.stripANSI(l))
+					.join("\n"),
+			).toContain("Base URL");
+			scene.handleInput?.("\r"); // submit Base URL
+			scene.handleInput?.("\r"); // submit API type
+			scene.handleInput?.("\r"); // empty key keeps existing stored key
+			await flushAsync();
+
+			expect(
+				scene
+					.render(100)
+					.map(l => Bun.stripANSI(l))
+					.join("\n"),
+			).toContain("Configured relay-fail (1 model discovered)");
+		} finally {
+			scene.dispose?.();
+		}
+	});
+
+	it("cancels custom provider setup on Esc without writing models.yml", async () => {
+		await initTheme(false, "unicode", false, "nightglide-flight", "nightglide-cloudlight");
+		const { scene, state } = mountSignInWithTempRegistry();
+		try {
+			scene.handleInput?.("\r");
+			await flushAsync();
+			state.focus?.pasteText?.("aborted-relay");
+			scene.handleInput?.("\x1b");
+			expect(state.focus).toBeUndefined();
+			expect(await Bun.file(path.join(tempDir, "models.yml")).exists()).toBe(false);
+		} finally {
+			scene.dispose?.();
+		}
+	});
+
+	it("lists existing custom providers and deletes one on confirmation", async () => {
+		await initTheme(false, "unicode", false, "nightglide-flight", "nightglide-cloudlight");
+		await customProviders.saveCustomProvider(
+			{ id: "old-local", baseUrl: "http://127.0.0.1:8000/v1", api: "openai-completions" },
+			tempDir,
+		);
+		const { scene, state, storedKeys } = mountSignInWithTempRegistry();
+		await storedKeys.set("old-local", { type: "api_key", key: "k" });
+		try {
+			scene.handleInput?.("\r");
+			await flushAsync();
+			const menuFrame = scene
+				.render(100)
+				.map(l => Bun.stripANSI(l))
+				.join("\n");
+			expect(menuFrame).toContain("old-local");
+
+			// Move down to "old-local" -> Enter -> move down to "Delete custom provider" -> Enter -> move down to "Delete old-local" -> Enter
+			scene.handleInput?.("\x1b[B");
+			scene.handleInput?.("\r");
+			scene.handleInput?.("\x1b[B");
+			scene.handleInput?.("\r");
+			scene.handleInput?.("\x1b[B");
+			scene.handleInput?.("\r");
+			await flushAsync();
+
+			expect(state.focus).toBeUndefined();
+			expect(storedKeys.has("old-local")).toBe(false);
+			expect(await customProviders.listCustomProviders(tempDir)).toEqual([]);
+			expect(
+				scene
+					.render(100)
+					.map(l => Bun.stripANSI(l))
+					.join("\n"),
+			).toContain("Removed custom provider old-local.");
+		} finally {
+			scene.dispose?.();
+		}
 	});
 });

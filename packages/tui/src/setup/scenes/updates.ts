@@ -9,7 +9,7 @@ import { Memo } from "../../native/memo";
 import type { SetupScene, SetupSceneController, SetupSceneHost } from "./types";
 
 const INTRO =
-	"Updates install through whatever installed omp: the standalone binary, Homebrew, mise, bun, or npm. Change this later in /settings.";
+	"Updates install through whatever installed nightglide: the standalone binary, Homebrew, mise, bun, or npm. Change this later in /settings.";
 
 const UPDATE_ITEMS: readonly SelectItem[] = [
 	{
@@ -25,7 +25,7 @@ const UPDATE_ITEMS: readonly SelectItem[] = [
 ];
 
 class UpdatesSceneController implements SetupSceneController {
-	title = "Keep omp up to date";
+	title = "Keep nightglide up to date";
 	subtitle = "Choose how new releases reach you.";
 	#selectList: SelectList;
 	#committing = false;
@@ -103,12 +103,12 @@ class UpdatesSceneController implements SetupSceneController {
 }
 
 /**
- * Opt in to background self-update (`update.auto`). Skipped where omp cannot
- * update itself, notably under Tern, which keeps its omp current on its own.
+ * Opt in to background self-update (`update.auto`). Skipped where nightglide cannot
+ * update itself, notably under Tern, which keeps it current on its own.
  */
 export const updatesSetupScene: SetupScene = {
 	id: "auto-update",
-	title: "Keep omp up to date",
+	title: "Keep nightglide up to date",
 	step: "Updates",
 	minVersion: 3,
 	shouldRun: ctx => ctx.canAutoUpdate(),

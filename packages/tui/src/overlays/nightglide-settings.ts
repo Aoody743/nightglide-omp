@@ -34,6 +34,7 @@ import {
 } from "../chrome/overlay-box";
 import { TextFormField } from "../components/form";
 import { type PixelEncoder, renderPixelScene } from "../components/nightglide-pixel-scene";
+import { renderNightglideRobot } from "../components/nightglide-robot";
 import { familyFor, onBg, sceneCellPixels } from "../components/nightglide-shell";
 import { getLanguage, onLanguageChange, setLanguage, t, type TextKey } from "../i18n";
 import { formatKeyHints, type KeyName } from "../key-hint-format";
@@ -171,6 +172,7 @@ interface SegmentRow {
 	label: TextKey;
 	desc?: TextKey;
 	options: () => readonly SegmentOption[];
+	preview?: (value: string, plain: boolean, ascii: boolean) => readonly string[];
 }
 
 interface LevelRow {
@@ -366,6 +368,14 @@ function composerOptions(): SegmentOption[] {
 	}));
 }
 
+function robotStyleOptions(): SegmentOption[] {
+	return (["auto", "glider", "cat", "owl", "diver", "prism"] as const).map(value => ({
+		value,
+		label: t(`common.robotStyle.${value}` as TextKey),
+		desc: t(`common.robotStyle.${value}Desc` as TextKey),
+	}));
+}
+
 /** A setting's value as display text (undefined becomes ""). */
 function textValue(value: unknown): string {
 	if (value === undefined || value === null) return "";
@@ -397,10 +407,14 @@ function wrapCells(text: string, width: number): string[] {
 	return lines;
 }
 
-/** Short display name: `nightglide-flight` → `Flight`; custom themes keep their name. */
+/** Short display name: `nightglide-flight` → `Flight`, `nightglide-abyss-trench` → `Abyss Trench`; custom themes keep their name. */
 function displayName(name: string): string {
-	const short = name.startsWith("nightglide-") ? name.slice("nightglide-".length) : name;
-	return short.charAt(0).toUpperCase() + short.slice(1);
+	if (!name.startsWith("nightglide-")) return name.charAt(0).toUpperCase() + name.slice(1);
+	const short = name.slice("nightglide-".length);
+	return short
+		.split("-")
+		.map(part => part.charAt(0).toUpperCase() + part.slice(1))
+		.join(" ");
 }
 
 /** Card grid for `count` cards on `width`: cards per line and each card's width. */
@@ -647,6 +661,32 @@ export class NightglideSettingsComponent implements Component {
 						label: "common.composer",
 						desc: "common.composer.desc",
 						options: composerOptions,
+					},
+					{
+						kind: "segment",
+						path: "nightglide.robotStyle",
+						label: "common.robotStyle",
+						desc: "common.robotStyle.desc",
+						options: robotStyleOptions,
+						preview: (value, plain, ascii) => {
+							const active = getCurrentThemeName();
+							const fam = familyFor(active);
+							const mode = theme.getColorMode();
+							const light = active ? isLightTheme(active) : false;
+							const sprite = renderNightglideRobot({
+								kind: fam.kind,
+								style: value || "auto",
+								light,
+								state: "idle",
+								motion: false,
+								colorMode: mode,
+								cellPixels: ascii ? 1 : plain ? 2 : sceneCellPixels(),
+								plain,
+								ascii,
+								pageBg: fam.scene.page,
+							});
+							return sprite.map(line => (plain ? stripTerminalSequences(line) : line));
+						},
 					},
 				];
 			case "model":
@@ -1081,8 +1121,14 @@ export class NightglideSettingsComponent implements Component {
 		const desc = currentOption
 			? (currentOption.desc ?? (row.desc ? t(row.desc) : undefined))
 			: t("set.other", { value: current });
+		const previewLines = row.preview ? row.preview(current, this.#plain, this.ascii).map(line => `  ${line}`) : [];
 		return {
-			lines: [this.#paintRow(lines[0]!, width, focused), ...lines.slice(1), ...this.#descTextLinesIf(desc, width)],
+			lines: [
+				this.#paintRow(lines[0]!, width, focused),
+				...lines.slice(1),
+				...previewLines,
+				...this.#descTextLinesIf(desc, width),
+			],
 			hits,
 		};
 	}

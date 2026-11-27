@@ -4,22 +4,22 @@
  * legible hues and the same key on the same hue across charts of one page.
  */
 
-/** Ten mid-luminance hues that read on both the black and the white chassis. */
+/** Ten mid-luminance hues aligned with Nightglide's twilight/cyan/indigo/gold palette that read on both themes. */
 export const SERIES_COLORS = [
-	"#5ad8e6", // cyan
-	"#ed4abf", // pink
-	"#9d7bff", // violet
-	"#f5b54a", // amber
-	"#4ade80", // green
-	"#5b8cff", // blue
-	"#ff7a59", // coral
-	"#2dd4bf", // teal
-	"#c3e94f", // lime
-	"#fb7185", // rose
+	"#00dbe4", // aqua cyan
+	"#7c8bff", // sky indigo
+	"#e8a838", // warm gold
+	"#2ee6a6", // emerald mint
+	"#9b9eff", // twilight periwinkle
+	"#4f9cf9", // azure blue
+	"#f27c54", // horizon coral
+	"#14b8a6", // deep teal
+	"#a78bfa", // iris violet
+	"#e57399", // twilight rose
 ];
 
 /** Neutral used for "Other" rollups and unknown buckets. */
-export const OTHER_COLOR = "#6c6c74";
+export const OTHER_COLOR = "#6c7ba3";
 
 /** Stable identity of a model across providers: `model::provider`. */
 export function modelKey(model: string, provider: string): string {

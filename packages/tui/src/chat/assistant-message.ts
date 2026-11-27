@@ -1,6 +1,7 @@
 import type { AssistantMessage, ImageContent, TextContent } from "@oh-my-pi/pi-ai";
 import { presentNarrationAsAnswer } from "@oh-my-pi/pi-ai/utils/narration";
 import { type Component, Container } from "../tui";
+import { Ellipsis, stripTerminalSequences, truncateToWidth, visibleWidth } from "../utils";
 import { Image, type ImageBudget } from "../components/image";
 import { ImageProtocol, TERMINAL } from "../terminal-capabilities";
 import {
@@ -45,8 +46,11 @@ import {
 	activeThinkingEffort,
 	effortLadderBadgeToken,
 	effortLadderGlyph,
+	effortLadderToken,
 	effortPulseFrameToken,
 	effortPulseFrames,
+	effortRung,
+	type EffortRung,
 	themeThinkingWord,
 } from "./effort-ladder";
 import { resolveAssistantErrorPresentation } from "./transcript-render-helpers";
@@ -97,6 +101,42 @@ function effortHeadBadge(level: string | undefined): { text: string; token: Them
 	return { text: `${glyph} ${themeThinkingWord(display, level)}`, token };
 }
 
+const EFFORT_BAR_CELLS = 5;
+const EFFORT_BAR_FILL: Record<EffortRung, number> = {
+	minimal: 1,
+	low: 2,
+	medium: 3,
+	high: 4,
+	xhigh: 5,
+};
+
+/**
+ * Render the Nightglide assistant card header row (`✦ Nightglide` plus a
+ * segmented effort bar only when `effortLevel` resolves to a named rung).
+ * Bounded by `Math.min(width, 90)` to uphold the 90-column prose constraint.
+ */
+function renderAssistantHeader(width: number, effortLevel: string | undefined): string {
+	const rowWidth = Math.max(0, Math.min(width, 90));
+	if (rowWidth === 0) return "";
+	const brand = ` ${theme.fg("accent", "✦")} ${theme.bold(theme.fg("text", "Nightglide"))}`;
+	const rung = effortRung(effortLevel);
+	if (rung && effortLevel) {
+		const token = effortLadderToken(effortLevel) ?? "accent";
+		const glyph = effortLadderGlyph(effortLevel);
+		const displayWord = themeThinkingWord(
+			theme.thinking[effortLevel as keyof Theme["thinking"]] ?? effortLevel,
+			effortLevel,
+		);
+		const filled = EFFORT_BAR_FILL[rung];
+		const bar = `${theme.fg(token, "▰".repeat(filled))}${theme.fg("dim", "▱".repeat(EFFORT_BAR_CELLS - filled))}`;
+		const effortChip = `${theme.fg(token, glyph)} ${bar} ${theme.fg(token, displayWord)}`;
+		if (visibleWidth(brand) + 2 + visibleWidth(effortChip) <= rowWidth) {
+			return `${brand}  ${effortChip}`;
+		}
+	}
+	return truncateToWidth(brand, rowWidth, Ellipsis.Unicode);
+}
+
 type ThinkingContentBlock = Extract<AssistantMessage["content"][number], { type: "thinking" }>;
 /**
  * Prose markdown component enforcing GATE-DIM-003: typesetting column width is
@@ -134,6 +174,8 @@ interface StableSnapshot {
 	readonly lastTextLength: number;
 	/** The final part ends inside a locked table that kept streaming (see Markdown.openTableTail). */
 	readonly openTable: boolean;
+	/** Thinking effort latched onto row 0 when the first stable snapshot published. */
+	readonly headerEffort: string | undefined;
 }
 
 /**
@@ -655,6 +697,13 @@ export class AssistantMessageComponent extends Container {
 	readonly #imageBudget?: ImageBudget;
 	#proseOnlyThinking: boolean;
 	#expandThinkingBlocks: boolean;
+	#renderedCache?: {
+		content: readonly string[];
+		width: number;
+		effort: string | undefined;
+		themeEpoch: number;
+		rows: readonly string[];
+	};
 
 	constructor(
 		message?: AssistantMessage,
@@ -731,6 +780,7 @@ export class AssistantMessageComponent extends Container {
 
 	override invalidate(): void {
 		super.invalidate();
+		this.#renderedCache = undefined;
 		// Theme/symbol changes arrive via invalidate(). Fast-path children captured
 		// their theme at construction, so drop them and force the teardown path to
 		// rebuild with the current theme. Streaming updates call updateContent()
@@ -746,6 +796,7 @@ export class AssistantMessageComponent extends Container {
 
 	override releaseRenderCaches(): void {
 		super.releaseRenderCaches();
+		this.#renderedCache = undefined;
 		this.#dropStableRenders();
 		this.#emergencyText?.releaseRenderCaches();
 	}
@@ -949,7 +1000,27 @@ export class AssistantMessageComponent extends Container {
 	}
 
 	override render(width: number): readonly string[] {
-		const rows = super.render(width);
+		const contentRows = super.render(width);
+		if (!contentRows.some(row => stripTerminalSequences(row).trim().length > 0)) {
+			this.#renderedCache = undefined;
+			this.#publishStableSnapshot(contentRows, width);
+			return contentRows;
+		}
+		const effort = this.#stableSnapshots.length > 0 ? this.#stableSnapshots[0]!.headerEffort : activeThinkingEffort();
+		const themeEpoch = getThemeEpoch();
+		const cached = this.#renderedCache;
+		if (
+			cached &&
+			cached.content === contentRows &&
+			cached.width === width &&
+			cached.effort === effort &&
+			cached.themeEpoch === themeEpoch
+		) {
+			return cached.rows;
+		}
+		const header = renderAssistantHeader(width, effort);
+		const rows = header ? [header, ...contentRows] : contentRows;
+		this.#renderedCache = { content: contentRows, width, effort, themeEpoch, rows };
 		this.#publishStableSnapshot(rows, width);
 		return rows;
 	}
@@ -1372,6 +1443,7 @@ export class AssistantMessageComponent extends Container {
 				width,
 				"replay",
 				snapshot.openTable,
+				this.#stableSnapshots[0]?.headerEffort,
 			);
 			if (this.#recordStableRows(index, width, rows)) return rows;
 		}
@@ -1395,7 +1467,13 @@ export class AssistantMessageComponent extends Container {
 		const { parts, openTable } = current;
 		const last = parts.at(-1);
 		if (!last || last.kind === "spacer") return;
-		const snapshot: StableSnapshot = { partCount: parts.length, lastTextLength: last.text.length, openTable };
+		const headerEffort = this.#stableSnapshots[0]?.headerEffort ?? activeThinkingEffort();
+		const snapshot: StableSnapshot = {
+			partCount: parts.length,
+			lastTextLength: last.text.length,
+			openTable,
+			headerEffort,
+		};
 		const previous = this.#stableSnapshots.at(-1);
 		// An unmoved boundary publishes nothing whether or not it still extends
 		// the last snapshot, so most frames skip the whole-document comparison.
@@ -1408,7 +1486,15 @@ export class AssistantMessageComponent extends Container {
 		}
 		if (previous && !isSnapshotExtension(this.#stableParts, parts)) return;
 		this.#syncStableRenderInputs();
-		const currentRows = this.#renderStableParts(parts, parts.length, last.text.length, width, "head", openTable);
+		const currentRows = this.#renderStableParts(
+			parts,
+			parts.length,
+			last.text.length,
+			width,
+			"head",
+			openTable,
+			headerEffort,
+		);
 		// The container verifies stable rows against the blank-trimmed render.
 		if (!isRowPrefix(currentRows, trimBlankEdges(rendered))) return;
 		const previousRows = previous
@@ -1505,9 +1591,14 @@ export class AssistantMessageComponent extends Container {
 		width: number,
 		role: "head" | "replay",
 		openTable: boolean,
+		headerEffort: string | undefined,
 	): readonly string[] {
 		const ledger = this.#stableLedger(width);
 		const rows: string[] = [];
+		if (partCount > 0) {
+			const header = renderAssistantHeader(width, headerEffort);
+			if (header) rows.push(header);
+		}
 		const lastIndex = partCount - 1;
 		for (let index = 0; index < partCount; index++) {
 			const part = parts[index]!;

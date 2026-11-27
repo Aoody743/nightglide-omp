@@ -36,12 +36,51 @@ export interface ToolCardSection {
 	separator?: boolean;
 }
 
+/** Compact semantic pill rendered in a tool card header. */
+export interface ToolCardChip {
+	glyph?: string;
+	label: string;
+	color?: ThemeColor;
+}
+
+/** Format a compact semantic pill (`[✎ edit]`) for tool card headers. */
+export function formatToolChip(chip: ToolCardChip, theme: Theme): string {
+	const color = chip.color ?? "accent";
+	const inner = chip.glyph ? `${chip.glyph} ${chip.label}` : chip.label;
+	return `${theme.fg("dim", theme.format.bracketLeft)}${theme.fg(color, inner)}${theme.fg("dim", theme.format.bracketRight)}`;
+}
+
+/** Map canonical tool names onto compact semantic chips inspired by Nightglide cards. */
+export function semanticToolChip(toolName: string, theme: Theme): ToolCardChip | undefined {
+	switch (toolName) {
+		case "edit":
+		case "ast_edit":
+			return { glyph: theme.symbol("tool.edit"), label: "edit", color: "accent" };
+		case "write":
+			return { glyph: theme.symbol("tool.write"), label: "write", color: "accent" };
+		case "read":
+			return { glyph: theme.symbol("icon.file"), label: "read", color: "muted" };
+		case "bash":
+			return { glyph: theme.symbol("tool.bash"), label: "bash", color: "warning" };
+		case "grep":
+		case "find":
+		case "ast_grep":
+			return { glyph: theme.symbol("icon.search"), label: "search", color: "accent" };
+		case "test":
+			return { glyph: theme.symbol("status.success"), label: "test", color: "success" };
+		default:
+			return undefined;
+	}
+}
+
 /** Snapshot returned by a ToolCard builder on each render. */
 export interface ToolCardSnapshot {
 	/** Pre-rendered header. Prefer `status` for ordinary tool lifecycle rows. */
 	header?: string;
 	/** Structured status header, rendered by the shared status-line primitive. */
 	status?: StatusLineOptions;
+	/** Optional compact semantic pill rendered in the header meta slot. */
+	chip?: ToolCardChip;
 	headerMeta?: string;
 	/** Short facts drawn inside the frame's bottom border (framed); a trailing row otherwise. */
 	footerMeta?: string;
@@ -212,6 +251,11 @@ export class ToolCard implements Component {
 
 		const state = toolCardState(snapshot.phase);
 		const header = snapshot.header ?? (snapshot.status ? renderStatusLine(snapshot.status, this.#theme) : undefined);
+		const chipMeta = snapshot.chip ? formatToolChip(snapshot.chip, this.#theme) : undefined;
+		const headerMeta =
+			chipMeta && snapshot.headerMeta
+				? `${chipMeta}${this.#theme.fg("dim", this.#theme.sep.dot)}${snapshot.headerMeta}`
+				: (chipMeta ?? snapshot.headerMeta);
 		if (this.#options.variant === "framed") {
 			const previousOptions = this.#lastBlockOptions;
 			const previousSections = previousOptions?.sections;
@@ -228,7 +272,7 @@ export class ToolCard implements Component {
 			const reusableOptions =
 				previousOptions?.width === width &&
 				previousOptions.header === header &&
-				previousOptions.headerMeta === snapshot.headerMeta &&
+				previousOptions.headerMeta === headerMeta &&
 				previousOptions.footerMeta === snapshot.footerMeta &&
 				previousOptions.state === state &&
 				previousOptions.applyBg === snapshot.applyBg &&
@@ -240,7 +284,7 @@ export class ToolCard implements Component {
 					: undefined;
 			const blockOptions: OutputBlockOptions = reusableOptions ?? {
 				header,
-				headerMeta: snapshot.headerMeta,
+				headerMeta,
 				footerMeta: snapshot.footerMeta,
 				state,
 				sections,
@@ -256,7 +300,7 @@ export class ToolCard implements Component {
 
 		const lines: string[] = [];
 		if (header) {
-			lines.push(snapshot.headerMeta ? `${header} ${snapshot.headerMeta}` : header);
+			lines.push(headerMeta ? `${header} ${this.#theme.fg("dim", this.#theme.sep.dot)} ${headerMeta}` : header);
 		}
 		for (const section of sections) {
 			if (section.separator && lines.length > 0) lines.push("");
@@ -316,10 +360,15 @@ export class ToolCard implements Component {
 		this.#renderedChildren = nextChildren;
 
 		const head = snapshot.header ?? (snapshot.status ? JSON.stringify(snapshot.status) : "");
+		const chipMeta = snapshot.chip ? formatToolChip(snapshot.chip, this.#theme) : undefined;
+		const headerMeta =
+			chipMeta && snapshot.headerMeta
+				? `${chipMeta}${this.#theme.fg("dim", this.#theme.sep.dot)}${snapshot.headerMeta}`
+				: (chipMeta ?? snapshot.headerMeta);
 		if (
 			previous !== undefined &&
 			previous.head === head &&
-			previous.meta === snapshot.headerMeta &&
+			previous.meta === headerMeta &&
 			previous.phase === snapshot.phase &&
 			previous.applyBg === snapshot.applyBg &&
 			previous.borderColor === snapshot.borderColor &&
@@ -347,7 +396,7 @@ export class ToolCard implements Component {
 		const plain = this.#options.variant === "plain";
 		const described = describeOutputBlock({
 			head: headSpans,
-			meta: snapshot.headerMeta ? compactText(styledSpans(snapshot.headerMeta)) : undefined,
+			meta: headerMeta ? compactText(styledSpans(headerMeta)) : undefined,
 			state,
 			role: "omp.tool",
 			tone:
@@ -361,7 +410,7 @@ export class ToolCard implements Component {
 		});
 		this.#native = {
 			head,
-			meta: snapshot.headerMeta,
+			meta: headerMeta,
 			phase: snapshot.phase,
 			applyBg: snapshot.applyBg,
 			borderColor: snapshot.borderColor,

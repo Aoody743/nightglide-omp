@@ -49,7 +49,8 @@ describe("provider error expand", () => {
 		const rows = Bun.stripANSI(component.render(80).join("\n"))
 			.split("\n")
 			.filter(row => row.trim().length > 0);
-		expect(rows[0]).toMatch(/^ Error: 400 /);
+		expect(rows[0]).toContain("✦ Nightglide");
+		expect(rows[1]).toMatch(/^ Error: 400 /);
 		for (const row of rows) expect(Bun.stringWidth(row)).toBeLessThanOrEqual(80);
 		const joined = rows.map(row => row.trim()).join("");
 		expect(joined).toContain('"type":"invalid_request_error"}}');

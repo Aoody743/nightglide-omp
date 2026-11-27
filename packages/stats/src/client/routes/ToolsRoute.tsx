@@ -34,6 +34,7 @@ import {
 	Table,
 	TableSkeleton,
 } from "../ui";
+import { useWebLanguage } from "../webI18n";
 import "./tools.css";
 
 export interface ToolsRouteProps {
@@ -54,14 +55,14 @@ const TOP_TOOLS = 6;
 const ATTRIBUTION_NOTE =
 	"Tokens and API-equivalent cost of each invoking turn, split evenly across that turn's tool calls";
 
-const NO_CALLS = <EmptyState title="No tool calls in this range" />;
-
 export function ToolsRoute({ active, range }: ToolsRouteProps) {
 	const tools = useQuery(["tools", range], ({ signal }) => getToolDashboardStats(range, signal), { enabled: active });
 	const [metric, setMetric] = useState<CallMetric>("calls");
 	const [hidden, toggleHidden] = useHiddenSeries();
 	const [pickedTool, setToolFilter] = useState<string | null>(null);
-	const meta = rangeMeta(range);
+	const { lang, t } = useWebLanguage();
+	const meta = rangeMeta(range, lang);
+	const noCalls = <EmptyState title={t("tools.empty")} />;
 
 	const view = useMemo(() => buildToolsView(tools.data, range), [tools.data, range]);
 	// A pick from another range only applies while that tool still has calls.
@@ -72,49 +73,46 @@ export function ToolsRoute({ active, range }: ToolsRouteProps) {
 
 	return (
 		<div className="page">
-			<PageHeader
-				title="Tools"
-				description={`Which tools omp called in ${meta.windowLabel}, how often they failed, and what they cost.`}
-			/>
+			<PageHeader title={t("tools.title")} description={t("tools.desc", { window: meta.windowLabel })} />
 
 			<QueryView query={tools} skeleton={<ChartSkeleton height={112} />}>
 				{() => {
-					const t = view.totals;
+					const totals = view.totals;
 					return (
 						<div data-stale={tools.stale} className="stack" style={{ gap: 16 }}>
 							<StatGrid min={190}>
 								<Stat
 									label="Tool calls"
-									value={formatInteger(t.calls)}
-									hint={`${formatInteger(t.errors)} failed`}
+									value={formatInteger(totals.calls)}
+									hint={`${formatInteger(totals.errors)} failed`}
 									spark={view.totalCalls}
 								/>
 								<Stat
 									label="Distinct tools"
-									value={formatInteger(t.tools)}
+									value={formatInteger(totals.tools)}
 									hint={view.rows[0] ? `Most used: ${view.rows[0].tool}` : undefined}
 								/>
 								<Stat
 									label="Error rate"
 									title="Tool results that came back flagged as errors"
-									value={formatErrorRate(t.calls > 0 ? t.errors / t.calls : 0)}
-									hint={`${formatInteger(t.calls - t.errors)} succeeded`}
+									value={formatErrorRate(totals.calls > 0 ? totals.errors / totals.calls : 0)}
+									hint={`${formatInteger(totals.calls - totals.errors)} succeeded`}
 									spark={view.totalErrors}
 									sparkColor="var(--bad)"
 								/>
 								<Stat
 									label="Attributed tokens"
 									title={ATTRIBUTION_NOTE}
-									value={formatCompact(Math.round(t.tokens))}
-									hint={`${formatCompact(Math.round(t.output))} output`}
+									value={formatCompact(Math.round(totals.tokens))}
+									hint={`${formatCompact(Math.round(totals.output))} output`}
 								/>
 								<Stat
 									label="Attributed cost"
 									title={`${ATTRIBUTION_NOTE}; API-equivalent estimate`}
-									value={formatEstimatedCost(t.cost, t.unpriced)}
+									value={formatEstimatedCost(totals.cost, totals.unpriced)}
 									hint={
-										t.unpriced > 0
-											? `${formatInteger(Math.round(t.unpriced))} unpriced requests`
+										totals.unpriced > 0
+											? `${formatInteger(Math.round(totals.unpriced))} unpriced requests`
 											: "API-equivalent"
 									}
 								/>
@@ -124,23 +122,23 @@ export function ToolsRoute({ active, range }: ToolsRouteProps) {
 									size="sm"
 									label="Result text"
 									title="Characters of tool-result text fed back into context"
-									value={`${formatCompact(t.resultChars)} chars`}
+									value={`${formatCompact(totals.resultChars)} chars`}
 								/>
 								<Stat
 									size="sm"
 									label="Call arguments"
 									title="Characters of serialized tool-call arguments"
-									value={`${formatCompact(t.argsChars)} chars`}
+									value={`${formatCompact(totals.argsChars)} chars`}
 								/>
 								<Stat
 									size="sm"
 									label="Avg result per call"
-									value={`${formatCompact(t.calls > 0 ? Math.round(t.resultChars / t.calls) : 0)} chars`}
+									value={`${formatCompact(totals.calls > 0 ? Math.round(totals.resultChars / totals.calls) : 0)} chars`}
 								/>
 								<Stat
 									size="sm"
 									label="Avg arguments per call"
-									value={`${formatCompact(t.calls > 0 ? Math.round(t.argsChars / t.calls) : 0)} chars`}
+									value={`${formatCompact(totals.calls > 0 ? Math.round(totals.argsChars / totals.calls) : 0)} chars`}
 								/>
 							</StatGrid>
 						</div>
@@ -155,7 +153,7 @@ export function ToolsRoute({ active, range }: ToolsRouteProps) {
 				actions={<Segmented size="sm" options={METRIC_OPTIONS} value={metric} onChange={setMetric} />}
 				stale={tools.stale}
 			>
-				<QueryView query={tools} skeleton={<ChartSkeleton height={260} />} isEmpty={isEmpty} empty={NO_CALLS}>
+				<QueryView query={tools} skeleton={<ChartSkeleton height={260} />} isEmpty={isEmpty} empty={noCalls}>
 					{() => (
 						<div className="stack" style={{ gap: 12 }}>
 							<TimeChart
@@ -189,7 +187,7 @@ export function ToolsRoute({ active, range }: ToolsRouteProps) {
 				flush
 				stale={tools.stale}
 			>
-				<QueryView query={tools} skeleton={<TableSkeleton rows={8} />} isEmpty={isEmpty} empty={NO_CALLS}>
+				<QueryView query={tools} skeleton={<TableSkeleton rows={8} />} isEmpty={isEmpty} empty={noCalls}>
 					{() => (
 						<Table
 							rows={view.rows}
@@ -243,7 +241,7 @@ export function ToolsRoute({ active, range }: ToolsRouteProps) {
 					</div>
 				}
 			>
-				<QueryView query={tools} skeleton={<TableSkeleton rows={8} />} isEmpty={isEmpty} empty={NO_CALLS}>
+				<QueryView query={tools} skeleton={<TableSkeleton rows={8} />} isEmpty={isEmpty} empty={noCalls}>
 					{data => <ToolModelTable rows={data.byToolModel} tool={toolFilter} colors={view.colors} />}
 				</QueryView>
 			</Card>
